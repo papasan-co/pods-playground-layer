@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import PodsPlayerSingle from './PodsPlayerSingle.vue'
+// Explicitly import from the layer's wrapper, not relying on auto-import
+import PodsPlayerSingle from '../PodsPlayerSingle.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerView

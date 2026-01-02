@@ -12,6 +12,16 @@
 import { fileURLToPath } from 'node:url'
 
 export default defineNuxtConfig({
+  /**
+   * pods-player-layer.$meta.name
+   *
+   * Creates a named layer alias '@pods-player-layer' that works whether
+   * the layer is local (monorepo) or remote (GitHub/npm).
+   */
+  $meta: {
+    name: 'pods-player-layer',
+  },
+
   // Keep the layer minimal and host-driven.
   alias: {
     // Use an absolute path so the alias works regardless of which host project
