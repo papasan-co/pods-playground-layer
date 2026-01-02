@@ -2,6 +2,8 @@
 import Sortable from 'sortablejs'
 import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
+import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
+import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerBlockForm

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-player/types'
-import { usePodsPlayerRuntime } from '~/composables/pods-player/usePodsPlayerRuntime'
+import { usePodsPlayerRuntime } from '#pods-player-runtime'
+import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerPreview

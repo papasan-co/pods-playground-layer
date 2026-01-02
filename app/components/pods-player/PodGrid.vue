@@ -73,7 +73,7 @@ const sortedCategories = computed(() => {
 </script>
 
 <template>
-  <div class="flex-1 overflow-auto p-8">
+  <div class="p-8">
     <div class="max-w-7xl mx-auto">
       <div class="mb-8">
         <h1 v-if="title" class="text-3xl font-bold mb-2">{{ title }}</h1>

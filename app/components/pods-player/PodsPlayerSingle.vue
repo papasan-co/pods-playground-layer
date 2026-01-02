@@ -4,7 +4,11 @@ import type { FormField } from '#pods-player/formMapper'
 import { flatFromFixture, rebuildPayload } from '#pods-player/formMapper'
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { parse as parseYaml } from 'yaml'
-import { usePodsPlayerRuntime } from '~/composables/pods-player/usePodsPlayerRuntime'
+import { usePodsPlayerRuntime } from '#pods-player-runtime'
+import PodsPlayerViewportSwitcher from './PodsPlayerViewportSwitcher.vue'
+import PodsPlayerModeSwitcher from './PodsPlayerModeSwitcher.vue'
+import PodsPlayerPreview from './PodsPlayerPreview.vue'
+import PodsPlayerMetaPanel from './PodsPlayerMetaPanel.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerSingle
@@ -186,6 +190,8 @@ function applyFormUpdate(payload: { field: string; value: unknown }) {
         </div>
 
         <div class="flex-1 flex items-center justify-end gap-3">
+          <!-- Optional host extensions (e.g. AI/chat toggle, publish button). -->
+          <slot name="headerRight" />
           <PodsPlayerModeSwitcher v-model="mode" :supported-modes="runtime.supportedModes" />
           <UButton
             icon="i-lucide-refresh-cw"
@@ -224,6 +230,8 @@ function applyFormUpdate(payload: { field: string; value: unknown }) {
         @update:model-value="applyFormUpdate"
         @update:viewport="(val) => (viewport = val)"
       />
+      <!-- Optional host extension point (e.g. AI panel) -->
+      <slot name="rightPanelFooter" />
     </section>
   </div>
 </template>

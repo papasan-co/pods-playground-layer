@@ -2,8 +2,9 @@
 import type { PodDetails, PodsPlayerViewport } from '#pods-player/types'
 import type { FormField } from '#pods-player/formMapper'
 import { parse as parseYaml } from 'yaml'
-import { usePodsPlayerRuntime } from '~/composables/pods-player/usePodsPlayerRuntime'
 import { schemaToFields } from '#pods-player/schemaToFields'
+import { usePodsPlayerRuntime } from '#pods-player-runtime'
+import PodsPlayerBlockForm from './PodsPlayerBlockForm.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerMetaPanel

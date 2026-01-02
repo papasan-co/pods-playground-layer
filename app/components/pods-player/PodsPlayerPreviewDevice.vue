@@ -135,6 +135,8 @@ async function bootIframe() {
 
 watchEffect(() => {
   void props.device
+  // Ensure script injection runs when the script list changes (WC mode).
+  void props.scripts
   void props.ready
   slotVNode.value = props.ready === false ? null : h('div', { class: 'w-full h-full overflow-hidden' }, slots.default?.())
   void bootIframe()
