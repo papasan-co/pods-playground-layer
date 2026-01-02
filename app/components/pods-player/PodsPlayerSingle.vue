@@ -72,10 +72,13 @@ function processResponsiveFields(
         const parts = path.split('.')
         let current: any = processed
         for (let i = 0; i < parts.length - 1; i++) {
-          if (!current[parts[i]]) current[parts[i]] = {}
-          current = current[parts[i]]
+          const key = parts[i]
+          if (!key) continue
+          if (!current[key]) current[key] = {}
+          current = current[key]
         }
-        current[parts[parts.length - 1]] = value
+        const finalKey = parts[parts.length - 1]
+        if (finalKey) current[finalKey] = value
       } else {
         processed[field.name] = value
       }
