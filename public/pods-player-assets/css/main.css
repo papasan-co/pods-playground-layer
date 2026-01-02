@@ -1,0 +1,59 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Tell Tailwind where to look for class names */
+/* Paths are relative to this file: src/playground/app/assets/css/main.css */
+@source "../../../../components/**/*.{vue,js,ts,jsx,tsx}";
+@source "../../../**/*.{vue,js,ts,jsx,tsx}";
+@source "../../../../composables/**/*.{ts,js}";
+
+/* Design system CSS files are imported directly in nuxt.config.ts */
+/* This ensures they're properly included in the build */
+
+/* Define CSS custom properties for primary colors */
+:root {
+  --mobile-step-height: 100vh;
+  /* Off-black tone based on #1e1e1f */
+  --color-primary-50: #f4f4f5;
+  --color-primary-100: #e4e4e7;
+  --color-primary-200: #c9c9cd;
+  --color-primary-300: #8f8f92;
+  --color-primary-400: #4f4f52;
+  --color-primary-500: #1e1e1f; /* Your chosen color */
+  --color-primary-600: #1a1a1b; /* Slightly darker hover */
+  --color-primary-700: #161617;
+  --color-primary-800: #121213;
+  --color-primary-900: #0e0e0f;
+}
+
+.dark {
+  /* Lightened palette for dark mode (so it contrasts with dark backgrounds) */
+  --color-primary-50: #f9fafb;
+  --color-primary-100: #f4f4f5;
+  --color-primary-200: #e4e4e7;
+  --color-primary-300: #d4d4d8;
+  --color-primary-400: #a1a1aa;
+  --color-primary-500: #737373; /* More contrast in dark mode */
+  --color-primary-600: #a1a1a1;
+  --color-primary-700: #d1d1d1;
+  --color-primary-800: #e5e5e5;
+  --color-primary-900: #f4f4f5;
+}
+
+/* Define primary colors for Tailwind v4 - uses direct values */
+@theme {
+  --color-primary-50: #f4f4f5;
+  --color-primary-100: #e4e4e7;
+  --color-primary-200: #c9c9cd;
+  --color-primary-300: #8f8f92;
+  --color-primary-400: #4f4f52;
+  --color-primary-500: #1e1e1f;
+  --color-primary-600: #1a1a1b;
+  --color-primary-700: #161617;
+  --color-primary-800: #121213;
+  --color-primary-900: #0e0e0f;
+}
+
+/* Enable dark mode variant for Tailwind */
+@custom-variant dark (&:where(.dark, .dark *));
+

@@ -1,0 +1,9 @@
+{
+  "name": "pods-player-layer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}
+
