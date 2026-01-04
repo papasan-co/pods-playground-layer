@@ -38,6 +38,19 @@ export interface PodDetails extends PodListItem {
   schema?: unknown | null
   yaml?: string | null
   fixture?: Record<string, unknown> | null
+  /**
+   * Canonical field definitions for the pod's CMS UI.
+   *
+   * In v2, hosts should prefer providing JSON fields via compiled contracts
+   * instead of raw YAML.
+   */
+  fields?: unknown[] | null
+
+  /**
+   * Optional: full compiled contract JSON (as stored in backend DB / pods.json).
+   * When provided, the player can derive `fields` from it.
+   */
+  compiledContract?: Record<string, unknown> | null
 }
 
 export interface PodsPlayerEnsureResult {

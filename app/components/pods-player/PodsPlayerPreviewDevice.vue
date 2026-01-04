@@ -24,6 +24,11 @@ const props = defineProps<{
    * If false, the slot will not be mounted (useful when waiting on script readiness).
    */
   ready?: boolean
+  /**
+   * If true, allow the iframe document to scroll (used for StoryScrollyPage).
+   * Default is false (pod previews are typically non-scrolling).
+   */
+  scrollable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -61,6 +66,27 @@ function syncHead(from: Document, to: Document) {
 
 function syncCSSVars(to: Document) {
   to.documentElement.style.cssText = document.documentElement.style.cssText
+}
+
+function applyScrollMode(doc: Document, scrollable: boolean) {
+  const html = doc.documentElement
+  const body = doc.body
+  if (!html || !body) return
+
+  if (scrollable) {
+    html.style.overflow = 'auto'
+    body.style.overflow = 'auto'
+    html.style.height = 'auto'
+    body.style.height = 'auto'
+  } else {
+    html.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    html.style.height = '100%'
+    body.style.height = '100%'
+  }
+
+  body.style.margin = '0'
+  body.style.padding = '0'
 }
 
 async function ensureScripts(doc: Document, urls: string[]) {
@@ -102,7 +128,7 @@ async function bootIframe() {
       <html>
         <head>
           <meta name="viewport" content="width=device-width,initial-scale=1">
-          <style>html,body{margin:0;height:100%;width:100%;overflow:hidden}</style>
+          <style>html,body{margin:0;width:100%;}</style>
         </head>
         <body></body>
       </html>
@@ -116,16 +142,13 @@ async function bootIframe() {
     obs = new MutationObserver(() => syncHead(document, doc))
     obs.observe(document.head, { childList: true })
 
-    doc.documentElement.style.overflow = 'hidden'
-    doc.documentElement.style.height = '100%'
-    doc.body.style.overflow = 'hidden'
-    doc.body.style.height = '100%'
-    doc.body.style.margin = '0'
-    doc.body.style.padding = '0'
+    applyScrollMode(doc, !!props.scrollable)
 
     miniApp = createApp({ render: () => slotVNode.value || null })
     miniApp.mount(doc.body)
   }
+
+  applyScrollMode(doc, !!props.scrollable)
 
   if (props.scripts?.length) {
     await ensureScripts(doc, props.scripts)
@@ -138,7 +161,15 @@ watchEffect(() => {
   // Ensure script injection runs when the script list changes (WC mode).
   void props.scripts
   void props.ready
-  slotVNode.value = props.ready === false ? null : h('div', { class: 'w-full h-full overflow-hidden' }, slots.default?.())
+  void props.scrollable
+  slotVNode.value =
+    props.ready === false
+      ? null
+      : h(
+          'div',
+          { class: props.scrollable ? 'w-full min-h-full' : 'w-full h-full overflow-hidden' },
+          slots.default?.(),
+        )
   void bootIframe()
 })
 </script>

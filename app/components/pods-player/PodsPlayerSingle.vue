@@ -3,7 +3,6 @@ import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-playe
 import type { FormField } from '#pods-player/formMapper'
 import { flatFromFixture, rebuildPayload } from '#pods-player/formMapper'
 import { schemaToFields } from '#pods-player/schemaToFields'
-import { parse as parseYaml } from 'yaml'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerViewportSwitcher from './PodsPlayerViewportSwitcher.vue'
 import PodsPlayerModeSwitcher from './PodsPlayerModeSwitcher.vue'
@@ -46,6 +45,25 @@ function reloadComponent() {
 
 const flatForm = reactive<Record<string, unknown>>({})
 const formSchema = ref<FormField[]>([])
+
+function fieldsFromPod(p: PodDetails | null): FormField[] {
+  if (!p) return []
+
+  const direct = Array.isArray(p.fields) ? p.fields : null
+  if (direct) return direct as FormField[]
+
+  const fromContract = p.compiledContract && Array.isArray((p.compiledContract as any).fields)
+    ? ((p.compiledContract as any).fields as FormField[])
+    : null
+  if (fromContract) return fromContract
+
+  const uiFields = p.compiledContract && Array.isArray((p.compiledContract as any)?.ui?.fields)
+    ? ((p.compiledContract as any).ui.fields as FormField[])
+    : null
+  if (uiFields) return uiFields
+
+  return []
+}
 
 function extractResponsiveValue(value: unknown, viewport: PodsPlayerViewport): unknown {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -133,15 +151,8 @@ async function loadPodData() {
       (runtime.getSchema ? await runtime.getSchema(props.slug) : null) ??
       null
 
-    const yaml = pod.value.yaml ?? (runtime.getYaml ? await runtime.getYaml(props.slug) : null)
-
-    // Primary: YAML fields
-    if (yaml) {
-      const parsed = parseYaml(yaml) as any
-      if (parsed?.fields) {
-        formSchema.value = parsed.fields as FormField[]
-      }
-    }
+    // Primary: JSON fields from compiled contract / backend response.
+    formSchema.value = fieldsFromPod(pod.value)
 
     // Fallback: derive from JSON Schema (important for CMS v1).
     if (formSchema.value.length === 0 && schema.value) {
@@ -220,7 +231,7 @@ function applyFormUpdate(payload: { field: string; value: unknown }) {
         :mode="mode"
         :viewport="viewport"
         :preview-props="previewProps"
-        :reload-key="reloadKey"
+        :reloadKey="reloadKey"
       >
         <PodsPlayerPreview
           :key="reloadKey"

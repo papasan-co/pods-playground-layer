@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useDesignTokens } from '~/composables/pods-player/useDesignTokens'
+import { useDesignTokens } from '../../composables/pods-player/useDesignTokens'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerBrandColorPicker

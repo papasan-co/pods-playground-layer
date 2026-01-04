@@ -86,6 +86,11 @@ async function syncAll() {
   if (!el || el.tagName.toLowerCase() !== props.tag.toLowerCase()) {
     host.innerHTML = ''
     el = document.createElement(props.tag) as HTMLElement
+    // Ensure the mounted custom element fills the available viewport.
+    // Many pods assume a full-bleed container but custom elements default to `display: inline`.
+    el.style.display = 'block'
+    el.style.width = '100%'
+    el.style.height = '100%'
   }
 
   if (el.parentElement !== host) {

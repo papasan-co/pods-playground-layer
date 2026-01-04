@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { PodDetails, PodsPlayerViewport } from '#pods-player/types'
 import type { FormField } from '#pods-player/formMapper'
-import { parse as parseYaml } from 'yaml'
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerBlockForm from './PodsPlayerBlockForm.vue'
@@ -34,8 +33,27 @@ const runtime = usePodsPlayerRuntime()
 
 const activeTab = ref<'form' | 'props' | 'yaml'>('form')
 const yamlContent = ref<string | null>(null)
-const yamlFields = ref<FormField[]>([])
+const formFields = ref<FormField[]>([])
 const loadingYaml = ref(false)
+
+function fieldsFromPod(p: PodDetails | null): FormField[] {
+  if (!p) return []
+
+  const direct = Array.isArray(p.fields) ? p.fields : null
+  if (direct) return direct as FormField[]
+
+  const fromContract = p.compiledContract && Array.isArray((p.compiledContract as any).fields)
+    ? ((p.compiledContract as any).fields as FormField[])
+    : null
+  if (fromContract) return fromContract
+
+  const uiFields = p.compiledContract && Array.isArray((p.compiledContract as any)?.ui?.fields)
+    ? ((p.compiledContract as any).ui.fields as FormField[])
+    : null
+  if (uiFields) return uiFields
+
+  return []
+}
 
 watch(
   () => props.pod?.slug,
@@ -45,19 +63,15 @@ watch(
     try {
       const yaml = (await runtime.getYaml?.(slug)) ?? null
       yamlContent.value = yaml
-      yamlFields.value = []
-      if (yaml) {
-        const parsed = parseYaml(yaml) as any
-        if (parsed?.fields) yamlFields.value = parsed.fields as FormField[]
-      }
+      formFields.value = fieldsFromPod(props.pod ?? null)
 
       // Fallback (CMS v1): derive fields from schema if YAML isn't available.
-      if (yamlFields.value.length === 0 && props.schema) {
-        yamlFields.value = schemaToFields(props.schema) as any
+      if (formFields.value.length === 0 && props.schema) {
+        formFields.value = schemaToFields(props.schema) as any
       }
     } catch {
       yamlContent.value = null
-      yamlFields.value = []
+      formFields.value = fieldsFromPod(props.pod ?? null)
     } finally {
       loadingYaml.value = false
     }
@@ -93,9 +107,9 @@ watch(
       <div class="flex-1 overflow-auto p-4">
         <div v-if="activeTab === 'form'">
           <div v-if="loadingYaml" class="text-sm text-gray-500">Loading form fields...</div>
-          <div v-else-if="yamlFields.length > 0">
+          <div v-else-if="formFields.length > 0">
             <PodsPlayerBlockForm
-              :fields="yamlFields"
+              :fields="formFields"
               :model-value="modelValue"
               :viewport="viewport || 'laptop'"
               @update:model-value="(payload) => emit('update:modelValue', payload)"
