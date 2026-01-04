@@ -213,14 +213,23 @@ function applyFormUpdate(payload: { field: string; value: unknown }) {
       <div v-else-if="!pod" class="flex items-center justify-center h-full">
         <div class="text-gray-500">Pod not found</div>
       </div>
-      <PodsPlayerPreview
+      <slot
         v-else
-        :key="reloadKey"
+        name="preview"
         :pod="pod"
         :mode="mode"
         :viewport="viewport"
         :preview-props="previewProps"
-      />
+        :reload-key="reloadKey"
+      >
+        <PodsPlayerPreview
+          :key="reloadKey"
+          :pod="pod"
+          :mode="mode"
+          :viewport="viewport"
+          :preview-props="previewProps"
+        />
+      </slot>
     </section>
 
     <section class="w-96 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-white dark:bg-gray-900">

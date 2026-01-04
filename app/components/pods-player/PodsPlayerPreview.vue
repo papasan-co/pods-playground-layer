@@ -2,6 +2,7 @@
 import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-player/types'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
+import PodsPlayerWebComponentMount from './PodsPlayerWebComponentMount.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerPreview
@@ -93,7 +94,7 @@ function handleScriptsLoaded() {
         <component :is="Comp" v-bind="previewProps" />
       </template>
       <template v-else-if="mode === 'wc' && wcTag">
-        <component :is="wcTag" v-bind="previewProps" />
+        <PodsPlayerWebComponentMount :tag="wcTag" :props="previewProps" />
       </template>
       <template v-else>
         <div class="w-full h-full flex items-center justify-center">

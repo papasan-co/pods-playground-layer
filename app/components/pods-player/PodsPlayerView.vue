@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Explicitly import from the layer's wrapper, not relying on auto-import
 import PodsPlayerSingle from '../PodsPlayerSingle.vue'
+import { useSlots } from 'vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerView
@@ -18,12 +19,17 @@ import PodsPlayerSingle from '../PodsPlayerSingle.vue'
 defineProps<{
   slug: string
 }>()
+
+const slots = useSlots()
 </script>
 
 <template>
   <PodsPlayerSingle :slug="slug" class="h-full">
     <template #headerRight>
       <slot name="headerRight" />
+    </template>
+    <template v-if="slots.preview" #preview="slotProps">
+      <slot name="preview" v-bind="slotProps" />
     </template>
     <template #rightPanelFooter>
       <slot name="rightPanelFooter" />
