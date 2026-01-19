@@ -74,10 +74,13 @@ function applyScrollMode(doc: Document, scrollable: boolean) {
   if (!html || !body) return
 
   if (scrollable) {
-    html.style.overflow = 'auto'
-    body.style.overflow = 'auto'
-    html.style.height = 'auto'
-    body.style.height = 'auto'
+    // IMPORTANT: don't force a scroll container on html/body.
+    // Browsers handle iframe document scrolling naturally; forcing overflow
+    // can break `position: sticky` inside the scrolly layout.
+    html.style.overflow = ''
+    body.style.overflow = ''
+    html.style.height = ''
+    body.style.height = ''
   } else {
     html.style.overflow = 'hidden'
     body.style.overflow = 'hidden'

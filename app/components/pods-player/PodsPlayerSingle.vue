@@ -46,6 +46,34 @@ function reloadComponent() {
 const flatForm = reactive<Record<string, unknown>>({})
 const formSchema = ref<FormField[]>([])
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
+function dotGet(obj: unknown, path: string): unknown {
+  if (!isRecord(obj)) return undefined
+  if (!path) return undefined
+  const parts = path.split('.')
+  let cur: unknown = obj
+  for (const part of parts) {
+    if (!isRecord(cur)) return undefined
+    cur = cur[part]
+  }
+  return cur
+}
+
+function dotSet(obj: Record<string, unknown>, path: string, value: unknown) {
+  const parts = path.split('.')
+  let cur: Record<string, unknown> = obj
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = parts[i]
+    const next = cur[key]
+    if (!isRecord(next)) cur[key] = {}
+    cur = cur[key] as Record<string, unknown>
+  }
+  cur[parts[parts.length - 1]] = value
+}
+
 function fieldsFromPod(p: PodDetails | null): FormField[] {
   if (!p) return []
 
@@ -74,47 +102,73 @@ function extractResponsiveValue(value: unknown, viewport: PodsPlayerViewport): u
   return value
 }
 
-function processResponsiveFields(
+function applyResponsiveToPayload(
   payload: Record<string, unknown>,
   fields: FormField[],
   viewport: PodsPlayerViewport,
 ): Record<string, unknown> {
-  const processed = { ...payload }
+  const out: Record<string, unknown> = JSON.parse(JSON.stringify(payload || {}))
 
-  for (const field of fields) {
-    if (field.responsive && processed[field.name]) {
-      const path = field.path || field.name
-      const value = extractResponsiveValue(processed[field.name], viewport)
+  const isUiOnlyGroupName = (name: string | undefined) => !!name && name.startsWith('__')
+  const joinPath = (prefix: string, next: string) => (prefix ? `${prefix}.${next}` : next)
 
-      if (path.includes('.')) {
-        const parts = path.split('.')
-        let current: any = processed
-        for (let i = 0; i < parts.length - 1; i++) {
-          const key = parts[i]
-          if (!key) continue
-          if (!current[key]) current[key] = {}
-          current = current[key]
-        }
-        const finalKey = parts[parts.length - 1]
-        if (finalKey) current[finalKey] = value
-      } else {
-        processed[field.name] = value
+  const visit = (fs: FormField[], prefix: string) => {
+    for (const f of fs) {
+      if (f.type === 'group' && f.children) {
+        const name = (f as any).name as string | undefined
+        const nextPrefix = name && !isUiOnlyGroupName(name) ? joinPath(prefix, name) : prefix
+        visit(f.children, nextPrefix)
+        continue
       }
-    } else if (field.type === 'group' && field.children) {
-      const groupValue = processed[field.name]
-      if (groupValue && typeof groupValue === 'object') {
-        processed[field.name] = processResponsiveFields(groupValue as any, field.children, viewport)
+      if (f.type === 'row' && f.fields) {
+        visit(f.fields, prefix)
+        continue
+      }
+      if (f.type === 'repeater' && f.fields && f.name) {
+        const listPath = f.path || joinPath(prefix, f.name)
+        const arr = dotGet(out, listPath)
+        if (Array.isArray(arr)) {
+          const next = arr.map((item) => {
+            if (!isRecord(item)) return item
+            const copy = JSON.parse(JSON.stringify(item))
+            // apply responsive inside repeater items using same field list
+            const applyInItem = (itemFields: FormField[]) => {
+              for (const rf of itemFields) {
+                if (rf.type === 'group' && rf.children) { applyInItem(rf.children); continue }
+                if (rf.type === 'row' && rf.fields) { applyInItem(rf.fields); continue }
+                if (rf.responsive && rf.name) {
+                  const p = rf.path || rf.name
+                  const v = dotGet(copy, p)
+                  if (v !== undefined) dotSet(copy, p, extractResponsiveValue(v, viewport))
+                }
+              }
+            }
+            applyInItem(f.fields!)
+            return copy
+          })
+          dotSet(out, listPath, next)
+        }
+        continue
+      }
+
+      if (f.responsive && f.name) {
+        const path = f.path || joinPath(prefix, f.name)
+        const v = dotGet(out, path)
+        if (v !== undefined) {
+          dotSet(out, path, extractResponsiveValue(v, viewport))
+        }
       }
     }
   }
 
-  return processed
+  visit(fields, '')
+  return out
 }
 
 const previewProps = computed(() => {
   if (formSchema.value.length === 0) return fixture.value || {}
   const payload = rebuildPayload(formSchema.value, flatForm)
-  return processResponsiveFields(payload, formSchema.value, viewport.value)
+  return applyResponsiveToPayload(payload, formSchema.value, viewport.value)
 })
 
 const hasChanges = computed(() => {

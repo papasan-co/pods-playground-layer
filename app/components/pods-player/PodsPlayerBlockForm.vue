@@ -182,7 +182,7 @@ function removeRepeaterItem(block: string, idx: number) {
 </script>
 
 <template>
-  <template v-for="field in fields" :key="field.name">
+  <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
     <div v-if="field.type === 'group' && isVisible(field)">
       <div class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -192,15 +192,100 @@ function removeRepeaterItem(block: string, idx: number) {
         <PodsPlayerBlockForm
           v-if="field.children?.length"
           :fields="field.children"
-          :model-value="(modelValue[field.name] ?? {}) as any"
+          :model-value="modelValue"
           :viewport="viewport"
-          @update:model-value="
-            ({ field: child, value }) =>
-              updateField(field.name, { ...(modelValue[field.name] ?? {}), [child]: value }, 'group')
-          "
+          @update:model-value="(payload) => emit('update:modelValue', payload)"
           @update:viewport="(val) => emit('update:viewport', val)"
         />
       </div>
+    </div>
+
+    <!-- Row: UI/layout primitive (does not store data) -->
+    <div v-else-if="field.type === 'row' && isVisible(field)" class="flex gap-3 mb-4">
+      <template v-for="(child, ci) in field.fields || []" :key="child.name || `${child.type}-${ci}`">
+        <div :class="(child.width as string) || 'flex-1'">
+          <PodsPlayerResponsiveField
+            v-if="child.responsive"
+            :field="child"
+            :model-value="modelValue"
+            :viewport="viewport || 'laptop'"
+            @update:model-value="({ field: name, value }) => updateField(name, value, child.type)"
+            @update:viewport="(val) => emit('update:viewport', val)"
+          />
+
+          <UFormField v-else :label="child.label" class="mb-2">
+            <UInput
+              v-if="child.type === 'input'"
+              class="w-full"
+              size="sm"
+              :model-value="modelValue[child.name as string]"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <UTextarea
+              v-else-if="child.type === 'textarea'"
+              class="w-full"
+              size="sm"
+              :model-value="modelValue[child.name as string]"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <USelect
+              v-else-if="child.type === 'select'"
+              class="w-full"
+              size="sm"
+              :model-value="modelValue[child.name as string]"
+              :placeholder="child.placeholder as any"
+              :items="selectItems(child as any)"
+              value-attribute="value"
+              label-attribute="label"
+              arrow
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <UInputNumber
+              v-else-if="child.type === 'input-number'"
+              class="w-full"
+              size="sm"
+              :model-value="Number(modelValue[child.name as string]) || 0"
+              :min="(child.min as number) ?? undefined"
+              :max="(child.max as number) ?? undefined"
+              :step="(child.step as number) ?? 1"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <USwitch
+              v-else-if="child.type === 'toggle'"
+              class="w-full"
+              size="sm"
+              :model-value="modelValue[child.name as string]"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <USlider
+              v-else-if="child.type === 'slider'"
+              class="w-full"
+              size="sm"
+              :model-value="Number(modelValue[child.name as string]) || 0"
+              :min="(child.min as number) ?? 0"
+              :max="(child.max as number) ?? 100"
+              :step="(child.step as number) ?? 1"
+              :tooltip="true"
+              @update:model-value="(val) => updateField(child.name as string, Array.isArray(val) ? val[0] : val, child.type)"
+            />
+            <PodsPlayerBrandColorPicker
+              v-else-if="child.type === 'background-color' || child.type === 'brand-color-picker'"
+              :model-value="modelValue[child.name as string] as string"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <div v-else-if="child.type === 'medias'" class="text-sm text-gray-500">
+              Media picker not yet implemented
+            </div>
+            <UInput
+              v-else
+              class="w-full"
+              size="sm"
+              :model-value="modelValue[child.name as string]"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+          </UFormField>
+        </div>
+      </template>
     </div>
 
     <PodsPlayerResponsiveField
@@ -345,40 +430,13 @@ function removeRepeaterItem(block: string, idx: number) {
             </div>
 
             <div class="space-y-3">
-              <template v-for="child in field.fields || []" :key="child.name">
-                <UFormField :label="child.label" class="mb-2">
-                  <UInput
-                    v-if="child.type === 'input'"
-                    size="sm"
-                    :model-value="(item as any)[child.name]"
-                    @update:model-value="(val) => updateRepeaterItem(field.name, idx, child.name, val)"
-                  />
-                  <UTextarea
-                    v-else-if="child.type === 'textarea'"
-                    size="sm"
-                    :model-value="(item as any)[child.name]"
-                    @update:model-value="(val) => updateRepeaterItem(field.name, idx, child.name, val)"
-                  />
-                  <UInputNumber
-                    v-else-if="child.type === 'input-number'"
-                    size="sm"
-                    :model-value="Number((item as any)[child.name]) || 0"
-                    @update:model-value="(val) => updateRepeaterItem(field.name, idx, child.name, val)"
-                  />
-                  <USwitch
-                    v-else-if="child.type === 'toggle'"
-                    size="sm"
-                    :model-value="(item as any)[child.name]"
-                    @update:model-value="(val) => updateRepeaterItem(field.name, idx, child.name, val)"
-                  />
-                  <UInput
-                    v-else
-                    size="sm"
-                    :model-value="(item as any)[child.name]"
-                    @update:model-value="(val) => updateRepeaterItem(field.name, idx, child.name, val)"
-                  />
-                </UFormField>
-              </template>
+              <PodsPlayerBlockForm
+                :fields="(field.fields || []) as any"
+                :model-value="(item as any)"
+                :viewport="viewport"
+                @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
+                @update:viewport="(val) => emit('update:viewport', val)"
+              />
             </div>
           </div>
         </div>

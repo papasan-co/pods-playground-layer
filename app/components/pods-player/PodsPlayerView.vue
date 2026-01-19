@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Explicitly import from the layer's wrapper, not relying on auto-import
-import PodsPlayerSingle from '../PodsPlayerSingle.vue'
+import PodsPlayerSingle from './PodsPlayerSingle.vue'
 import { useSlots } from 'vue'
 
 /**
