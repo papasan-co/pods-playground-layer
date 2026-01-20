@@ -66,6 +66,8 @@ function syncHead(from: Document, to: Document) {
 
 function syncCSSVars(to: Document) {
   to.documentElement.style.cssText = document.documentElement.style.cssText
+  // Keep HTML classes in sync so scoped runtime CSS (e.g. `.autumn-runtime`, `.dark`) applies.
+  to.documentElement.className = document.documentElement.className
 }
 
 function applyScrollMode(doc: Document, scrollable: boolean) {
@@ -170,6 +172,10 @@ watchEffect(() => {
       ? null
       : h(
           'div',
+          /**
+           * Scroll mode: do NOT force a fixed height or overflow-hidden on the root wrapper.
+           * The iframe document should be able to grow and scroll naturally.
+           */
           { class: props.scrollable ? 'w-full min-h-full' : 'w-full h-full overflow-hidden' },
           slots.default?.(),
         )
