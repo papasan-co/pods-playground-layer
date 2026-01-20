@@ -86,9 +86,10 @@ async function syncAll() {
   if (!el || el.tagName.toLowerCase() !== props.tag.toLowerCase()) {
     host.innerHTML = ''
     el = document.createElement(props.tag) as HTMLElement
-    // Ensure the mounted custom element fills the available viewport.
-    // Many pods assume a full-bleed container but custom elements default to `display: inline`.
-    el.style.display = 'block'
+    // Mark for runtime CSS (PodPack) to style the host element.
+    // Avoid setting `display` inline: Vue Custom Element rendering can effectively forward
+    // inline styles onto the component root, which can override Tailwind classes (e.g. `flex`).
+    ;(el as any).dataset.autumnPod = '1'
     el.style.width = '100%'
     el.style.height = '100%'
   }
