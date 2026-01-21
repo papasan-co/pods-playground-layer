@@ -501,7 +501,6 @@ function removeRepeaterItem(block: string, idx: number) {
                   <button
                     type="button"
                     class="flex-1 text-left min-w-0"
-                    @click="toggleItemOpen(field.name, itemKey(item as any, idx))"
                   >
                     <div class="flex items-center gap-2 min-w-0">
                       <span class="repeater-handle cursor-grab text-gray-400" @click.stop>
