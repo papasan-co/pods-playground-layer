@@ -498,14 +498,14 @@ function removeRepeaterItem(block: string, idx: number) {
             >
               <template #default="{ open }">
                 <div class="flex items-start justify-between gap-2">
+                  <span class="repeater-handle cursor-grab text-gray-400 pt-0.5" @click.stop>
+                    <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
+                  </span>
                   <button
                     type="button"
                     class="flex-1 text-left min-w-0"
                   >
                     <div class="flex items-center gap-2 min-w-0">
-                      <span class="repeater-handle cursor-grab text-gray-400" @click.stop>
-                        <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
-                      </span>
                       <div class="min-w-0">
                         <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">
                           {{ field.label }} #{{ idx + 1 }}
