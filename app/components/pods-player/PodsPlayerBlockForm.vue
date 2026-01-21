@@ -4,6 +4,7 @@ import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
 import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
+import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -46,6 +47,16 @@ function isVisible(field: FormField) {
   if (!cond) return true
   const conditions = Array.isArray(cond) ? cond : [cond]
   return conditions.every((c) => props.modelValue[c.field] === c.equals)
+}
+
+function isHidden(field: FormField): boolean {
+  const ui = (field as any)?.['x-ui']
+  return Boolean(ui && typeof ui === 'object' && ui.hidden === true)
+}
+
+function isReadOnly(field: FormField): boolean {
+  const ui = (field as any)?.['x-ui']
+  return Boolean(ui && typeof ui === 'object' && ui.readonly === true)
 }
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
@@ -183,7 +194,7 @@ function removeRepeaterItem(block: string, idx: number) {
 
 <template>
   <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
-    <div v-if="field.type === 'group' && isVisible(field)">
+    <div v-if="field.type === 'group' && isVisible(field) && !isHidden(field)" class="mb-4 last:mb-0">
       <div class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
           {{ field.label }}
@@ -201,7 +212,7 @@ function removeRepeaterItem(block: string, idx: number) {
     </div>
 
     <!-- Row: UI/layout primitive (does not store data) -->
-    <div v-else-if="field.type === 'row' && isVisible(field)" class="flex gap-3 mb-4">
+    <div v-else-if="field.type === 'row' && isVisible(field) && !isHidden(field)" class="flex gap-3 mb-4 last:mb-0">
       <template v-for="(child, ci) in field.fields || []" :key="child.name || `${child.type}-${ci}`">
         <div :class="(child.width as string) || 'flex-1'">
           <PodsPlayerResponsiveField
@@ -273,9 +284,12 @@ function removeRepeaterItem(block: string, idx: number) {
               :model-value="modelValue[child.name as string] as string"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
-            <div v-else-if="child.type === 'medias'" class="text-sm text-gray-500">
-              Media picker not yet implemented
-            </div>
+            <PodsPlayerMediaPicker
+              v-else-if="child.type === 'medias'"
+              :model-value="modelValue[child.name as string] as string"
+              :constraint="(child as any)['x-ui']"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
             <UInput
               v-else
               class="w-full"
@@ -289,7 +303,7 @@ function removeRepeaterItem(block: string, idx: number) {
     </div>
 
     <PodsPlayerResponsiveField
-      v-else-if="field.responsive"
+      v-else-if="field.responsive && !isHidden(field)"
       v-show="isVisible(field)"
       :field="field"
       :model-value="modelValue"
@@ -299,15 +313,16 @@ function removeRepeaterItem(block: string, idx: number) {
     />
 
     <UFormField
-      v-else
+      v-else-if="!isHidden(field)"
       v-show="isVisible(field)"
       :label="field.label"
-      class="mb-4"
+      class="mb-4 last:mb-0"
     >
       <UInput
         v-if="field.type === 'input'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
@@ -315,6 +330,7 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'textarea'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
@@ -322,6 +338,7 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'select'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
         :placeholder="field.placeholder as any"
         :items="selectItems(field as any)"
@@ -334,6 +351,7 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'color-select'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
         :items="selectItems(field as any)"
         value-attribute="value"
@@ -358,6 +376,7 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'input-number'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="Number(modelValue[field.name]) || 0"
         :min="(field.min as number) ?? undefined"
         :max="(field.max as number) ?? undefined"
@@ -369,6 +388,7 @@ function removeRepeaterItem(block: string, idx: number) {
         class="w-full"
         type="number"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
@@ -376,6 +396,7 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'toggle'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
@@ -383,6 +404,7 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'slider'"
         class="w-full"
         size="sm"
+        :disabled="isReadOnly(field)"
         :model-value="Number(modelValue[field.name]) || 0"
         :min="(field.min as number) ?? 0"
         :max="(field.max as number) ?? 100"
@@ -395,9 +417,12 @@ function removeRepeaterItem(block: string, idx: number) {
         :model-value="modelValue[field.name] as string"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
-      <div v-else-if="field.type === 'medias'" class="text-sm text-gray-500">
-        Media picker not yet implemented
-      </div>
+      <PodsPlayerMediaPicker
+        v-else-if="field.type === 'medias'"
+        :model-value="modelValue[field.name] as string"
+        :constraint="(field as any)['x-ui']"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
 
       <!-- Repeater -->
       <div v-else-if="field.type === 'repeater'">

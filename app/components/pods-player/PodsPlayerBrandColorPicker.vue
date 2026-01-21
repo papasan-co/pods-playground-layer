@@ -234,7 +234,29 @@ const getTokenColor = (group: string, shade: string) => {
       </div>
 
       <div v-else class="space-y-2">
-        <UInput v-model="customColor" type="color" size="sm" />
+        <!-- Make the whole row the click target for the native color picker -->
+        <label
+          class="relative block rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <div
+              class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600 shrink-0"
+              :style="{ backgroundColor: customColor }"
+            />
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">Custom</div>
+              <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{{ customColor }}</div>
+            </div>
+          </div>
+
+          <!-- Invisible native control overlay -->
+          <input
+            v-model="customColor"
+            type="color"
+            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            aria-label="Pick a custom color"
+          />
+        </label>
       </div>
     </div>
   </div>

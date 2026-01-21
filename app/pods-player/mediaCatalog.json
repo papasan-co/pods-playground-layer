@@ -1,0 +1,133 @@
+[
+  {
+    "filename": "hero-image.jpg",
+    "title": "Default Hero Image",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene"],
+    "alt": "A landscape hero image",
+    "tags": ["default", "hero"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "logo-light.png",
+    "title": "Default Logo (Light)",
+    "orientation": "landscape",
+    "kind": "logo",
+    "roles": ["logo", "brand"],
+    "alt": "Organization logo (light)",
+    "tags": ["logo", "light"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "logo-dark.png",
+    "title": "Default Logo (Dark)",
+    "orientation": "landscape",
+    "kind": "logo",
+    "roles": ["logo", "brand"],
+    "alt": "Organization logo (dark)",
+    "tags": ["logo", "dark"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "annie-spratt-5Xmk2nezjXY-unsplash.jpg",
+    "title": "Foggy Road in Open Landscape",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene"],
+    "alt": "A quiet road disappearing into fog across an open landscape",
+    "tags": ["fog", "road", "minimal", "journey", "calm"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "brendan-beale-3LW-MzohI2o-unsplash.jpg",
+    "title": "City Harbor at Sunset",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "story-scene"],
+    "alt": "City skyline and harbor at sunset with reflections on the water",
+    "tags": ["city", "urban", "sunset", "harbor", "modern"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "chad-madden-cPa-7yByq3o-unsplash.jpg",
+    "title": "Autumn Forest Road",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "story-scene"],
+    "alt": "A winding road cutting through a dense autumn forest",
+    "tags": ["autumn", "forest", "road", "nature"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "curated-lifestyle-fm9eTqwGD5g-unsplash.jpg",
+    "title": "Friends Sharing Coffee",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["card", "editorial", "community"],
+    "alt": "Friends smiling and raising coffee cups together at a table",
+    "tags": ["friends", "community", "coffee", "conversation"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "getty-images-fVdK1yleng4-unsplash.jpg",
+    "title": "Volunteers Sorting Donations",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["editorial", "campaign", "nonprofit"],
+    "alt": "Volunteers organizing donated items into labeled boxes",
+    "tags": ["volunteer", "donations", "nonprofit", "community"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "getty-images-q3ah7rkndE4-unsplash.jpg",
+    "title": "Team Reviewing Work Together",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["editorial", "card", "team"],
+    "alt": "A diverse group of people collaborating around a table with laptops",
+    "tags": ["team", "collaboration", "work", "planning"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "getty-images-z1ag2m3KXP8-unsplash.jpg",
+    "title": "Professional Woman Holding Notebook",
+    "orientation": "portrait",
+    "kind": "photo",
+    "roles": ["portrait", "editorial", "testimonial"],
+    "alt": "A professional woman standing indoors holding a notebook",
+    "tags": ["portrait", "professional", "leadership"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "good-faces-xmSWVeGEnJw-unsplash.jpg",
+    "title": "Studio Portrait with Natural Expression",
+    "orientation": "portrait",
+    "kind": "photo",
+    "roles": ["portrait", "editorial", "testimonial"],
+    "alt": "A studio portrait of a woman with a natural, thoughtful expression",
+    "tags": ["portrait", "identity", "editorial"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "jud-mackrill-Of_m3hMsoAA-unsplash.jpg",
+    "title": "Team Working Around a Laptop",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["card", "editorial", "team"],
+    "alt": "A small group gathered around a laptop discussing work",
+    "tags": ["team", "collaboration", "startup", "planning"],
+    "safeForTextOverlay": false
+  },
+  {
+    "filename": "shelby-murphy-figueroa-fGF3E0pOdII-unsplash.jpg",
+    "title": "Children Playing Together Outdoors",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["editorial", "campaign", "community"],
+    "alt": "Children standing in a circle outdoors playing a group game",
+    "tags": ["children", "community", "education", "nonprofit"],
+    "safeForTextOverlay": false
+  }
+]
+
