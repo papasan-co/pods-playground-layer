@@ -27,6 +27,24 @@ const viewportMap = {
   phone: 'phone',
 } as const
 
+type ResponsiveNumber = number | { desktop?: number; tablet?: number; phone?: number }
+
+function rangeValue(key: 'min' | 'max' | 'step'): number | undefined {
+  const raw = (props.field as any)?.[key] as ResponsiveNumber | undefined
+  if (raw == null) return undefined
+  if (typeof raw === 'number') return raw
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const vp = viewportMap[props.viewport]
+    const v = (raw as any)[vp]
+    if (typeof v === 'number') return v
+  }
+  return undefined
+}
+
+const currentMin = computed(() => rangeValue('min'))
+const currentMax = computed(() => rangeValue('max'))
+const currentStep = computed(() => rangeValue('step'))
+
 const currentValue = computed(() => {
   const responsiveValue = props.modelValue[props.field.name] as Record<string, unknown> | undefined
   if (responsiveValue && typeof responsiveValue === 'object' && !Array.isArray(responsiveValue)) {
@@ -92,9 +110,9 @@ function handleTabChange(value: string | number) {
           class="flex-1"
           size="sm"
           :model-value="Number(currentValue) || 0"
-          :min="(field.min as number) ?? 0"
-          :max="(field.max as number) ?? 100"
-          :step="(field.step as number) ?? 1"
+          :min="currentMin ?? 0"
+          :max="currentMax ?? 100"
+          :step="currentStep ?? 1"
           :tooltip="true"
           @update:model-value="(val) => updateValue(Array.isArray(val) ? val[0] : val)"
         />
@@ -108,9 +126,9 @@ function handleTabChange(value: string | number) {
         class="w-full"
         size="sm"
         :model-value="Number(currentValue) || 0"
-        :min="(field.min as number) ?? undefined"
-        :max="(field.max as number) ?? undefined"
-        :step="(field.step as number) ?? 1"
+        :min="currentMin ?? undefined"
+        :max="currentMax ?? undefined"
+        :step="currentStep ?? 1"
         @update:model-value="updateValue"
       />
 
