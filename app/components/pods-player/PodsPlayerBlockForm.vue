@@ -354,6 +354,7 @@ function removeRepeaterItem(block: string, idx: number) {
     <PodsPlayerResponsiveField
       v-else-if="field.responsive && !isHidden(field)"
       v-show="isVisible(field)"
+      class="mb-4 last:mb-0"
       :field="field"
       :model-value="modelValue"
       :viewport="viewport || 'laptop'"
