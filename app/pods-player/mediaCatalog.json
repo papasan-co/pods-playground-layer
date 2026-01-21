@@ -74,7 +74,7 @@
     "title": "Volunteers Sorting Donations",
     "orientation": "landscape",
     "kind": "photo",
-    "roles": ["editorial", "campaign", "nonprofit"],
+    "roles": ["editorial", "campaign", "nonprofit", "community"],
     "alt": "Volunteers organizing donated items into labeled boxes",
     "tags": ["volunteer", "donations", "nonprofit", "community"],
     "safeForTextOverlay": false
@@ -84,7 +84,7 @@
     "title": "Team Reviewing Work Together",
     "orientation": "landscape",
     "kind": "photo",
-    "roles": ["editorial", "card", "team"],
+    "roles": ["editorial", "card", "team", "community"],
     "alt": "A diverse group of people collaborating around a table with laptops",
     "tags": ["team", "collaboration", "work", "planning"],
     "safeForTextOverlay": false

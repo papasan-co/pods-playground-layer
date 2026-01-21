@@ -76,6 +76,14 @@ function selectItems(field: FormField & { options?: Record<string, string> | str
   return []
 }
 
+function sliderValue(name: string | undefined): string {
+  if (!name) return ''
+  const v = props.modelValue[name]
+  if (v === undefined || v === null || v === '') return ''
+  const n = Number(v)
+  return Number.isFinite(n) ? String(n) : String(v)
+}
+
 function makeKey() {
   // stable-enough for UI lists; fixture data can also include its own keys
   return Math.random().toString(36).slice(2, 8)
@@ -255,7 +263,17 @@ function removeRepeaterItem(block: string, idx: number) {
             @update:viewport="(val) => emit('update:viewport', val)"
           />
 
-          <UFormField v-else :label="child.label" class="mb-2">
+          <UFormField
+            v-else
+            :label="child.type === 'slider' ? undefined : child.label"
+            class="mb-2"
+          >
+            <template v-if="child.type === 'slider'" #label>
+              <div class="flex items-center justify-between gap-2">
+                <span>{{ child.label }}</span>
+                <span class="text-xs text-gray-500 tabular-nums">{{ sliderValue(child.name as string) }}</span>
+              </div>
+            </template>
             <UInput
               v-if="child.type === 'input'"
               class="w-full"
@@ -346,9 +364,15 @@ function removeRepeaterItem(block: string, idx: number) {
     <UFormField
       v-else-if="!isHidden(field)"
       v-show="isVisible(field)"
-      :label="field.label"
+      :label="field.type === 'slider' ? undefined : field.label"
       class="mb-4 last:mb-0"
     >
+      <template v-if="field.type === 'slider'" #label>
+        <div class="flex items-center justify-between gap-2">
+          <span>{{ field.label }}</span>
+          <span class="text-xs text-gray-500 tabular-nums">{{ sliderValue(field.name as string) }}</span>
+        </div>
+      </template>
       <UInput
         v-if="field.type === 'input'"
         class="w-full"
