@@ -90,6 +90,37 @@ function normaliseRepeater(value: unknown): RepeaterItem[] {
   }))
 }
 
+const repeaterOpen = reactive<Record<string, Record<string, boolean>>>({})
+function itemKey(item: RepeaterItem, idx: number): string {
+  return String((item as any)?._key ?? idx)
+}
+function isItemOpen(block: string, key: string): boolean {
+  return Boolean(repeaterOpen[block]?.[key])
+}
+function setItemOpen(block: string, key: string, open: boolean) {
+  repeaterOpen[block] ??= {}
+  repeaterOpen[block]![key] = open
+}
+function toggleItemOpen(block: string, key: string) {
+  setItemOpen(block, key, !isItemOpen(block, key))
+}
+
+function summarizeRepeaterItem(item: RepeaterItem, idx: number): string {
+  const label = typeof item.label === 'string' ? item.label : ''
+  const prefix = typeof item.prefix === 'string' ? item.prefix : ''
+  const suffix = typeof item.suffix === 'string' ? item.suffix : ''
+  const value = item.value ?? item.end ?? item.start
+  const valueStr =
+    typeof value === 'number' || typeof value === 'string'
+      ? String(value)
+      : ''
+
+  if (label && valueStr) return `${label} — ${prefix}${valueStr}${suffix}`
+  if (label) return label
+  if (valueStr) return `${prefix}${valueStr}${suffix}`
+  return `Item #${idx + 1}`
+}
+
 const lists = new Map<string, ReturnType<typeof shallowRef<RepeaterItem[]>>>()
 function listFor(block: string) {
   if (!lists.has(block)) lists.set(block, shallowRef(normaliseRepeater(props.modelValue[block])))
@@ -436,33 +467,65 @@ function removeRepeaterItem(block: string, idx: number) {
             class="repeater-card rounded-md border border-gray-200 dark:border-gray-700 p-3 transition-opacity"
             :class="{ 'opacity-30': (item as any)._removing }"
           >
-            <div class="flex items-center justify-between mb-2">
-              <div class="flex items-center gap-2">
-                <span class="repeater-handle cursor-grab text-gray-400">
-                  <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
-                </span>
-                <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                  {{ field.label }} #{{ idx + 1 }}
-                </span>
-              </div>
-              <UButton
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                icon="i-lucide-trash"
-                @click="removeRepeaterItem(field.name, idx)"
-              />
-            </div>
+            <UCollapsible
+              :open="isItemOpen(field.name, itemKey(item as any, idx))"
+              @update:open="(v) => setItemOpen(field.name, itemKey(item as any, idx), Boolean(v))"
+              :unmount-on-hide="true"
+            >
+              <template #default="{ open }">
+                <div class="flex items-start justify-between gap-2">
+                  <button
+                    type="button"
+                    class="flex-1 text-left min-w-0"
+                    @click="toggleItemOpen(field.name, itemKey(item as any, idx))"
+                  >
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="repeater-handle cursor-grab text-gray-400" @click.stop>
+                        <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
+                      </span>
+                      <div class="min-w-0">
+                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                          {{ field.label }} #{{ idx + 1 }}
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {{ summarizeRepeaterItem(item as any, idx) }}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
 
-            <div class="space-y-3">
-              <PodsPlayerBlockForm
-                :fields="(field.fields || []) as any"
-                :model-value="(item as any)"
-                :viewport="viewport"
-                @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
-                @update:viewport="(val) => emit('update:viewport', val)"
-              />
-            </div>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      icon="i-lucide-chevron-down"
+                      :class="{ 'rotate-180': open }"
+                      @click.stop="toggleItemOpen(field.name, itemKey(item as any, idx))"
+                    />
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      icon="i-lucide-trash"
+                      @click.stop="removeRepeaterItem(field.name, idx)"
+                    />
+                  </div>
+                </div>
+              </template>
+
+              <template #content>
+                <div class="pt-3 space-y-3">
+                  <PodsPlayerBlockForm
+                    :fields="(field.fields || []) as any"
+                    :model-value="(item as any)"
+                    :viewport="viewport"
+                    @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
+                    @update:viewport="(val) => emit('update:viewport', val)"
+                  />
+                </div>
+              </template>
+            </UCollapsible>
           </div>
         </div>
 
