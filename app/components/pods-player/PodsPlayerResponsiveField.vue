@@ -56,6 +56,32 @@ const currentValue = computed(() => {
   return props.field.default ?? (props.field.type === 'slider' || props.field.type === 'input-number' ? 0 : '')
 })
 
+function sliderUnitFromLabel(label: unknown): 'ms' | 's' | '' {
+  const l = String(label ?? '').toLowerCase()
+  if (!l) return ''
+  if (l.includes('(ms)') || /\bms\b/.test(l) || l.includes('millisecond')) return 'ms'
+  if (l.includes('(s)') || /\bsec\b/.test(l) || l.includes('second')) return 's'
+  return ''
+}
+
+function formatSliderValue(value: unknown): string {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return ''
+  const unit = sliderUnitFromLabel((props.field as any)?.label)
+  if (unit === 'ms') return `${Math.round(n)}ms`
+  if (unit === 's') {
+    const str =
+      Number.isInteger(n)
+        ? String(n)
+        : n
+            .toFixed(2)
+            .replace(/0+$/, '')
+            .replace(/\.$/, '')
+    return `${str}s`
+  }
+  return String(n)
+}
+
 function normalizeValue(value: unknown) {
   return Array.isArray(value) ? value[0] : value
 }
@@ -105,9 +131,12 @@ function handleTabChange(value: string | number) {
     </div>
 
     <div>
-      <div v-if="field.type === 'slider'" class="flex items-center gap-3">
+      <div v-if="field.type === 'slider'" class="space-y-2">
+        <div class="flex justify-end">
+          <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(currentValue) }}</span>
+        </div>
         <USlider
-          class="flex-1"
+          class="w-full"
           size="sm"
           :model-value="Number(currentValue) || 0"
           :min="currentMin ?? 0"
@@ -116,9 +145,6 @@ function handleTabChange(value: string | number) {
           :tooltip="true"
           @update:model-value="(val) => updateValue(Array.isArray(val) ? val[0] : val)"
         />
-        <span class="text-sm text-gray-600 dark:text-gray-400 font-mono min-w-[3rem] text-right">
-          {{ Number(currentValue) || 0 }}
-        </span>
       </div>
 
       <UInputNumber

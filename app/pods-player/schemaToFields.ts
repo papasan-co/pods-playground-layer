@@ -28,6 +28,19 @@ export function schemaToFields(schema: unknown): FormField[] {
 
     const type = (propSchema as any).type
 
+    // Special-case geopoints: treat { lat: number, lng: number } as a single control.
+    if (type === 'object' && (propSchema as any).properties) {
+      const p = (propSchema as any).properties as Record<string, any>
+      const latSchema = p?.lat
+      const lngSchema = p?.lng
+      const isLat = latSchema && (latSchema.type === 'number' || latSchema.type === 'integer')
+      const isLng = lngSchema && (lngSchema.type === 'number' || lngSchema.type === 'integer')
+      if (isLat && isLng) {
+        out.push({ name: key, label: labelFor(key, propSchema as any), type: 'geopoint' } as any)
+        continue
+      }
+    }
+
     if (type === 'object' && (propSchema as any).properties) {
       out.push({
         name: key,

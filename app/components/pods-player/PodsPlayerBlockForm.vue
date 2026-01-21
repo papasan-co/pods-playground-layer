@@ -5,6 +5,7 @@ import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
 import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
+import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -76,12 +77,37 @@ function selectItems(field: FormField & { options?: Record<string, string> | str
   return []
 }
 
-function sliderValue(name: string | undefined): string {
+function sliderUnitFromLabel(label: unknown): 'ms' | 's' | '' {
+  const l = String(label ?? '').toLowerCase()
+  if (!l) return ''
+  if (l.includes('(ms)') || /\bms\b/.test(l) || l.includes('millisecond')) return 'ms'
+  if (l.includes('(s)') || /\bsec\b/.test(l) || l.includes('second')) return 's'
+  return ''
+}
+
+function formatSliderValue(field: FormField): string {
+  const name = field?.name
   if (!name) return ''
   const v = props.modelValue[name]
   if (v === undefined || v === null || v === '') return ''
   const n = Number(v)
-  return Number.isFinite(n) ? String(n) : String(v)
+  if (!Number.isFinite(n)) return String(v)
+
+  const unit = sliderUnitFromLabel((field as any)?.label)
+  if (unit === 'ms') {
+    return `${Math.round(n)}ms`
+  }
+  if (unit === 's') {
+    const str =
+      Number.isInteger(n)
+        ? String(n)
+        : n
+            .toFixed(2)
+            .replace(/0+$/, '')
+            .replace(/\.$/, '')
+    return `${str}s`
+  }
+  return String(n)
 }
 
 function makeKey() {
@@ -271,7 +297,7 @@ function removeRepeaterItem(block: string, idx: number) {
             <template v-if="child.type === 'slider'" #label>
               <div class="flex items-center justify-between gap-2">
                 <span>{{ child.label }}</span>
-                <span class="text-xs text-gray-500 tabular-nums">{{ sliderValue(child.name as string) }}</span>
+                <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(child as any) }}</span>
               </div>
             </template>
             <UInput
@@ -339,6 +365,11 @@ function removeRepeaterItem(block: string, idx: number) {
               :constraint="(child as any)['x-ui']"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
+            <PodsPlayerGeoPointPicker
+              v-else-if="child.type === 'geopoint'"
+              :model-value="modelValue[child.name as string] as any"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
             <UInput
               v-else
               class="w-full"
@@ -371,7 +402,7 @@ function removeRepeaterItem(block: string, idx: number) {
       <template v-if="field.type === 'slider'" #label>
         <div class="flex items-center justify-between gap-2">
           <span>{{ field.label }}</span>
-          <span class="text-xs text-gray-500 tabular-nums">{{ sliderValue(field.name as string) }}</span>
+          <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(field as any) }}</span>
         </div>
       </template>
       <UInput
@@ -477,6 +508,11 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'medias'"
         :model-value="modelValue[field.name] as string"
         :constraint="(field as any)['x-ui']"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
+      <PodsPlayerGeoPointPicker
+        v-else-if="field.type === 'geopoint'"
+        :model-value="modelValue[field.name] as any"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
 

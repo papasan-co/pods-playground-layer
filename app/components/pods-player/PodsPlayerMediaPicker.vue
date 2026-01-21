@@ -28,6 +28,25 @@ const roles = computed<string[]>(() => (Array.isArray(constraint.value.roles) ? 
 
 const selected = computed(() => findByUrl(props.modelValue))
 
+function shortNameFromUrl(raw: string | undefined): string {
+  const v = String(raw || '').trim()
+  if (!v) return ''
+  try {
+    const u = new URL(v, window?.location?.origin || 'http://localhost')
+    const path = u.pathname || ''
+    const last = path.split('/').filter(Boolean).pop() || ''
+    return last || v
+  } catch {
+    // best-effort for non-URL values
+    const noHash = v.split('#')[0] || v
+    const noQuery = noHash.split('?')[0] || noHash
+    const last = noQuery.split('/').filter(Boolean).pop() || ''
+    return last || v
+  }
+}
+
+const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(props.modelValue)))
+
 const items = computed<MediaCatalogEntry[]>(() =>
   filterCatalog({
     kind: kind.value,
@@ -60,10 +79,10 @@ function choose(it: MediaCatalogEntry) {
     <div class="flex items-center gap-2 max-w-full">
       <button
         type="button"
-        class="flex-1 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        class="flex-1 max-w-full overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
         @click="isOpen = true"
       >
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 max-w-full overflow-hidden">
           <div
             class="w-10 h-10 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 overflow-hidden shrink-0"
           >
@@ -76,12 +95,12 @@ function choose(it: MediaCatalogEntry) {
             />
           </div>
 
-          <div class="min-w-0">
+          <div class="min-w-0 max-w-full overflow-hidden">
             <div class="text-sm font-medium text-gray-700 dark:text-gray-200">
               {{ selected ? selected.title : 'Choose media…' }}
             </div>
-            <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">
-              {{ selected ? selected.filename : (modelValue || '') }}
+            <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate max-w-full">
+              {{ displaySecondary }}
             </div>
           </div>
         </div>
@@ -92,6 +111,7 @@ function choose(it: MediaCatalogEntry) {
     <UInput
       v-if="kind !== 'photo' && kind !== 'logo'"
       size="sm"
+      class="w-full"
       placeholder="Paste media URL"
       :model-value="modelValue"
       @update:model-value="(v) => emit('update:modelValue', String(v || ''))"
