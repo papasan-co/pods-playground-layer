@@ -26,6 +26,11 @@ function toKebabCase(input: string) {
     .toLowerCase()
 }
 
+function hasOwnSetter(el: HTMLElement, key: string) {
+  const d = Object.getOwnPropertyDescriptor(el, key)
+  return Boolean(d && typeof (d as any).set === 'function')
+}
+
 function setPropOrAttr(el: HTMLElement, key: string, value: unknown) {
   // Remove when undefined/null.
   if (value == null) {
@@ -39,22 +44,45 @@ function setPropOrAttr(el: HTMLElement, key: string, value: unknown) {
 
   // Prefer property assignment (preserves types). Fall back to attributes if it throws.
   const attr = toKebabCase(key)
-  // Always set attributes for primitives so VueCustomElement sees them immediately.
-  if (typeof value === 'string' || typeof value === 'number') {
-    el.setAttribute(attr, String(value))
+  const isUpgraded = hasOwnSetter(el, key)
+
+  // Primitives: in WC mode, attributes are always strings and can coerce Vue CE props.
+  // Prefer setting via property once the element is upgraded; use attrs only as a fallback.
+  if (typeof value === 'string') {
     try {
       ;(el as any)[key] = value
-    } catch {}
+      if (isUpgraded) el.removeAttribute(attr)
+      else el.setAttribute(attr, value)
+    } catch {
+      el.setAttribute(attr, value)
+    }
+    return
+  }
+
+  if (typeof value === 'number') {
+    try {
+      ;(el as any)[key] = value
+      if (isUpgraded) el.removeAttribute(attr)
+      else el.setAttribute(attr, String(value))
+    } catch {
+      el.setAttribute(attr, String(value))
+    }
     return
   }
 
   if (typeof value === 'boolean') {
-    // Boolean attrs are presence-based: do NOT write "false" as a string.
-    if (value) el.setAttribute(attr, '')
-    else el.removeAttribute(attr)
     try {
       ;(el as any)[key] = value
-    } catch {}
+      if (isUpgraded) el.removeAttribute(attr)
+      else {
+        // Boolean attrs are presence-based: do NOT write "false" as a string.
+        if (value) el.setAttribute(attr, '')
+        else el.removeAttribute(attr)
+      }
+    } catch {
+      if (value) el.setAttribute(attr, '')
+      else el.removeAttribute(attr)
+    }
     return
   }
 
@@ -117,11 +145,15 @@ async function syncAll() {
   // Second pass for complex props after microtask (helps VueCustomElement upgrade timing).
   await new Promise((r) => setTimeout(r, 0))
   for (const [k, v] of entries) {
-    if (v && typeof v === 'object') {
-      try {
-        ;(el as any)[k] = v
-        el.removeAttribute(toKebabCase(k))
-      } catch {}
+    if (v == null) continue
+    try {
+      ;(el as any)[k] = v
+    } catch {
+      // keep attr fallback
+    }
+    // Only remove attributes once the element is upgraded (prevents losing pre-upgrade fallback attrs).
+    if (hasOwnSetter(el, k)) {
+      el.removeAttribute(toKebabCase(k))
     }
   }
 }
