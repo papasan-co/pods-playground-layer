@@ -70,6 +70,21 @@ function syncCSSVars(to: Document) {
   to.documentElement.className = document.documentElement.className
 }
 
+function syncRuntime(fromWin: Window, toWin: Window) {
+  try {
+    const rt = (fromWin as any).__AUTUMN_RUNTIME__
+    if (!rt || typeof rt !== 'object') return
+    // Copy-by-value so the iframe can't accidentally mutate the parent runtime config.
+    const cloned =
+      typeof (fromWin as any).structuredClone === 'function'
+        ? (fromWin as any).structuredClone(rt)
+        : JSON.parse(JSON.stringify(rt))
+    ;(toWin as any).__AUTUMN_RUNTIME__ = cloned
+  } catch {
+    // ignore
+  }
+}
+
 function applyScrollMode(doc: Document, scrollable: boolean) {
   const html = doc.documentElement
   const body = doc.body
@@ -125,6 +140,7 @@ async function bootIframe() {
 
   const doc = iframe.contentDocument
   if (!doc) return
+  const win = iframe.contentWindow
 
   if (!miniApp) {
     doc.open()
@@ -143,6 +159,7 @@ async function bootIframe() {
 
     syncHead(document, doc)
     syncCSSVars(doc)
+    if (win) syncRuntime(window, win)
 
     obs = new MutationObserver(() => syncHead(document, doc))
     obs.observe(document.head, { childList: true })
@@ -154,6 +171,7 @@ async function bootIframe() {
   }
 
   applyScrollMode(doc, !!props.scrollable)
+  if (win) syncRuntime(window, win)
 
   if (props.scripts?.length) {
     await ensureScripts(doc, props.scripts)

@@ -135,8 +135,19 @@ async function ensureMap() {
 
   // Lazy-load to avoid forcing hosts to bundle MapLibre unless this control is used.
   await import('maplibre-gl/dist/maplibre-gl.css')
-  const mod = await import('maplibre-gl')
-  maplibregl = (mod as any).default || mod
+  /**
+   * MapLibre import notes
+   *
+   * `maplibre-gl` ships a UMD bundle at `dist/maplibre-gl.js` which reliably
+   * attaches `globalThis.maplibregl`. In some Nuxt/Vite builds the ESM import
+   * shape is inconsistent, so we use the UMD global as the stable source.
+   */
+  await import('maplibre-gl/dist/maplibre-gl.js')
+  const g = (window as any).maplibregl
+  if (!g || typeof g !== 'object' || typeof g.Map !== 'function') {
+    throw new Error('[GeoPointPicker] MapLibre did not initialize (globalThis.maplibregl missing)')
+  }
+  maplibregl = g
 
   const key = runtimeMaptilerKey()
   const styleUrl = key
