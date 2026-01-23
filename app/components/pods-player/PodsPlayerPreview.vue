@@ -29,6 +29,24 @@ const wcScripts = ref<string[]>([])
 const wcTag = ref<string | null>(null)
 const wcReady = ref(false)
 
+const vueScripts = ref<string[]>([])
+const vueReady = ref(false)
+
+async function renderVueRuntimeIntoIframe() {
+  if (!import.meta.client) return
+  if (props.mode !== 'vue') return
+  if (!vueReady.value) return
+  if (!props.pod?.slug) return
+
+  // The iframe is hosted by PodsPlayerPreviewDevice; find it and call into the runtime API.
+  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
+  const win = frame?.contentWindow as any
+  const api = win?.__AUTUMN_PODS_VUE__
+  if (!api || typeof api.renderPod !== 'function') return
+
+  api.renderPod({ slug: props.pod.slug, mountSelector: '[data-pods-vue-mount="1"]', props: props.previewProps || {} })
+}
+
 watch(
   () => [props.pod?.slug, props.mode] as const,
   async ([slug, mode]) => {
@@ -37,6 +55,8 @@ watch(
     wcScripts.value = []
     wcTag.value = null
     wcReady.value = false
+    vueScripts.value = []
+    vueReady.value = false
 
     if (!slug || !props.pod) return
 
@@ -48,7 +68,7 @@ watch(
         }
         const mod = await runtime.loadSfcComponent(props.pod)
         Comp.value = markRaw(mod as any)
-      } else {
+      } else if (mode === 'wc') {
         if (!runtime.ensureRuntimeLoaded) {
           throw new Error('Web Component mode is not supported by this host.')
         }
@@ -56,6 +76,15 @@ watch(
         wcScripts.value = ensured.bundleUrls ?? []
         wcTag.value = ensured.webComponentTag ?? null
         wcReady.value = ensured.ready && wcScripts.value.length === 0
+      } else if (mode === 'vue') {
+        if (!runtime.ensureRuntimeLoaded) {
+          throw new Error('Vue runtime mode is not supported by this host.')
+        }
+        const ensured = await runtime.ensureRuntimeLoaded(props.pod)
+        vueScripts.value = ensured.vueBundleUrls ?? []
+        vueReady.value = ensured.ready && vueScripts.value.length === 0
+      } else {
+        throw new Error(`Unknown mode: ${mode}`)
       }
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -67,8 +96,15 @@ watch(
 )
 
 function handleScriptsLoaded() {
-  wcReady.value = true
+  if (props.mode === 'wc') wcReady.value = true
+  if (props.mode === 'vue') vueReady.value = true
 }
+
+watch(
+  () => [props.mode, vueReady.value, props.pod?.slug, props.previewProps] as const,
+  () => void renderVueRuntimeIntoIframe(),
+  { deep: true, immediate: true, flush: 'post' },
+)
 </script>
 
 <template>
@@ -76,7 +112,8 @@ function handleScriptsLoaded() {
     <PodsPlayerPreviewDevice
       :device="viewport"
       :scripts="mode === 'wc' ? wcScripts : []"
-      :ready="mode === 'sfc' ? true : wcReady"
+      :module-scripts="mode === 'vue' ? vueScripts : []"
+      :ready="mode === 'sfc' ? true : mode === 'wc' ? wcReady : vueReady"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
@@ -95,6 +132,9 @@ function handleScriptsLoaded() {
       </template>
       <template v-else-if="mode === 'wc' && wcTag">
         <PodsPlayerWebComponentMount :tag="wcTag" :props="previewProps" />
+      </template>
+      <template v-else-if="mode === 'vue'">
+        <div class="w-full h-full" data-pods-vue-mount="1" />
       </template>
       <template v-else>
         <div class="w-full h-full flex items-center justify-center">

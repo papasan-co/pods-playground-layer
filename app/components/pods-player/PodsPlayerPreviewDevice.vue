@@ -21,6 +21,11 @@ const props = defineProps<{
    */
   scripts?: string[]
   /**
+   * Module scripts (ESM) to inject into the iframe.
+   * Used by the Vue-CDN runtime bundle.
+   */
+  moduleScripts?: string[]
+  /**
    * If false, the slot will not be mounted (useful when waiting on script readiness).
    */
   ready?: boolean
@@ -134,6 +139,29 @@ async function ensureScripts(doc: Document, urls: string[]) {
   }
 }
 
+async function ensureModuleScripts(doc: Document, urls: string[]) {
+  const unique = [...new Set(urls)].filter(Boolean)
+  if (unique.length === 0) return
+
+  const existing = new Set(
+    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map((s) => (s as HTMLScriptElement).src),
+  )
+
+  for (const url of unique) {
+    if (existing.has(url)) continue
+    await new Promise<void>((resolve, reject) => {
+      const s = doc.createElement('script')
+      s.type = 'module'
+      s.src = url
+      s.async = false
+      s.dataset.podsPlayerModule = '1'
+      s.onload = () => resolve()
+      s.onerror = () => reject(new Error(`Failed to load module script: ${url}`))
+      doc.head.appendChild(s)
+    })
+  }
+}
+
 async function bootIframe() {
   const iframe = iframeRef.value
   if (!iframe) return
@@ -173,6 +201,11 @@ async function bootIframe() {
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
+  if (props.moduleScripts?.length) {
+    await ensureModuleScripts(doc, props.moduleScripts)
+    emit('scriptsLoaded')
+  }
+
   if (props.scripts?.length) {
     await ensureScripts(doc, props.scripts)
     emit('scriptsLoaded')
@@ -183,6 +216,7 @@ watchEffect(() => {
   void props.device
   // Ensure script injection runs when the script list changes (WC mode).
   void props.scripts
+  void props.moduleScripts
   void props.ready
   void props.scrollable
   slotVNode.value =

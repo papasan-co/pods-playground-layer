@@ -10,7 +10,7 @@
  * Host apps provide the implementation via `usePodsPlayerRuntime()`.
  */
 
-export type PodsPlayerMode = 'sfc' | 'wc'
+export type PodsPlayerMode = 'sfc' | 'wc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
 
 export interface PodListItem {
@@ -63,6 +63,12 @@ export interface PodsPlayerEnsureResult {
    * Bundle URLs required for WC mode. The layer will inject them into the iframe.
    */
   bundleUrls?: string[]
+
+  /**
+   * Vue ESM runtime bundle URL(s) required for vue runtime mode.
+   * These should be loaded as module scripts inside the preview iframe.
+   */
+  vueBundleUrls?: string[]
 
   /**
    * Whether it is safe to mount the preview element.
