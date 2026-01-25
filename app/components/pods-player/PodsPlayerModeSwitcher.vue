@@ -18,7 +18,7 @@ const value = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-const visible = computed(() => (props.supportedModes ?? ['sfc', 'wc', 'vue']).length > 1)
+const visible = computed(() => (props.supportedModes ?? ['sfc', 'vue']).length > 1)
 </script>
 
 <template>
@@ -28,7 +28,6 @@ const visible = computed(() => (props.supportedModes ?? ['sfc', 'wc', 'vue']).le
     :options="[
       { label: 'SFC', value: 'sfc', disabled: !(supportedModes || []).includes('sfc') },
       { label: 'Vue (CDN)', value: 'vue', disabled: !(supportedModes || []).includes('vue') },
-      { label: 'Web Component', value: 'wc', disabled: !(supportedModes || []).includes('wc') },
     ]"
     size="sm"
   />

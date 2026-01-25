@@ -2,14 +2,13 @@
 import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-player/types'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
-import PodsPlayerWebComponentMount from './PodsPlayerWebComponentMount.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerPreview
  *
  * Shared preview column for the pod playground.
  * - SFC mode: host runtime loads the Vue component
- * - WC mode: host runtime supplies bundle URLs + webComponentTag; layer injects bundles into an iframe
+ * - Vue mode: host runtime supplies Vue runtime ESM URL(s); layer injects them as module scripts into an iframe
  */
 
 const props = defineProps<{
@@ -24,10 +23,6 @@ const runtime = usePodsPlayerRuntime()
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-
-const wcScripts = ref<string[]>([])
-const wcTag = ref<string | null>(null)
-const wcReady = ref(false)
 
 const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
@@ -52,9 +47,6 @@ watch(
   async ([slug, mode]) => {
     Comp.value = null
     error.value = null
-    wcScripts.value = []
-    wcTag.value = null
-    wcReady.value = false
     vueScripts.value = []
     vueReady.value = false
 
@@ -68,14 +60,6 @@ watch(
         }
         const mod = await runtime.loadSfcComponent(props.pod)
         Comp.value = markRaw(mod as any)
-      } else if (mode === 'wc') {
-        if (!runtime.ensureRuntimeLoaded) {
-          throw new Error('Web Component mode is not supported by this host.')
-        }
-        const ensured = await runtime.ensureRuntimeLoaded(props.pod)
-        wcScripts.value = ensured.bundleUrls ?? []
-        wcTag.value = ensured.webComponentTag ?? null
-        wcReady.value = ensured.ready && wcScripts.value.length === 0
       } else if (mode === 'vue') {
         if (!runtime.ensureRuntimeLoaded) {
           throw new Error('Vue runtime mode is not supported by this host.')
@@ -96,7 +80,6 @@ watch(
 )
 
 function handleScriptsLoaded() {
-  if (props.mode === 'wc') wcReady.value = true
   if (props.mode === 'vue') vueReady.value = true
 }
 
@@ -111,9 +94,8 @@ watch(
   <div class="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4 min-h-0">
     <PodsPlayerPreviewDevice
       :device="viewport"
-      :scripts="mode === 'wc' ? wcScripts : []"
       :module-scripts="mode === 'vue' ? vueScripts : []"
-      :ready="mode === 'sfc' ? true : mode === 'wc' ? wcReady : vueReady"
+      :ready="mode === 'sfc' ? true : vueReady"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
@@ -129,9 +111,6 @@ watch(
       </template>
       <template v-else-if="mode === 'sfc' && Comp">
         <component :is="Comp" v-bind="previewProps" />
-      </template>
-      <template v-else-if="mode === 'wc' && wcTag">
-        <PodsPlayerWebComponentMount :tag="wcTag" :props="previewProps" />
       </template>
       <template v-else-if="mode === 'vue'">
         <div class="w-full h-full" data-pods-vue-mount="1" />

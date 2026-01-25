@@ -5,12 +5,12 @@
  *
  * The goal is to keep the layer UI deterministic and host-agnostic:
  * - `cms-story-components` playground can render SFCs directly
- * - `cms-frontend` can render Web Components from a published PodPack bundle
+ * - artifact-based viewers can render via the Vue ESM runtime bundle
  *
  * Host apps provide the implementation via `usePodsPlayerRuntime()`.
  */
 
-export type PodsPlayerMode = 'sfc' | 'wc' | 'vue'
+export type PodsPlayerMode = 'sfc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
 
 export interface PodListItem {
@@ -27,11 +27,6 @@ export interface PodListItem {
    */
   folderName?: string
 
-  /**
-   * Web-component tag (must contain a hyphen).
-   * In CMS mode this comes from the published manifest.
-   */
-  webComponentTag?: string
 }
 
 export interface PodDetails extends PodListItem {
@@ -55,16 +50,6 @@ export interface PodDetails extends PodListItem {
 
 export interface PodsPlayerEnsureResult {
   /**
-   * For WC mode: the tag to mount once bundles are loaded.
-   */
-  webComponentTag?: string | null
-
-  /**
-   * Bundle URLs required for WC mode. The layer will inject them into the iframe.
-   */
-  bundleUrls?: string[]
-
-  /**
    * Vue ESM runtime bundle URL(s) required for vue runtime mode.
    * These should be loaded as module scripts inside the preview iframe.
    */
@@ -81,7 +66,7 @@ export interface PodsPlayerRuntime {
   /**
    * Which preview modes the host can support.
    * - cms-story-components playground: ['sfc']
-   * - cms-frontend: ['wc'] (v1)
+   * - artifact-based viewers (cms-frontend, etc): ['vue']
    */
   supportedModes: PodsPlayerMode[]
 
@@ -116,7 +101,7 @@ export interface PodsPlayerRuntime {
   loadSfcComponent?(pod: PodDetails): Promise<unknown | null>
 
   /**
-   * WC mode: provide the bundle URLs + tag and/or perform any preloading.
+   * Vue runtime mode: provide the ESM runtime bundle URL(s) and/or perform any preloading.
    */
   ensureRuntimeLoaded?(pod: PodDetails): Promise<PodsPlayerEnsureResult>
 }

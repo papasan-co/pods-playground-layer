@@ -8,7 +8,7 @@ import type { PodsPlayerViewport } from '#pods-player/types'
  * A lightweight iframe host that:
  * - isolates previews (avoids custom-element collisions)
  * - mirrors styles into the iframe (for consistent UI)
- * - optionally injects external scripts (e.g., PodPack bundle.js)
+ * - optionally injects external scripts (e.g., runtime bundles)
  *
  * This is a shared primitive used by both preview modes.
  */

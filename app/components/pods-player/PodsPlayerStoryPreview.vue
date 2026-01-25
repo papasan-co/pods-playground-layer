@@ -2,7 +2,6 @@
 import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-player/types'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
-import PodsPlayerWebComponentMount from './PodsPlayerWebComponentMount.vue'
 
 /**
  * pods-player-layer.app.components.pods-player.PodsPlayerStoryPreview
@@ -27,9 +26,43 @@ const Comp = shallowRef<any>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const wcScripts = ref<string[]>([])
-const wcTag = ref<string | null>(null)
-const wcReady = ref(false)
+const vueScripts = ref<string[]>([])
+const vueReady = ref(false)
+
+/**
+ * pods-player-layer.VueRuntimeVisual
+ *
+ * Lightweight bridge that renders a pod into an iframe mount using the Vue runtime API.
+ * This component lives in the host Vue tree (mounted into the iframe DOM), but calls
+ * into the iframe's `window.__AUTUMN_PODS_VUE__` for actual pod rendering.
+ */
+const VueRuntimeVisual = defineComponent({
+  name: 'VueRuntimeVisual',
+  props: {
+    slug: { type: String, required: true },
+    step: { type: Number, required: true },
+    baseProps: { type: Object as PropType<Record<string, unknown>>, required: true },
+  },
+  setup(props) {
+    function render() {
+      if (!import.meta.client) return
+      const frame = document.querySelector<HTMLIFrameElement>('iframe[title=\"Pod preview\"]')
+      const win = frame?.contentWindow as any
+      const api = win?.__AUTUMN_PODS_VUE__
+      if (!api || typeof api.renderPod !== 'function') return
+      api.renderPod({
+        slug: props.slug,
+        mountSelector: '[data-pods-vue-mount=\"1\"]',
+        props: { ...(props.baseProps || {}), step: props.step },
+      })
+    }
+
+    onMounted(() => render())
+    onUpdated(() => render())
+
+    return () => h('div', { class: 'w-full h-full', 'data-pods-vue-mount': '1' })
+  },
+})
 
 const scenes = computed<any[]>(() => {
   const label = props.pod?.label || props.pod?.slug || 'Pod'
@@ -95,9 +128,8 @@ watch(
   async ([slug, mode]) => {
     Comp.value = null
     error.value = null
-    wcScripts.value = []
-    wcTag.value = null
-    wcReady.value = false
+    vueScripts.value = []
+    vueReady.value = false
 
     if (!slug) return
 
@@ -107,12 +139,13 @@ watch(
         if (!runtime.loadSfcComponent) throw new Error('SFC mode is not supported by this host.')
         const mod = await runtime.loadSfcComponent(props.pod)
         Comp.value = markRaw(mod as any)
-      } else {
-        if (!runtime.ensureRuntimeLoaded) throw new Error('Web Component mode is not supported by this host.')
+      } else if (mode === 'vue') {
+        if (!runtime.ensureRuntimeLoaded) throw new Error('Vue runtime mode is not supported by this host.')
         const ensured = await runtime.ensureRuntimeLoaded(props.pod)
-        wcScripts.value = ensured.bundleUrls ?? []
-        wcTag.value = ensured.webComponentTag ?? null
-        wcReady.value = ensured.ready && wcScripts.value.length === 0
+        vueScripts.value = ensured.vueBundleUrls ?? []
+        vueReady.value = ensured.ready && vueScripts.value.length === 0
+      } else {
+        throw new Error(`Unknown mode: ${mode}`)
       }
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -124,12 +157,7 @@ watch(
 )
 
 function handleScriptsLoaded() {
-  wcReady.value = true
-}
-
-function visualPropsForStep(step: number) {
-  // Always pass the current step into the visual for scrolly behaviors.
-  return { ...(props.previewProps || {}), step }
+  if (props.mode === 'vue') vueReady.value = true
 }
 </script>
 
@@ -138,8 +166,8 @@ function visualPropsForStep(step: number) {
     <PodsPlayerPreviewDevice
       :key="`${pod.slug}::${mode}::${reloadKey ?? 0}`"
       :device="viewport"
-      :scripts="mode === 'wc' ? wcScripts : []"
-      :ready="mode === 'sfc' ? true : wcReady"
+      :module-scripts="mode === 'vue' ? vueScripts : []"
+      :ready="mode === 'sfc' ? true : vueReady"
       :scrollable="true"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
@@ -163,18 +191,14 @@ function visualPropsForStep(step: number) {
                 <component
                   v-if="mode === 'sfc' && Comp"
                   :is="Comp"
-                  v-bind="visualPropsForStep(step)"
+                  v-bind="{ ...(previewProps || {}), step }"
                   class="w-full h-full"
                 />
-                <template v-else>
-                  <div v-if="!wcReady" class="w-full h-full grid place-items-center text-gray-500">Loading runtime…</div>
-                  <PodsPlayerWebComponentMount
-                    v-else-if="wcTag"
-                    :tag="wcTag"
-                    :props="visualPropsForStep(step)"
-                  />
-                  <div v-else class="w-full h-full grid place-items-center text-gray-500">No WC tag available.</div>
+                <template v-else-if="mode === 'vue'">
+                  <div v-if="!vueReady" class="w-full h-full grid place-items-center text-gray-500">Loading runtime…</div>
+                  <VueRuntimeVisual v-else :slug="pod.slug" :step="step" :base-props="previewProps || {}" />
                 </template>
+                <div v-else class="w-full h-full grid place-items-center text-gray-500">No preview available.</div>
               </div>
             </template>
           </StoryScrollyPage>
