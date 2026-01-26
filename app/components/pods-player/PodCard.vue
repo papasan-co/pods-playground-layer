@@ -16,6 +16,18 @@ defineProps<{
 <template>
   <NuxtLink :to="to" class="group">
     <UCard class="h-full hover:shadow-lg transition-shadow">
+      <div v-if="pod.previewImageUrl" class="-m-4 mb-3">
+        <div class="aspect-[3/2] overflow-hidden rounded-t-lg bg-gray-100 dark:bg-gray-800">
+          <img
+            :src="pod.previewImageUrl"
+            :alt="`${pod.label} preview`"
+            class="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
+            data-pod-thumb
+          />
+        </div>
+      </div>
       <template #header>
         <div class="flex items-center gap-2">
           <UIcon

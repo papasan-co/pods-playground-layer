@@ -19,6 +19,11 @@ export interface PodListItem {
   description?: string
   version?: string
   category?: string
+  /**
+   * Optional preview thumbnail URL for browse/list views.
+   * Hosts can compute this from `pods.json` preview metadata (preferred).
+   */
+  previewImageUrl?: string | null
 
   /**
    * Optional folder name for source-based (SFC) loading patterns.
