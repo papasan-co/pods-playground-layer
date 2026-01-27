@@ -1,5 +1,5 @@
 /**
- * pods-player-layer/app/pods-player/fixtures/sharedMedia.ts
+ * pods-playground-layer/app/pods-player/fixtures/sharedMedia.ts
  *
  * Shared fixture assets that both the CMS and the components playground can use
  * for initial preview defaults.

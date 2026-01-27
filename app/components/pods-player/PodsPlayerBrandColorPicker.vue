@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useDesignTokens } from '../../composables/pods-player/useDesignTokens'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerBrandColorPicker
+ * pods-playground-layer.app.components.pods-player.PodsPlayerBrandColorPicker
  *
  * Shared UI control for choosing a brand color:
  * - select from token groups/shades (driven by CSS vars)

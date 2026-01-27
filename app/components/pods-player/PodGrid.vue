@@ -2,7 +2,7 @@
 import type { PodListItem } from '#pods-player/types'
 
 /**
- * pods-player-layer.app.components.pods-player.PodGrid
+ * pods-playground-layer.app.components.pods-player.PodGrid
  *
  * Shared pod browse UI:
  * - search

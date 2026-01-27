@@ -4,7 +4,7 @@ import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerStoryPreview
+ * pods-playground-layer.app.components.pods-player.PodsPlayerStoryPreview
  *
  * A reactive “Scroll mode” preview renderer that stays in the same Vue tree as the
  * right-hand form panel, so updates to `previewProps` re-render instantly.
@@ -30,7 +30,7 @@ const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
 
 /**
- * pods-player-layer.VueRuntimeVisual
+ * pods-playground-layer.VueRuntimeVisual
  *
  * Lightweight bridge that renders a pod into an iframe mount using the Vue runtime API.
  * This component lives in the host Vue tree (mounted into the iframe DOM), but calls

@@ -3,7 +3,7 @@ import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerResponsiveField
+ * pods-playground-layer.app.components.pods-player.PodsPlayerResponsiveField
  *
  * A form control wrapper for fields marked `responsive: true` in YAML.
  * It keeps three values (desktop/tablet/phone) and edits the one that matches

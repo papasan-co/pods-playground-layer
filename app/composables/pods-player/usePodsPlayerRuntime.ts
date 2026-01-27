@@ -1,7 +1,7 @@
 import type { PodsPlayerRuntime } from '#pods-player/types'
 
 /**
- * pods-player-layer.app.composables.pods-player.usePodsPlayerRuntime
+ * pods-playground-layer.app.composables.pods-player.usePodsPlayerRuntime
  *
  * The Pods Player UI is shared via a Nuxt layer, but pod data + runtime loading
  * is host-specific. Each consuming app MUST override this composable.

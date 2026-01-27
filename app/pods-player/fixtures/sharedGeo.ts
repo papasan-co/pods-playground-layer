@@ -1,5 +1,5 @@
 /**
- * pods-player-layer/app/pods-player/fixtures/sharedGeo.ts
+ * pods-playground-layer/app/pods-player/fixtures/sharedGeo.ts
  *
  * Shared geo assets used by fixtures. These are served from the layer's public
  * folder under `/pods-player-assets/geo/*`.

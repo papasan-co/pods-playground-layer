@@ -1,7 +1,7 @@
 import type { FormField } from '#pods-player/formMapper'
 
 /**
- * pods-player-layer.app.pods-player.schemaToFields
+ * pods-playground-layer.app.pods-player.schemaToFields
  *
  * Fallback: derive a simple YAML-like `FormField[]` from a JSON Schema.
  *

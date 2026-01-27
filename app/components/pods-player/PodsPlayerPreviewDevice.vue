@@ -3,7 +3,7 @@ import { createApp, h } from 'vue'
 import type { PodsPlayerViewport } from '#pods-player/types'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerPreviewDevice
+ * pods-playground-layer.app.components.pods-player.PodsPlayerPreviewDevice
  *
  * A lightweight iframe host that:
  * - isolates previews (avoids custom-element collisions)

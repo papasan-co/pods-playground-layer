@@ -4,7 +4,7 @@ import PodsPlayerSingle from './PodsPlayerSingle.vue'
 import { useSlots } from 'vue'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerView
+ * pods-playground-layer.app.components.pods-player.PodsPlayerView
  *
  * “Page-level” pod view composition (but NOT a Nuxt route).
  *

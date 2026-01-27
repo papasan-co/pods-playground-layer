@@ -1,5 +1,5 @@
 /**
- * pods-player-layer/app/pods-player/formMapper.ts
+ * pods-playground-layer/app/pods-player/formMapper.ts
  *
  * Dot-path mapping between YAML form fields and a nested props payload.
  *

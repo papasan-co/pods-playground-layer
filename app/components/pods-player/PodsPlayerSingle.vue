@@ -10,7 +10,7 @@ import PodsPlayerPreview from './PodsPlayerPreview.vue'
 import PodsPlayerMetaPanel from './PodsPlayerMetaPanel.vue'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerSingle
+ * pods-playground-layer.app.components.pods-player.PodsPlayerSingle
  *
  * The canonical “single pod playground” layout:
  * - header (title, viewport switcher, optional mode switcher, reload)

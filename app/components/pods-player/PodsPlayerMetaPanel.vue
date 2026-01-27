@@ -6,7 +6,7 @@ import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerBlockForm from './PodsPlayerBlockForm.vue'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerMetaPanel
+ * pods-playground-layer.app.components.pods-player.PodsPlayerMetaPanel
  *
  * Right-side panel shown in the pod playground:
  * - metadata (slug/version/category)

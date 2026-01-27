@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 
 /**
- * pods-player-layer.app.composables.pods-player.useDesignTokens
+ * pods-playground-layer.app.composables.pods-player.useDesignTokens
  *
  * A minimal “design tokens” bridge used by shared playground UI components.
  *

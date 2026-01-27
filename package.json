@@ -1,5 +1,5 @@
 {
-  "name": "pods-player-layer",
+  "name": "pods-playground-layer",
   "private": true,
   "type": "module",
   "dependencies": {

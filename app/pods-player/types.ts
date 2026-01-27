@@ -1,5 +1,5 @@
 /**
- * pods-player-layer/app/pods-player/types.ts
+ * pods-playground-layer/app/pods-player/types.ts
  *
  * Shared types for the Pods Player layer.
  *

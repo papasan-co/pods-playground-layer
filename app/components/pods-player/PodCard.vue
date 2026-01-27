@@ -2,7 +2,7 @@
 import type { PodListItem } from '#pods-player/types'
 
 /**
- * pods-player-layer.app.components.pods-player.PodCard
+ * pods-playground-layer.app.components.pods-player.PodCard
  *
  * Shared browse card for a pod in the library. Hosts decide routing (`to`).
  */

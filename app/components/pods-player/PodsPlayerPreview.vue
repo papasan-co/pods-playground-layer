@@ -4,7 +4,7 @@ import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerPreview
+ * pods-playground-layer.app.components.pods-player.PodsPlayerPreview
  *
  * Shared preview column for the pod playground.
  * - SFC mode: host runtime loads the Vue component

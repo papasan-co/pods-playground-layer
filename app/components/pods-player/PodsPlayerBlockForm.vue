@@ -8,7 +8,7 @@ import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 
 /**
- * pods-player-layer.app.components.pods-player.PodsPlayerBlockForm
+ * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
  *
  * YAML-driven form renderer for pods. This powers the “Form” tab in the right
  * panel. It is promoted from the `cms-story-components` playground so the CMS
