@@ -50,10 +50,16 @@ const VueRuntimeVisual = defineComponent({
       const win = frame?.contentWindow as any
       const api = win?.__AUTUMN_PODS_VUE__
       if (!api || typeof api.renderPod !== 'function') return
+
+      const googleKey = (window as any)?.__AUTUMN_RUNTIME__?.maps?.google?.key
+      const injected =
+        typeof googleKey === 'string' && googleKey
+          ? { googleMapsKey: googleKey, apiKey: googleKey }
+          : {}
       api.renderPod({
         slug: props.slug,
         mountSelector: '[data-pods-vue-mount=\"1\"]',
-        props: { ...(props.baseProps || {}), step: props.step },
+        props: { ...(props.baseProps || {}), ...injected, step: props.step },
       })
     }
 

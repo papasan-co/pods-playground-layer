@@ -39,7 +39,17 @@ async function renderVueRuntimeIntoIframe() {
   const api = win?.__AUTUMN_PODS_VUE__
   if (!api || typeof api.renderPod !== 'function') return
 
-  api.renderPod({ slug: props.pod.slug, mountSelector: '[data-pods-vue-mount="1"]', props: props.previewProps || {} })
+  const googleKey = (window as any)?.__AUTUMN_RUNTIME__?.maps?.google?.key
+  const injected =
+    typeof googleKey === 'string' && googleKey
+      ? { googleMapsKey: googleKey, apiKey: googleKey }
+      : {}
+
+  api.renderPod({
+    slug: props.pod.slug,
+    mountSelector: '[data-pods-vue-mount="1"]',
+    props: { ...(props.previewProps || {}), ...injected },
+  })
 }
 
 watch(
