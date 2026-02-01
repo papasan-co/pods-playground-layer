@@ -298,17 +298,28 @@ function applyFormUpdate(payload: { field: string; value: unknown }) {
     </section>
 
     <section class="w-96 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-white dark:bg-gray-900">
-      <PodsPlayerMetaPanel
+      <slot
+        name="rightPanel"
         :pod="pod"
         :schema="schema"
         :fixture="fixture"
         :model-value="flatForm"
         :viewport="viewport"
-        @update:model-value="applyFormUpdate"
-        @update:viewport="(val) => (viewport = val)"
-      />
-      <!-- Optional host extension point (e.g. AI panel) -->
-      <slot name="rightPanelFooter" />
+        :update-model-value="applyFormUpdate"
+        :update-viewport="(val: PodsPlayerViewport) => (viewport = val)"
+      >
+        <PodsPlayerMetaPanel
+          :pod="pod"
+          :schema="schema"
+          :fixture="fixture"
+          :model-value="flatForm"
+          :viewport="viewport"
+          @update:model-value="applyFormUpdate"
+          @update:viewport="(val) => (viewport = val)"
+        />
+        <!-- Optional host extension point (e.g. AI panel) -->
+        <slot name="rightPanelFooter" />
+      </slot>
     </section>
   </div>
 </template>

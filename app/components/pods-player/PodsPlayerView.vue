@@ -31,6 +31,9 @@ const slots = useSlots()
     <template v-if="slots.preview" #preview="slotProps">
       <slot name="preview" v-bind="slotProps" />
     </template>
+    <template v-if="slots.rightPanel" #rightPanel="slotProps">
+      <slot name="rightPanel" v-bind="slotProps" />
+    </template>
     <template #rightPanelFooter>
       <slot name="rightPanelFooter" />
     </template>
