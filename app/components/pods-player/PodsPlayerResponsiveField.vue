@@ -102,7 +102,7 @@ function updateValue(value: unknown) {
 const tabItems = [
   { value: 'laptop', icon: 'i-stash-desktop' },
   { value: 'tablet', icon: 'i-stash-tablet' },
-  { value: 'phone', icon: 'i-stash-smartphone' },
+  { value: 'phone', icon: 'i-ph-device-mobile' },
 ]
 
 function handleTabChange(value: string | number) {
@@ -169,4 +169,3 @@ function handleTabChange(value: string | number) {
     </div>
   </div>
 </template>
-
