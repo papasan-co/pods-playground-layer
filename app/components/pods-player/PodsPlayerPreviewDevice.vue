@@ -40,14 +40,51 @@ const emit = defineEmits<{
   (e: 'scriptsLoaded'): void
 }>()
 
-const frameStyle = computed(
-  () =>
-    ({
-      laptop: { width: '1280px', height: '800px' },
-      tablet: { width: '768px', height: '1024px' },
-      phone: { width: '390px', height: '844px' },
-    })[props.device],
-)
+const frameSize = computed(() => ({
+  laptop: { width: 1662, height: 1066 },
+  tablet: { width: 900, height: 1200 },
+  phone: { width: 440, height: 860 },
+})[props.device])
+
+const frameStyle = computed(() => ({
+  width: `${frameSize.value.width}px`,
+  height: `${frameSize.value.height}px`,
+}))
+
+const hostRef = ref<HTMLDivElement | null>(null)
+const hostSize = ref({ width: 0, height: 0 })
+
+let resizeObserver: ResizeObserver | null = null
+
+onMounted(() => {
+  if (!hostRef.value || typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver((entries) => {
+    const entry = entries[0]
+    if (!entry) return
+    hostSize.value = {
+      width: entry.contentRect.width,
+      height: entry.contentRect.height,
+    }
+  })
+  resizeObserver.observe(hostRef.value)
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+})
+
+const scale = computed(() => {
+  const { width: hostW, height: hostH } = hostSize.value
+  const { width: deviceW, height: deviceH } = frameSize.value
+  if (!hostW || !hostH) return 1
+  // Keep the device's aspect ratio, only shrinking (never upscaling).
+  return Math.min(hostW / deviceW, hostH / deviceH, 1)
+})
+
+const scaledSize = computed(() => ({
+  width: Math.round(frameSize.value.width * scale.value),
+  height: Math.round(frameSize.value.height * scale.value),
+}))
 
 const iframeRef = ref<HTMLIFrameElement>()
 const slotVNode = shallowRef()
@@ -236,24 +273,37 @@ watchEffect(() => {
 </script>
 
 <template>
-  <div
-    class="preview-device self-start transition-all duration-300 ease-in-out rounded-md shadow-lg bg-gray-100 dark:bg-gray-800 max-w-full"
-    :style="frameStyle"
-  >
-    <iframe
-      ref="iframeRef"
-      class="w-full h-full border-none rounded-md"
-      sandbox="allow-same-origin allow-scripts"
-      title="Pod preview"
-    />
+  <div ref="hostRef" class="preview-device-host w-full h-full flex items-center justify-center">
+    <div class="preview-device-slot" :style="{ width: `${scaledSize.width}px`, height: `${scaledSize.height}px` }">
+      <div
+        class="preview-device transition-all duration-300 ease-in-out rounded-md shadow-lg bg-gray-100 dark:bg-gray-800"
+        :style="[
+          frameStyle,
+          {
+            position: 'absolute',
+            top: '0px',
+            left: '0px',
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+          },
+        ]"
+      >
+        <iframe
+          ref="iframeRef"
+          class="w-full h-full border-none rounded-md"
+          sandbox="allow-same-origin allow-scripts"
+          title="Pod preview"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .preview-device {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  overflow: hidden;
+}
+.preview-device-slot {
+  position: relative;
 }
 </style>
-
