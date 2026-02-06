@@ -6,6 +6,7 @@ import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
 import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
+import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -370,6 +371,12 @@ function removeRepeaterItem(block: string, idx: number) {
               :model-value="modelValue[child.name as string] as any"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
+            <PodsPlayerIconSourceField
+              v-else-if="child.type === 'icon-source'"
+              :model-value="modelValue[child.name as string]"
+              :disabled="isReadOnly(child)"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
             <UInput
               v-else
               class="w-full"
@@ -515,6 +522,12 @@ function removeRepeaterItem(block: string, idx: number) {
         :model-value="modelValue[field.name] as any"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
+      <PodsPlayerIconSourceField
+        v-else-if="field.type === 'icon-source'"
+        :model-value="modelValue[field.name]"
+        :disabled="isReadOnly(field)"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
 
       <!-- Repeater -->
       <div v-else-if="field.type === 'repeater'">
@@ -608,4 +621,3 @@ function removeRepeaterItem(block: string, idx: number) {
   transition: opacity 0.3s ease;
 }
 </style>
-

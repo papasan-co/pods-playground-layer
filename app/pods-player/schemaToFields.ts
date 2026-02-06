@@ -31,6 +31,18 @@ export function schemaToFields(schema: unknown): FormField[] {
     // Special-case geopoints: treat { lat: number, lng: number } as a single control.
     if (type === 'object' && (propSchema as any).properties) {
       const p = (propSchema as any).properties as Record<string, any>
+      const iconTypeEnum = Array.isArray(p?.type?.enum) ? p.type.enum : null
+      const iconValueType = p?.value?.type
+      const isIconSource =
+        iconValueType === 'string' &&
+        Array.isArray(iconTypeEnum) &&
+        iconTypeEnum.includes('iconify') &&
+        iconTypeEnum.includes('svg')
+      if (isIconSource) {
+        out.push({ name: key, label: labelFor(key, propSchema as any), type: 'icon-source' } as any)
+        continue
+      }
+
       const latSchema = p?.lat
       const lngSchema = p?.lng
       const isLat = latSchema && (latSchema.type === 'number' || latSchema.type === 'integer')
@@ -80,4 +92,3 @@ export function schemaToFields(schema: unknown): FormField[] {
 
   return out
 }
-
