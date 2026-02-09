@@ -149,13 +149,13 @@ function onIconifyValueChange(value: unknown) {
         size="sm"
         :disabled="disabled"
         :model-value="source.value"
-        placeholder="Search or type icon token (e.g. lucide:rocket)"
+        placeholder="Search or type icon token (e.g. lucide:rocket, phosphor:rocket-duotone)"
         @update:model-value="onIconifyValueChange"
       />
 
       <div class="rounded-md border border-gray-200 dark:border-gray-700 p-2 space-y-2">
         <p class="text-[11px] text-gray-500 dark:text-gray-400">
-          Curated single-color icons for presentation and sales stories.
+          Curated lucide + phosphor duotone icons for presentation and sales stories.
         </p>
         <div class="max-h-52 overflow-y-auto space-y-1 pr-1">
           <button

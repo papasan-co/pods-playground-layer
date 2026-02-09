@@ -6,8 +6,8 @@ export type CuratedIcon = {
 }
 
 /**
- * Curated monochrome icons for story/presentation style UI.
- * This keeps picks visually consistent and AI/manual selection predictable.
+ * Curated icons for story/presentation style UI.
+ * Mix monoline (lucide) with a duotone accent set for richer visuals.
  */
 export const CURATED_STORY_ICONS: CuratedIcon[] = [
   { token: 'lucide:rocket', label: 'Launch', tags: ['launch', 'go-live', 'start'], useCases: ['presentation', 'sales', 'product'] },
@@ -74,4 +74,32 @@ export const CURATED_STORY_ICONS: CuratedIcon[] = [
   { token: 'lucide:map-pin', label: 'Location', tags: ['location', 'region', 'territory'], useCases: ['sales', 'support'] },
   { token: 'lucide:network', label: 'Connected Systems', tags: ['network', 'systems', 'platform'], useCases: ['product', 'presentation'] },
   { token: 'lucide:link-2', label: 'Connected', tags: ['link', 'connected', 'integration'], useCases: ['product', 'support'] },
+  { token: 'phosphor:rocket-duotone', label: 'Launch (Duotone)', tags: ['launch', 'go-live', 'start'], useCases: ['presentation', 'sales', 'product'] },
+  { token: 'phosphor:target-duotone', label: 'Target (Duotone)', tags: ['goal', 'focus', 'objective'], useCases: ['presentation', 'sales'] },
+  { token: 'phosphor:briefcase-duotone', label: 'Business (Duotone)', tags: ['business', 'work', 'b2b'], useCases: ['presentation', 'sales'] },
+  { token: 'phosphor:buildings-duotone', label: 'Enterprise (Duotone)', tags: ['enterprise', 'company', 'organization'], useCases: ['presentation', 'sales'] },
+  { token: 'phosphor:users-duotone', label: 'Audience (Duotone)', tags: ['users', 'team', 'people'], useCases: ['presentation', 'marketing', 'support'] },
+  { token: 'phosphor:handshake-duotone', label: 'Partnership (Duotone)', tags: ['partner', 'deal', 'trust'], useCases: ['sales', 'presentation'] },
+  { token: 'phosphor:chat-circle-text-duotone', label: 'Conversation (Duotone)', tags: ['chat', 'conversation', 'message'], useCases: ['sales', 'support'] },
+  { token: 'phosphor:envelope-simple-duotone', label: 'Email (Duotone)', tags: ['email', 'newsletter', 'contact'], useCases: ['marketing', 'sales'] },
+  { token: 'phosphor:phone-call-duotone', label: 'Call (Duotone)', tags: ['phone', 'call', 'connect'], useCases: ['sales', 'support'] },
+  { token: 'phosphor:calendar-blank-duotone', label: 'Schedule (Duotone)', tags: ['schedule', 'timeline', 'calendar'], useCases: ['presentation', 'sales', 'product'] },
+  { token: 'phosphor:speedometer-duotone', label: 'Performance (Duotone)', tags: ['performance', 'metric', 'velocity'], useCases: ['analytics', 'product'] },
+  { token: 'phosphor:chart-line-up-duotone', label: 'Growth Up (Duotone)', tags: ['growth', 'trend', 'improvement'], useCases: ['analytics', 'sales', 'marketing'] },
+  { token: 'phosphor:chart-bar-duotone', label: 'Bar Chart (Duotone)', tags: ['chart', 'bar', 'stats'], useCases: ['analytics', 'presentation'] },
+  { token: 'phosphor:database-duotone', label: 'Data (Duotone)', tags: ['data', 'storage', 'system'], useCases: ['analytics', 'product'] },
+  { token: 'phosphor:stack-duotone', label: 'Architecture (Duotone)', tags: ['architecture', 'stack', 'layers'], useCases: ['product', 'presentation'] },
+  { token: 'phosphor:shield-check-duotone', label: 'Secure (Duotone)', tags: ['security', 'compliance', 'trust'], useCases: ['sales', 'product'] },
+  { token: 'phosphor:warning-duotone', label: 'Warning (Duotone)', tags: ['warning', 'issue', 'attention'], useCases: ['presentation', 'support'] },
+  { token: 'phosphor:check-circle-duotone', label: 'Success (Duotone)', tags: ['success', 'done', 'complete'], useCases: ['presentation', 'sales'] },
+  { token: 'phosphor:x-circle-duotone', label: 'Failure (Duotone)', tags: ['failure', 'error', 'no'], useCases: ['presentation', 'support'] },
+  { token: 'phosphor:lightbulb-duotone', label: 'Idea (Duotone)', tags: ['idea', 'insight', 'strategy'], useCases: ['presentation', 'marketing'] },
+  { token: 'phosphor:globe-duotone', label: 'Global (Duotone)', tags: ['global', 'world', 'scale'], useCases: ['presentation', 'marketing'] },
+  { token: 'phosphor:arrow-right-duotone', label: 'Next Step (Duotone)', tags: ['next', 'continue', 'cta'], useCases: ['sales', 'marketing', 'support'] },
+  { token: 'phosphor:arrow-up-right-duotone', label: 'External Link (Duotone)', tags: ['link', 'external', 'open'], useCases: ['sales', 'marketing'] },
+  { token: 'phosphor:megaphone-duotone', label: 'Announcement (Duotone)', tags: ['announcement', 'campaign', 'broadcast'], useCases: ['marketing', 'presentation'] },
+  { token: 'phosphor:file-text-duotone', label: 'Document (Duotone)', tags: ['document', 'report', 'content'], useCases: ['presentation', 'support'] },
+  { token: 'phosphor:graduation-cap-duotone', label: 'Enablement (Duotone)', tags: ['training', 'enablement', 'learning'], useCases: ['support', 'sales'] },
+  { token: 'phosphor:currency-dollar-duotone', label: 'Revenue (Duotone)', tags: ['revenue', 'money', 'roi'], useCases: ['sales', 'analytics'] },
+  { token: 'phosphor:shopping-cart-duotone', label: 'Commerce (Duotone)', tags: ['commerce', 'cart', 'purchase'], useCases: ['marketing', 'sales'] },
 ]
