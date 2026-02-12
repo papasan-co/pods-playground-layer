@@ -175,6 +175,7 @@ function handleScriptsLoaded() {
       :module-scripts="mode === 'vue' ? vueScripts : []"
       :ready="mode === 'sfc' ? true : vueReady"
       :scrollable="true"
+      :root-classes="['autumn-runtime']"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
@@ -213,4 +214,3 @@ function handleScriptsLoaded() {
     </PodsPlayerPreviewDevice>
   </div>
 </template>
-

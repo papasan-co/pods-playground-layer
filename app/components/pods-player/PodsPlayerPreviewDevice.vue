@@ -34,6 +34,18 @@ const props = defineProps<{
    * Default is false (pod previews are typically non-scrolling).
    */
   scrollable?: boolean
+  /**
+   * Optional CSS vars to apply to iframe root. Applied after base variable sync.
+   */
+  cssVars?: Record<string, string> | null
+  /**
+   * Additional stylesheet URLs injected directly into iframe head.
+   */
+  extraStylesheets?: string[]
+  /**
+   * Extra classes applied to iframe document root.
+   */
+  rootClasses?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -99,17 +111,45 @@ onBeforeUnmount(() => {
 })
 
 const STYLE_SELECTOR = 'style,link[rel="stylesheet"]'
+const SYNCED_HEAD_SELECTOR = '[data-pods-head-sync="1"]'
+
 function syncHead(from: Document, to: Document) {
-  to.head.querySelectorAll(STYLE_SELECTOR).forEach((n) => n.remove())
+  to.head.querySelectorAll(SYNCED_HEAD_SELECTOR).forEach((n) => n.remove())
   from.head.querySelectorAll(STYLE_SELECTOR).forEach((node) => {
-    to.head.appendChild(node.cloneNode(true))
+    const cloned = node.cloneNode(true) as HTMLElement
+    cloned.dataset.podsHeadSync = '1'
+    to.head.appendChild(cloned)
   })
 }
 
 function syncCSSVars(to: Document) {
   to.documentElement.style.cssText = document.documentElement.style.cssText
-  // Keep HTML classes in sync so scoped runtime CSS (e.g. `.autumn-runtime`, `.dark`) applies.
-  to.documentElement.className = document.documentElement.className
+
+  const vars = props.cssVars
+  if (vars && typeof vars === 'object') {
+    for (const [key, value] of Object.entries(vars)) {
+      if (typeof key !== 'string' || !key.trim()) continue
+      if (typeof value !== 'string' || !value.trim()) continue
+      to.documentElement.style.setProperty(key, value)
+    }
+  }
+
+  // Keep host classes in sync so dark mode works, then append caller-provided runtime classes.
+  const classSet = new Set(
+    document.documentElement.className
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter(Boolean),
+  )
+
+  for (const className of props.rootClasses ?? []) {
+    if (typeof className !== 'string') continue
+    const trimmed = className.trim()
+    if (!trimmed) continue
+    classSet.add(trimmed)
+  }
+
+  to.documentElement.className = Array.from(classSet).join(' ')
 }
 
 function syncRuntime(fromWin: Window, toWin: Window) {
@@ -199,6 +239,30 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
   }
 }
 
+function syncExtraStylesheets(doc: Document, urls: string[]) {
+  const wanted = [...new Set(urls)]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim())
+
+  const existingNodes = Array.from(doc.querySelectorAll('link[data-pods-extra-style="1"]')) as HTMLLinkElement[]
+  const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
+
+  for (const node of existingNodes) {
+    if (!wanted.includes(node.href)) {
+      node.remove()
+    }
+  }
+
+  for (const href of wanted) {
+    if (existingMap.has(href)) continue
+    const link = doc.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = href
+    link.dataset.podsExtraStyle = '1'
+    doc.head.appendChild(link)
+  }
+}
+
 async function bootIframe() {
   const iframe = iframeRef.value
   if (!iframe) return
@@ -224,6 +288,7 @@ async function bootIframe() {
 
     syncHead(document, doc)
     syncCSSVars(doc)
+    syncExtraStylesheets(doc, props.extraStylesheets ?? [])
     if (win) syncRuntime(window, win)
 
     obs = new MutationObserver(() => syncHead(document, doc))
@@ -236,6 +301,8 @@ async function bootIframe() {
   }
 
   applyScrollMode(doc, !!props.scrollable)
+  syncCSSVars(doc)
+  syncExtraStylesheets(doc, props.extraStylesheets ?? [])
   if (win) syncRuntime(window, win)
 
   if (props.moduleScripts?.length) {
@@ -256,6 +323,9 @@ watchEffect(() => {
   void props.moduleScripts
   void props.ready
   void props.scrollable
+  void props.cssVars
+  void props.extraStylesheets
+  void props.rootClasses
   slotVNode.value =
     props.ready === false
       ? null

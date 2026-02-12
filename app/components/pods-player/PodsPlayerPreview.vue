@@ -106,6 +106,7 @@ watch(
       :device="viewport"
       :module-scripts="mode === 'vue' ? vueScripts : []"
       :ready="mode === 'sfc' ? true : vueReady"
+      :root-classes="['autumn-runtime']"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
@@ -133,4 +134,3 @@ watch(
     </PodsPlayerPreviewDevice>
   </div>
 </template>
-

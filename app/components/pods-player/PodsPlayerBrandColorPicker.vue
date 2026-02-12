@@ -14,6 +14,8 @@ import { useDesignTokens } from '../../composables/pods-player/useDesignTokens'
 
 const props = defineProps<{
   modelValue?: string
+  outputMode?: 'hex' | 'token'
+  tokenOptions?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -42,93 +44,79 @@ const colorGroups = computed(() => {
     color: getGroupColor500(group),
   }))
 })
+const colorGroupMap = computed(() => new Map(colorGroups.value.map((group) => [group.value, group.color])))
 
-const getShades = (group: string) => {
-  if (!tokens.value?.color) return []
-  const shades: string[] = []
-  Object.keys(tokens.value.color).forEach((key) => {
-    if (key.startsWith(`${group}-`)) shades.push(key.replace(`${group}-`, ''))
-  })
-  return shades.sort()
-}
-
-const selectedGroup = ref<string>('primary')
-const selectedShade = ref<string>('500')
+const selectedTokenKey = ref<string>('primary')
 const customColor = ref<string>('#000000')
-const explicitColor = ref<string | null>(null)
+const effectiveOutputMode = computed(() => props.outputMode ?? 'hex')
+
+const tokenSwatches = computed(() => {
+  const allowedKeys = (props.tokenOptions && props.tokenOptions.length > 0)
+    ? props.tokenOptions
+    : colorGroups.value.map((group) => group.value)
+
+  const unique = Array.from(new Set(allowedKeys))
+  return unique
+    .map((key) => ({
+      key,
+      label: key.charAt(0).toUpperCase() + key.slice(1),
+      color: colorGroupMap.value.get(key) ?? null,
+    }))
+    .filter((swatch): swatch is { key: string; label: string; color: string } => Boolean(swatch.color))
+})
+
+const currentColor = computed(() => {
+  if (effectiveOutputMode.value === 'token') {
+    return getGroupColor500(selectedTokenKey.value)
+  }
+  if (colorMode.value === 'token') {
+    const selected = tokenSwatches.value.find((swatch) => swatch.key === selectedTokenKey.value)
+    return selected?.color ?? '#000000'
+  }
+  return customColor.value
+})
 
 watch(
   () => props.modelValue,
   (newValue) => {
     if (!newValue) {
       colorMode.value = 'token'
-      selectedGroup.value = 'primary'
-      selectedShade.value = '500'
-      explicitColor.value = null
+      selectedTokenKey.value = tokenSwatches.value[0]?.key ?? 'primary'
       return
     }
 
-    if (newValue === '#FFFFFF' || newValue === '#ffffff' || newValue === 'white') {
+    if (effectiveOutputMode.value === 'token') {
+      selectedTokenKey.value = String(newValue)
       colorMode.value = 'token'
-      explicitColor.value = '#FFFFFF'
       return
     }
-    if (newValue === '#000000' || newValue === '#000' || newValue === 'black') {
+
+    const asHex = String(newValue).toUpperCase()
+    const matched = tokenSwatches.value.find((swatch) => swatch.color.toUpperCase() === asHex)
+    if (matched) {
       colorMode.value = 'token'
-      explicitColor.value = '#000000'
+      selectedTokenKey.value = matched.key
       return
     }
-
-    explicitColor.value = null
-
-    let foundToken = false
-    if (tokens.value?.color) {
-      Object.keys(tokens.value.color).forEach((key) => {
-        if (tokens.value.color[key] === newValue) {
-          const parts = key.split('-')
-          if (parts.length >= 2 && parts[0]) {
-            selectedGroup.value = parts[0]
-            selectedShade.value = parts.slice(1).join('-')
-            colorMode.value = 'token'
-            foundToken = true
-          }
-        }
-      })
-    }
-
-    if (!foundToken) {
-      colorMode.value = 'custom'
-      customColor.value = newValue
-    }
+    colorMode.value = 'custom'
+    customColor.value = String(newValue)
   },
   { immediate: true },
 )
 
-const currentColor = computed(() => {
-  if (explicitColor.value) return explicitColor.value
-  if (colorMode.value === 'token' && tokens.value?.color) {
-    const tokenKey = `${selectedGroup.value}-${selectedShade.value}`
-    return tokens.value.color[tokenKey] || '#000000'
-  }
-  return customColor.value
-})
+watch([colorMode, selectedTokenKey], () => {
+  const nextValue = colorMode.value === 'token'
+    ? (effectiveOutputMode.value === 'token' ? selectedTokenKey.value : currentColor.value)
+    : customColor.value
 
-watch([colorMode, selectedGroup, selectedShade, explicitColor], () => {
-  const newColor = currentColor.value
-  if (newColor !== props.modelValue) emit('update:modelValue', newColor)
+  if (nextValue !== props.modelValue) emit('update:modelValue', nextValue)
 })
 
 watch(customColor, (newValue) => {
   if (colorMode.value === 'custom' && newValue !== props.modelValue) {
-    explicitColor.value = null
     emit('update:modelValue', newValue)
   }
 })
-
-const getTokenColor = (group: string, shade: string) => {
-  if (!tokens.value?.color) return '#000000'
-  return tokens.value.color[`${group}-${shade}`] || '#000000'
-}
 </script>
 
 <template>
@@ -162,75 +150,29 @@ const getTokenColor = (group: string, shade: string) => {
       />
 
       <div v-if="colorMode === 'token'" class="space-y-3">
-        <USelect
-          v-model="selectedGroup"
-          :items="colorGroups"
-          value-attribute="value"
-          label-attribute="label"
-          size="sm"
-          placeholder="Select color group"
-        >
-          <template #leading="{ modelValue }">
-            <span
-              v-if="modelValue"
-              class="inline-block h-3 w-3 rounded-full mr-2"
-              :style="`background-color: ${getGroupColor500(modelValue)}`"
-            />
-          </template>
-
-          <template #item="{ item }">
-            <div class="flex items-center gap-2">
-              <span class="inline-block h-3 w-3 rounded-full shrink-0" :style="`background-color: ${item.color}`" />
-              <span>{{ item.label }}</span>
-            </div>
-          </template>
-        </USelect>
-
-        <div v-if="selectedGroup" class="flex gap-1.5 flex-wrap">
+        <div class="flex gap-1.5 flex-wrap">
           <button
-            v-for="shade in getShades(selectedGroup)"
-            :key="shade"
+            v-for="swatch in tokenSwatches"
+            :key="swatch.key"
             type="button"
             class="flex flex-col items-center gap-1 group"
-            @click="explicitColor = null; selectedShade = shade"
+            :aria-label="swatch.label"
+            :title="swatch.label"
+            @click="selectedTokenKey = swatch.key"
           >
-            <span class="text-[10px] text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-100">
-              {{ shade }}
-            </span>
             <div
               class="w-8 h-8 rounded border transition-all"
               :class="{
-                'border-blue-500 ring-2 ring-blue-500': selectedShade === shade && !explicitColor,
-                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': selectedShade !== shade || explicitColor
+                'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
+                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': selectedTokenKey !== swatch.key
               }"
-              :style="{ backgroundColor: getTokenColor(selectedGroup, shade) }"
-            />
-          </button>
-
-          <button type="button" class="flex flex-col items-center gap-1 group" @click="explicitColor = '#FFFFFF'; emit('update:modelValue', '#FFFFFF')">
-            <span class="text-[10px] text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-100">White</span>
-            <div
-              class="w-8 h-8 rounded border transition-all"
-              :class="{
-                'border-blue-500 ring-2 ring-blue-500': currentColor === '#FFFFFF' || currentColor === '#ffffff',
-                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': currentColor !== '#FFFFFF' && currentColor !== '#ffffff'
-              }"
-              style="background-color: #FFFFFF"
-            />
-          </button>
-
-          <button type="button" class="flex flex-col items-center gap-1 group" @click="explicitColor = '#000000'; emit('update:modelValue', '#000000')">
-            <span class="text-[10px] text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-100">Black</span>
-            <div
-              class="w-8 h-8 rounded border transition-all"
-              :class="{
-                'border-blue-500 ring-2 ring-blue-500': currentColor === '#000000' || currentColor === '#000',
-                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': currentColor !== '#000000' && currentColor !== '#000'
-              }"
-              style="background-color: #000000"
+              :style="{ backgroundColor: swatch.color }"
             />
           </button>
         </div>
+        <p v-if="tokenSwatches.length === 0" class="text-xs text-gray-500">
+          No brand colors available.
+        </p>
       </div>
 
       <div v-else class="space-y-2">
@@ -261,4 +203,3 @@ const getTokenColor = (group: string, shade: string) => {
     </div>
   </div>
 </template>
-

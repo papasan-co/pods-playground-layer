@@ -62,19 +62,16 @@ function isReadOnly(field: FormField): boolean {
 }
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
-  if (field.type === 'color-select') {
-    const keys = Array.isArray(field.options) ? field.options : Object.keys(field.options ?? {})
-    return keys.map((key) => ({
-      value: key,
-      label: key.charAt(0).toUpperCase() + key.slice(1),
-      chip: { style: `background: var(--color-${key}-500)` },
-    }))
-  }
-
   if (field.options && typeof field.options === 'object') {
     return Object.entries(field.options).map(([value, label]) => ({ value, label }))
   }
 
+  return []
+}
+
+function colorSelectKeys(field: FormField & { options?: Record<string, string> | string[] }): string[] {
+  if (Array.isArray(field.options)) return field.options
+  if (field.options && typeof field.options === 'object') return Object.keys(field.options)
   return []
 }
 
@@ -356,8 +353,10 @@ function removeRepeaterItem(block: string, idx: number) {
               @update:model-value="(val) => updateField(child.name as string, Array.isArray(val) ? val[0] : val, child.type)"
             />
             <PodsPlayerBrandColorPicker
-              v-else-if="child.type === 'background-color' || child.type === 'brand-color-picker'"
+              v-else-if="child.type === 'background-color' || child.type === 'brand-color-picker' || child.type === 'color-select'"
               :model-value="modelValue[child.name as string] as string"
+              :output-mode="child.type === 'color-select' ? 'token' : 'hex'"
+              :token-options="child.type === 'color-select' ? colorSelectKeys(child as any) : undefined"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerMediaPicker
@@ -441,31 +440,13 @@ function removeRepeaterItem(block: string, idx: number) {
         arrow
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
-      <USelect
+      <PodsPlayerBrandColorPicker
         v-else-if="field.type === 'color-select'"
-        class="w-full"
-        size="sm"
-        :disabled="isReadOnly(field)"
-        :model-value="modelValue[field.name]"
-        :items="selectItems(field as any)"
-        value-attribute="value"
-        label-attribute="label"
+        :model-value="modelValue[field.name] as string"
+        output-mode="token"
+        :token-options="colorSelectKeys(field as any)"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
-      >
-        <template #leading="{ modelValue: mv }">
-          <span
-            v-if="mv"
-            class="inline-block h-3 w-3 rounded-full mr-1"
-            :style="`background: var(--color-${mv}-500)`"
-          />
-        </template>
-        <template #item="{ item }">
-          <div class="flex items-center gap-2">
-            <span class="inline-block h-3 w-3 rounded-full" :style="`background: var(--color-${item.value}-500)`" />
-            <span>{{ item.label }}</span>
-          </div>
-        </template>
-      </USelect>
+      />
       <UInputNumber
         v-else-if="field.type === 'input-number'"
         class="w-full"
