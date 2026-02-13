@@ -7,7 +7,7 @@ import type { PodsPlayerRuntime } from '#pods-player/types'
  * is host-specific. Each consuming app MUST override this composable.
  *
  * - `cms-story-components/src/playground`: loads SFCs + local fixtures/YAML/schemas
- * - `cms-frontend`: loads published PodPack artifacts + bundles (web components)
+ * - `cms-frontend`: loads published PodPack artifacts + Vue runtime (`vue-runtime.esm.js`)
  */
 export function usePodsPlayerRuntime(): PodsPlayerRuntime {
   throw new Error(
@@ -18,4 +18,3 @@ export function usePodsPlayerRuntime(): PodsPlayerRuntime {
     ].join(' '),
   )
 }
-
