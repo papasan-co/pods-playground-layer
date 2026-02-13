@@ -300,9 +300,12 @@ async function bootIframe() {
     miniApp.mount(doc.body)
   }
 
-  applyScrollMode(doc, !!props.scrollable)
+  // IMPORTANT: `syncCSSVars()` overwrites `documentElement.style.cssText`, so it must run
+  // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
+  // non-scroll previews (many pods rely on `h-full`).
   syncCSSVars(doc)
   syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+  applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
   if (props.moduleScripts?.length) {
