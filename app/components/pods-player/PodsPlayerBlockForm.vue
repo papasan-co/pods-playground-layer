@@ -22,6 +22,10 @@ const props = defineProps<{
   fields: FormField[]
   modelValue: Record<string, unknown>
   viewport?: PodsPlayerViewport
+  mediaItems?: Array<Record<string, unknown>>
+  storyMediaItems?: Array<Record<string, unknown>>
+  libraryMediaItems?: Array<Record<string, unknown>>
+  mediaSourceMode?: 'cms' | 'playground'
 }>()
 
 interface UpdatePayload {
@@ -268,6 +272,10 @@ function removeRepeaterItem(block: string, idx: number) {
           :fields="field.children"
           :model-value="modelValue"
           :viewport="viewport"
+          :media-items="mediaItems || []"
+          :story-media-items="storyMediaItems || []"
+          :library-media-items="libraryMediaItems || []"
+          :media-source-mode="mediaSourceMode || 'playground'"
           @update:model-value="(payload) => emit('update:modelValue', payload)"
           @update:viewport="(val) => emit('update:viewport', val)"
         />
@@ -363,6 +371,10 @@ function removeRepeaterItem(block: string, idx: number) {
               v-else-if="child.type === 'medias'"
               :model-value="modelValue[child.name as string] as string"
               :constraint="(child as any)['x-ui']"
+              :media-items="mediaItems || []"
+              :story-media-items="storyMediaItems || []"
+              :library-media-items="libraryMediaItems || []"
+              :source-mode="mediaSourceMode || 'playground'"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerGeoPointPicker
@@ -496,6 +508,10 @@ function removeRepeaterItem(block: string, idx: number) {
         v-else-if="field.type === 'medias'"
         :model-value="modelValue[field.name] as string"
         :constraint="(field as any)['x-ui']"
+        :media-items="mediaItems || []"
+        :story-media-items="storyMediaItems || []"
+        :library-media-items="libraryMediaItems || []"
+        :source-mode="mediaSourceMode || 'playground'"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <PodsPlayerGeoPointPicker
@@ -574,6 +590,10 @@ function removeRepeaterItem(block: string, idx: number) {
                     :fields="(field.fields || []) as any"
                     :model-value="(item as any)"
                     :viewport="viewport"
+                    :media-items="mediaItems || []"
+                    :story-media-items="storyMediaItems || []"
+                    :library-media-items="libraryMediaItems || []"
+                    :media-source-mode="mediaSourceMode || 'playground'"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
