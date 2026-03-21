@@ -13,7 +13,6 @@ type RuntimeMediaItem = {
   id?: string
   s3Key?: string
   url?: string
-  downloadUrl?: string
   name?: string
   originalName?: string
   title?: string
@@ -31,7 +30,6 @@ type PickerEntry = MediaCatalogEntry & {
   source: 'runtime' | 'fixture'
   id?: string
   s3Key?: string
-  downloadUrl?: string
   mediaType?: string
 }
 
@@ -39,7 +37,7 @@ type SourceMode = 'cms' | 'playground'
 type SourceScope = 'story' | 'library'
 
 const props = defineProps<{
-  modelValue?: string
+  modelValue?: string | Record<string, unknown> | null
   constraint?: UiConstraint
   mediaItems?: RuntimeMediaItem[]
   storyMediaItems?: RuntimeMediaItem[]
@@ -98,9 +96,8 @@ function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
   return input
     .map((item) => {
       const s3Key = String(item?.s3Key || '').trim()
-      const downloadUrl = String(item?.downloadUrl || '').trim()
       const url = String(item?.url || '').trim()
-      const src = s3Key || downloadUrl || url
+      const src = s3Key || url
       if (!src) return null
 
       const width = toNumber(item.width)
@@ -118,7 +115,6 @@ function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
         tags: Array.isArray(item.tags) ? item.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
         url: src,
         s3Key: s3Key || undefined,
-        downloadUrl: downloadUrl || undefined,
         mediaType: String(item.mediaType || '').trim() || undefined,
       } satisfies PickerEntry
     })
@@ -158,13 +154,17 @@ watch(
 )
 
 const selected = computed<PickerEntry | null>(() => {
-  const value = String(props.modelValue || '').trim()
+  const rawValue = props.modelValue
+  const value = typeof rawValue === 'string'
+    ? rawValue.trim()
+    : (rawValue && typeof rawValue === 'object'
+        ? String((rawValue as Record<string, unknown>).s3Key || (rawValue as Record<string, unknown>).src || (rawValue as Record<string, unknown>).url || (rawValue as Record<string, unknown>).id || '').trim()
+        : '')
   if (!value) return null
 
   if (usingRuntimeCatalog.value) {
     return runtimeCatalog.value.find((entry) =>
       value === String(entry.s3Key || '')
-      || value === String(entry.downloadUrl || '')
       || value === String(entry.url || '')
       || value === String(entry.id || ''),
     ) ?? null
