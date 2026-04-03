@@ -8,6 +8,7 @@ export type MediaCatalogItem = {
   title: string
   orientation?: Exclude<MediaOrientation, 'any'>
   kind?: Exclude<MediaKind, 'any'>
+  thumbnailFilename?: string
   roles?: string[]
   alt?: string
   tags?: string[]
@@ -16,6 +17,7 @@ export type MediaCatalogItem = {
 
 export type MediaCatalogEntry = MediaCatalogItem & {
   url: string
+  thumbnailUrl?: string
 }
 
 const BASE_BY_KIND: Record<Exclude<MediaKind, 'any'>, string> = {
@@ -41,6 +43,7 @@ export function mediaCatalog(): MediaCatalogEntry[] {
         roles: Array.isArray(x.roles) ? x.roles.map(normalizeRole).filter(Boolean) : [],
         tags: Array.isArray(x.tags) ? x.tags.map((t) => String(t).trim()).filter(Boolean) : [],
         url: `${base}${x.filename}`,
+        thumbnailUrl: x.thumbnailFilename ? `${BASE_BY_KIND.photo}${x.thumbnailFilename}` : undefined,
       }
     })
 }

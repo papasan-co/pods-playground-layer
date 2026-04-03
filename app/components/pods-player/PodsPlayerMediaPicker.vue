@@ -36,6 +36,10 @@ const currentUrl = computed(() => {
 
 const selected = computed(() => findByUrl(currentUrl.value))
 
+function isVideoEntry(entry: MediaCatalogEntry | null | undefined): boolean {
+  return entry?.kind === 'video'
+}
+
 function toEmittedValue(url: string, alt?: string) {
   if (props.emitObject) {
     return { src: url, url, ...(alt ? { alt } : {}) }
@@ -101,13 +105,32 @@ function choose(it: MediaCatalogEntry) {
           <div
             class="w-10 h-10 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 overflow-hidden shrink-0"
           >
-            <img
-              v-if="selected"
-              :src="selected.url"
-              :alt="selected.alt || selected.title"
-              class="w-full h-full object-cover"
-              loading="lazy"
-            />
+            <template v-if="selected">
+              <video
+                v-if="isVideoEntry(selected)"
+                :src="selected.url"
+                :poster="selected.thumbnailUrl"
+                class="w-full h-full object-cover"
+                muted
+                playsinline
+                preload="metadata"
+                aria-hidden="true"
+              />
+              <img
+                v-else
+                :src="selected.url"
+                :alt="selected.alt || selected.title"
+                class="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </template>
+            <div
+              v-else-if="kind === 'video'"
+              class="flex h-full w-full items-center justify-center text-gray-400 dark:text-gray-500"
+              aria-hidden="true"
+            >
+              <UIcon name="i-lucide-video" class="h-5 w-5" />
+            </div>
           </div>
 
           <div class="min-w-0 max-w-full overflow-hidden">
@@ -170,7 +193,17 @@ function choose(it: MediaCatalogEntry) {
                 @click="choose(it)"
               >
                 <div class="aspect-[4/3] bg-gray-50 dark:bg-gray-800 overflow-hidden">
-                  <img :src="it.url" :alt="it.alt || it.title" class="w-full h-full object-cover" loading="lazy" />
+                  <video
+                    v-if="isVideoEntry(it)"
+                    :src="it.url"
+                    :poster="it.thumbnailUrl"
+                    class="w-full h-full object-cover"
+                    muted
+                    playsinline
+                    preload="metadata"
+                    aria-hidden="true"
+                  />
+                  <img v-else :src="it.url" :alt="it.alt || it.title" class="w-full h-full object-cover" loading="lazy" />
                 </div>
                 <div class="p-2">
                   <div class="text-xs font-semibold text-gray-800 dark:text-gray-200 line-clamp-2">

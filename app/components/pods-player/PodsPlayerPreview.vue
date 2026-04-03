@@ -19,6 +19,7 @@ const props = defineProps<{
 }>()
 
 const runtime = usePodsPlayerRuntime()
+const route = useRoute()
 
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
@@ -27,6 +28,7 @@ const error = ref<string | null>(null)
 const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
+const debugFill = computed(() => route.query.debugFill === '1')
 
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
@@ -110,6 +112,7 @@ watch(
       :ready="mode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
+      :debug-fill="debugFill"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >

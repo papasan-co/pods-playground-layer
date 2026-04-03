@@ -21,6 +21,7 @@ const props = defineProps<{
 }>()
 
 const runtime = usePodsPlayerRuntime()
+const route = useRoute()
 
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
@@ -29,6 +30,7 @@ const error = ref<string | null>(null)
 const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
+const debugFill = computed(() => route.query.debugFill === '1')
 
 /**
  * pods-playground-layer.VueRuntimeVisual
@@ -179,6 +181,7 @@ function handleScriptsLoaded() {
       :scrollable="true"
       :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
+      :debug-fill="debugFill"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
