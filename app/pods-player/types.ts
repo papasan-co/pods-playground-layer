@@ -38,6 +38,7 @@ export interface PodDetails extends PodListItem {
   schema?: unknown | null
   yaml?: string | null
   fixture?: Record<string, unknown> | null
+  fixtureVariants?: Record<string, Record<string, unknown>> | null
   /**
    * Canonical field definitions for the pod's CMS UI.
    *

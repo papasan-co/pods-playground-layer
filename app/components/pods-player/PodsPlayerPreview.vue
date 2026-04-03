@@ -124,12 +124,12 @@ watch(
         </div>
       </template>
       <template v-else-if="mode === 'sfc' && Comp">
-        <div class="h-full w-full bg-red-500">
+        <div class="h-full w-full">
           <component :is="Comp" v-bind="previewProps" />
         </div>
       </template>
       <template v-else-if="mode === 'vue'">
-        <div class="h-full w-full bg-red-500">
+        <div class="h-full w-full">
           <div class="w-full h-full" data-pods-vue-mount="1" />
         </div>
       </template>

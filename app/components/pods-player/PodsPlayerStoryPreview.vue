@@ -197,7 +197,7 @@ function handleScriptsLoaded() {
           <!-- StoryScrollyPage is provided by storytime-layer (host app extends it) -->
           <StoryScrollyPage :scenes="scenes" :controls="true">
             <template #visual="{ step }">
-              <div class="w-full h-full bg-red-500">
+              <div class="w-full h-full">
                 <component
                   v-if="mode === 'sfc' && Comp"
                   :is="Comp"
