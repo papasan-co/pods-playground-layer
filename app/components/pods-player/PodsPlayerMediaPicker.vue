@@ -9,13 +9,16 @@ type UiConstraint = {
   roles?: string[]
 }
 
+type MediaValue = string | { src?: string; url?: string; alt?: string; decorative?: boolean } | undefined
+
 const props = defineProps<{
-  modelValue?: string
+  modelValue?: MediaValue
   constraint?: UiConstraint
+  emitObject?: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void
+  (e: 'update:modelValue', value: string | { src: string; url: string; alt?: string }): void
 }>()
 
 const isOpen = ref(false)
@@ -26,7 +29,19 @@ const kind = computed<MediaKind>(() => (constraint.value.mediaKind ?? constraint
 const orientation = computed<MediaOrientation>(() => (constraint.value.orientation ?? 'any') as MediaOrientation)
 const roles = computed<string[]>(() => (Array.isArray(constraint.value.roles) ? constraint.value.roles : []))
 
-const selected = computed(() => findByUrl(props.modelValue))
+const currentUrl = computed(() => {
+  if (typeof props.modelValue === 'string') return props.modelValue
+  return props.modelValue?.src || props.modelValue?.url || ''
+})
+
+const selected = computed(() => findByUrl(currentUrl.value))
+
+function toEmittedValue(url: string, alt?: string) {
+  if (props.emitObject) {
+    return { src: url, url, ...(alt ? { alt } : {}) }
+  }
+  return url
+}
 
 function shortNameFromUrl(raw: string | undefined): string {
   const v = String(raw || '').trim()
@@ -45,7 +60,7 @@ function shortNameFromUrl(raw: string | undefined): string {
   }
 }
 
-const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(props.modelValue)))
+const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(currentUrl.value)))
 
 const items = computed<MediaCatalogEntry[]>(() =>
   filterCatalog({
@@ -56,20 +71,20 @@ const items = computed<MediaCatalogEntry[]>(() =>
   }),
 )
 
-// Image fields should always have a selection; default to first matching item.
+// Visual media fields should always have a selection; default to first matching item.
 watch(
-  () => [props.modelValue, items.value.length, kind.value] as const,
+  () => [currentUrl.value, items.value.length, kind.value] as const,
   () => {
-    if (props.modelValue) return
-    if (kind.value !== 'photo' && kind.value !== 'logo') return
+    if (currentUrl.value) return
+    if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
     const first = items.value[0]
-    if (first?.url) emit('update:modelValue', first.url)
+    if (first?.url) emit('update:modelValue', toEmittedValue(first.url, first.alt || first.title))
   },
   { immediate: true },
 )
 
 function choose(it: MediaCatalogEntry) {
-  emit('update:modelValue', it.url)
+  emit('update:modelValue', toEmittedValue(it.url, it.alt || it.title))
   isOpen.value = false
 }
 </script>
@@ -113,8 +128,8 @@ function choose(it: MediaCatalogEntry) {
       size="sm"
       class="w-full"
       placeholder="Paste media URL"
-      :model-value="modelValue"
-      @update:model-value="(v) => emit('update:modelValue', String(v || ''))"
+      :model-value="currentUrl"
+      @update:model-value="(v) => emit('update:modelValue', toEmittedValue(String(v || '')))"
     />
 
     <div v-if="isOpen" class="fixed inset-0 z-50">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useDesignTokens } from '../../composables/pods-player/useDesignTokens'
+import { contrastRatio, ensureAaTextOnBackground, isHexColor } from '../../utils/colorA11y'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBrandColorPicker
@@ -14,8 +15,12 @@ import { useDesignTokens } from '../../composables/pods-player/useDesignTokens'
 
 const props = defineProps<{
   modelValue?: string
-  outputMode?: 'hex' | 'token'
+  outputMode?: 'hex' | 'token' | 'mixed'
   tokenOptions?: string[]
+  contrastAgainst?: string
+  enforceAaForText?: boolean
+  minRatio?: number
+  policy?: 'warn' | 'disableTokens'
 }>()
 
 const emit = defineEmits<{
@@ -31,16 +36,28 @@ const tabItems = [
   { label: 'Custom Color', value: 'custom' },
 ]
 
+const DEFAULT_BRAND_SWATCH_500: Record<string, string> = {
+  primary: '#0F172A',
+  secondary: '#4A70A9',
+  tertiary: '#EFECE3',
+  quaternary: '#8FABD4',
+}
+
 const getGroupColor500 = (group: string) => {
   if (!tokens.value?.color) return '#000000'
-  return tokens.value.color[`${group}-500`] || '#000000'
+  return tokens.value.color[`${group}-500`] || DEFAULT_BRAND_SWATCH_500[group] || '#000000'
 }
 
 const colorGroups = computed(() => {
-  const groups = ['primary', 'secondary', 'tertiary', 'quaternary', 'neutral']
+  const groups = ['primary', 'secondary', 'tertiary', 'quaternary']
   return groups.map((group) => ({
     value: group,
-    label: group.charAt(0).toUpperCase() + group.slice(1),
+    label:
+      group === 'tertiary'
+        ? 'Support 1'
+        : group === 'quaternary'
+          ? 'Support 2'
+          : group.charAt(0).toUpperCase() + group.slice(1),
     color: getGroupColor500(group),
   }))
 })
@@ -49,6 +66,11 @@ const colorGroupMap = computed(() => new Map(colorGroups.value.map((group) => [g
 const selectedTokenKey = ref<string>('primary')
 const customColor = ref<string>('#000000')
 const effectiveOutputMode = computed(() => props.outputMode ?? 'hex')
+const effectiveMinRatio = computed(() => {
+  if (typeof props.minRatio === 'number') return props.minRatio
+  return props.enforceAaForText ? 4.5 : 3
+})
+const effectivePolicy = computed(() => props.policy ?? 'disableTokens')
 
 const tokenSwatches = computed(() => {
   const allowedKeys = (props.tokenOptions && props.tokenOptions.length > 0)
@@ -65,6 +87,38 @@ const tokenSwatches = computed(() => {
     .filter((swatch): swatch is { key: string; label: string; color: string } => Boolean(swatch.color))
 })
 
+function resolveInputToHex(input: string | undefined): string | null {
+  if (!input) return null
+  const value = String(input).trim()
+  if (!value) return null
+  if (isHexColor(value)) return value.toUpperCase()
+  const tokenHex = getGroupColor500(value)
+  return isHexColor(tokenHex) ? tokenHex.toUpperCase() : null
+}
+
+const contrastBackgroundHex = computed(() => resolveInputToHex(props.contrastAgainst))
+
+function tokenPassesContrast(tokenKey: string): boolean {
+  if (!props.enforceAaForText) return true
+  if (!contrastBackgroundHex.value) return true
+  const candidate = resolveInputToHex(tokenKey)
+  if (!candidate) return true
+  return contrastRatio(contrastBackgroundHex.value, candidate) >= effectiveMinRatio.value
+}
+
+const adjustedCustomColor = computed(() => {
+  if (!props.enforceAaForText) return customColor.value
+  if (!contrastBackgroundHex.value) return customColor.value
+  return ensureAaTextOnBackground(contrastBackgroundHex.value, customColor.value)
+})
+
+const isCustomAdjusted = computed(() => {
+  if (!props.enforceAaForText) return false
+  if (!contrastBackgroundHex.value) return false
+  if (!isHexColor(customColor.value)) return false
+  return adjustedCustomColor.value.toUpperCase() !== customColor.value.toUpperCase()
+})
+
 const currentColor = computed(() => {
   if (effectiveOutputMode.value === 'token') {
     return getGroupColor500(selectedTokenKey.value)
@@ -74,6 +128,11 @@ const currentColor = computed(() => {
     return selected?.color ?? '#000000'
   }
   return customColor.value
+})
+
+const collapsedDisplayColor = computed(() => {
+  if (isCustomAdjusted.value) return adjustedCustomColor.value
+  return currentColor.value
 })
 
 watch(
@@ -88,6 +147,19 @@ watch(
     if (effectiveOutputMode.value === 'token') {
       selectedTokenKey.value = String(newValue)
       colorMode.value = 'token'
+      return
+    }
+
+    if (effectiveOutputMode.value === 'mixed') {
+      const key = String(newValue)
+      const hasToken = tokenSwatches.value.some((swatch) => swatch.key === key)
+      if (hasToken) {
+        selectedTokenKey.value = key
+        colorMode.value = 'token'
+        return
+      }
+      colorMode.value = 'custom'
+      customColor.value = String(newValue)
       return
     }
 
@@ -106,7 +178,7 @@ watch(
 
 watch([colorMode, selectedTokenKey], () => {
   const nextValue = colorMode.value === 'token'
-    ? (effectiveOutputMode.value === 'token' ? selectedTokenKey.value : currentColor.value)
+    ? (effectiveOutputMode.value === 'hex' ? currentColor.value : selectedTokenKey.value)
     : customColor.value
 
   if (nextValue !== props.modelValue) emit('update:modelValue', nextValue)
@@ -117,6 +189,12 @@ watch(customColor, (newValue) => {
     emit('update:modelValue', newValue)
   }
 })
+
+function swatchLabel(key: string): string {
+  if (key === 'tertiary') return 'Support 1'
+  if (key === 'quaternary') return 'Support 2'
+  return key.charAt(0).toUpperCase() + key.slice(1)
+}
 </script>
 
 <template>
@@ -129,9 +207,9 @@ watch(customColor, (newValue) => {
       <div class="flex items-center gap-2">
         <div
           class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600"
-          :style="{ backgroundColor: currentColor }"
+          :style="{ backgroundColor: collapsedDisplayColor }"
         />
-        <span class="text-xs text-gray-600 dark:text-gray-400 font-mono">{{ currentColor }}</span>
+        <span class="text-xs text-gray-600 dark:text-gray-400 font-mono">{{ collapsedDisplayColor }}</span>
       </div>
       <UIcon
         :name="isExpanded ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
@@ -157,14 +235,16 @@ watch(customColor, (newValue) => {
             type="button"
             class="flex flex-col items-center gap-1 group"
             :aria-label="swatch.label"
-            :title="swatch.label"
+            :title="swatchLabel(swatch.key)"
+            :disabled="effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)"
             @click="selectedTokenKey = swatch.key"
           >
             <div
               class="w-8 h-8 rounded border transition-all"
               :class="{
                 'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
-                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': selectedTokenKey !== swatch.key
+                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': selectedTokenKey !== swatch.key,
+                'opacity-40 cursor-not-allowed': effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)
               }"
               :style="{ backgroundColor: swatch.color }"
             />
@@ -199,6 +279,12 @@ watch(customColor, (newValue) => {
             aria-label="Pick a custom color"
           />
         </label>
+        <div
+          v-if="isCustomAdjusted"
+          class="text-xs text-amber-600 dark:text-amber-400 rounded border border-amber-300/60 dark:border-amber-700/60 bg-amber-50/70 dark:bg-amber-900/20 px-2 py-1.5"
+        >
+          Adjusted for AA: {{ adjustedCustomColor }}
+        </div>
       </div>
     </div>
   </div>

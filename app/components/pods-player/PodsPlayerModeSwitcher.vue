@@ -25,9 +25,9 @@ const visible = computed(() => (props.supportedModes ?? ['sfc', 'vue']).length >
   <URadioGroup
     v-if="visible"
     v-model="value"
-    :options="[
-      { label: 'SFC', value: 'sfc', disabled: !(supportedModes || []).includes('sfc') },
-      { label: 'Vue (CDN)', value: 'vue', disabled: !(supportedModes || []).includes('vue') },
+    :items="[
+      { label: 'SFC', value: 'sfc', disabled: !(props.supportedModes || []).includes('sfc') },
+      { label: 'Vue Runtime', value: 'vue', disabled: !(props.supportedModes || []).includes('vue') },
     ]"
     size="sm"
   />

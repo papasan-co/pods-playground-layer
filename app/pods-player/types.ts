@@ -101,6 +101,12 @@ export interface PodsPlayerRuntime {
   getFixture?(slug: string): Promise<Record<string, unknown> | null>
 
   /**
+   * Optional: CSS custom properties applied to preview roots/iframes.
+   * Hosts can use this to make pack-level token changes visible in preview.
+   */
+  getPreviewCssVars?(): Promise<Record<string, string> | null>
+
+  /**
    * SFC mode: load a Vue component for preview.
    */
   loadSfcComponent?(pod: PodDetails): Promise<unknown | null>

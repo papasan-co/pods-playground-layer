@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Sortable from 'sortablejs'
+import { get as dotGet } from 'lodash-es'
 import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
@@ -48,7 +49,14 @@ function isVisible(field: FormField) {
   const cond = (field as { when?: Condition | Condition[] }).when
   if (!cond) return true
   const conditions = Array.isArray(cond) ? cond : [cond]
-  return conditions.every((c) => props.modelValue[c.field] === c.equals)
+  return conditions.every((c) => dotGet(props.modelValue, c.field) === c.equals)
+}
+
+function shouldEmitMediaObject(field: FormField): boolean {
+  const path = typeof field.path === 'string' ? field.path.trim() : ''
+  if (!path) return true
+  if (path.includes('.')) return true
+  return path === field.name
 }
 
 function isHidden(field: FormField): boolean {
@@ -59,6 +67,13 @@ function isHidden(field: FormField): boolean {
 function isReadOnly(field: FormField): boolean {
   const ui = (field as any)?.['x-ui']
   return Boolean(ui && typeof ui === 'object' && ui.readonly === true)
+}
+
+function getA11yConfig(field: FormField): { againstField?: string; kind?: string } | null {
+  const ui = (field as any)?.['x-ui']
+  const a11y = ui?.a11y
+  if (!a11y || typeof a11y !== 'object') return null
+  return a11y as { againstField?: string; kind?: string }
 }
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
@@ -266,9 +281,16 @@ function removeRepeaterItem(block: string, idx: number) {
         <PodsPlayerBlockForm
           v-if="field.children?.length"
           :fields="field.children"
-          :model-value="modelValue"
+          :model-value="(modelValue[field.name as string] as Record<string, unknown>) ?? {}"
           :viewport="viewport"
-          @update:model-value="(payload) => emit('update:modelValue', payload)"
+          @update:model-value="
+            ({ field: child, value }) =>
+              updateField(
+                field.name as string,
+                { ...((modelValue[field.name as string] as Record<string, unknown>) ?? {}), [child]: value },
+                'group',
+              )
+          "
           @update:viewport="(val) => emit('update:viewport', val)"
         />
       </div>
@@ -355,14 +377,18 @@ function removeRepeaterItem(block: string, idx: number) {
             <PodsPlayerBrandColorPicker
               v-else-if="child.type === 'background-color' || child.type === 'brand-color-picker' || child.type === 'color-select'"
               :model-value="modelValue[child.name as string] as string"
-              :output-mode="child.type === 'color-select' ? 'token' : 'hex'"
+              :output-mode="child.type === 'color-select' ? 'token' : (((child as any)['x-ui']?.outputMode as any) || 'hex')"
               :token-options="child.type === 'color-select' ? colorSelectKeys(child as any) : undefined"
+              :contrast-against="getA11yConfig(child)?.againstField ? (modelValue[getA11yConfig(child)?.againstField as string] as string) : undefined"
+              :enforce-aa-for-text="getA11yConfig(child)?.kind === 'text-aa'"
+              policy="disableTokens"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerMediaPicker
               v-else-if="child.type === 'medias'"
-              :model-value="modelValue[child.name as string] as string"
+              :model-value="modelValue[child.name as string]"
               :constraint="(child as any)['x-ui']"
+              :emit-object="shouldEmitMediaObject(child)"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerGeoPointPicker
@@ -490,12 +516,17 @@ function removeRepeaterItem(block: string, idx: number) {
       <PodsPlayerBrandColorPicker
         v-else-if="field.type === 'background-color' || field.type === 'brand-color-picker'"
         :model-value="modelValue[field.name] as string"
+        :output-mode="((field as any)['x-ui']?.outputMode as any) || 'hex'"
+        :contrast-against="getA11yConfig(field)?.againstField ? (modelValue[getA11yConfig(field)?.againstField as string] as string) : undefined"
+        :enforce-aa-for-text="getA11yConfig(field)?.kind === 'text-aa'"
+        policy="disableTokens"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <PodsPlayerMediaPicker
         v-else-if="field.type === 'medias'"
-        :model-value="modelValue[field.name] as string"
+        :model-value="modelValue[field.name]"
         :constraint="(field as any)['x-ui']"
+        :emit-object="shouldEmitMediaObject(field)"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <PodsPlayerGeoPointPicker

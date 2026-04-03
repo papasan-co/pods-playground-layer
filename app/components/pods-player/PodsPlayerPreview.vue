@@ -26,6 +26,7 @@ const error = ref<string | null>(null)
 
 const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
+const previewCssVars = ref<Record<string, string> | null>(null)
 
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
@@ -64,6 +65,7 @@ watch(
 
     loading.value = true
     try {
+      previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
@@ -106,6 +108,7 @@ watch(
       :device="viewport"
       :module-scripts="mode === 'vue' ? vueScripts : []"
       :ready="mode === 'sfc' ? true : vueReady"
+      :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
@@ -121,10 +124,14 @@ watch(
         </div>
       </template>
       <template v-else-if="mode === 'sfc' && Comp">
-        <component :is="Comp" v-bind="previewProps" />
+        <div class="h-full w-full bg-red-500">
+          <component :is="Comp" v-bind="previewProps" />
+        </div>
       </template>
       <template v-else-if="mode === 'vue'">
-        <div class="w-full h-full" data-pods-vue-mount="1" />
+        <div class="h-full w-full bg-red-500">
+          <div class="w-full h-full" data-pods-vue-mount="1" />
+        </div>
       </template>
       <template v-else>
         <div class="w-full h-full flex items-center justify-center">

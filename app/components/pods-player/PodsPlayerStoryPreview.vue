@@ -28,6 +28,7 @@ const error = ref<string | null>(null)
 
 const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
+const previewCssVars = ref<Record<string, string> | null>(null)
 
 /**
  * pods-playground-layer.VueRuntimeVisual
@@ -141,6 +142,7 @@ watch(
 
     loading.value = true
     try {
+      previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) throw new Error('SFC mode is not supported by this host.')
         const mod = await runtime.loadSfcComponent(props.pod)
@@ -175,6 +177,7 @@ function handleScriptsLoaded() {
       :module-scripts="mode === 'vue' ? vueScripts : []"
       :ready="mode === 'sfc' ? true : vueReady"
       :scrollable="true"
+      :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
@@ -194,7 +197,7 @@ function handleScriptsLoaded() {
           <!-- StoryScrollyPage is provided by storytime-layer (host app extends it) -->
           <StoryScrollyPage :scenes="scenes" :controls="true">
             <template #visual="{ step }">
-              <div class="w-full h-full">
+              <div class="w-full h-full bg-red-500">
                 <component
                   v-if="mode === 'sfc' && Comp"
                   :is="Comp"
