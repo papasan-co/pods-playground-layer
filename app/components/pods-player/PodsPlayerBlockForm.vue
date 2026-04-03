@@ -76,6 +76,21 @@ function getA11yConfig(field: FormField): { againstField?: string; kind?: string
   return a11y as { againstField?: string; kind?: string }
 }
 
+function getGroupUiConfig(field: FormField): { collapsible?: boolean; defaultOpen?: boolean } | null {
+  const ui = (field as any)?.['x-ui']
+  if (!ui || typeof ui !== 'object') return null
+  return ui as { collapsible?: boolean; defaultOpen?: boolean }
+}
+
+function isGroupCollapsible(field: FormField): boolean {
+  return getGroupUiConfig(field)?.collapsible === true
+}
+
+function groupDefaultOpen(field: FormField): boolean {
+  const configured = getGroupUiConfig(field)?.defaultOpen
+  return typeof configured === 'boolean' ? configured : true
+}
+
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
   if (field.options && typeof field.options === 'object') {
     return Object.entries(field.options).map(([value, label]) => ({ value, label }))
@@ -273,7 +288,52 @@ function removeRepeaterItem(block: string, idx: number) {
 <template>
   <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
     <div v-if="field.type === 'group' && isVisible(field) && !isHidden(field)" class="mb-4 last:mb-0">
-      <div class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+      <UCollapsible
+        v-if="isGroupCollapsible(field)"
+        :default-open="groupDefaultOpen(field)"
+        :unmount-on-hide="false"
+        class="rounded-md border border-gray-200 dark:border-gray-700"
+      >
+        <template #default="{ open }">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            block
+            class="w-full justify-between rounded-md px-4 py-3"
+          >
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+              {{ field.label }}
+            </span>
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="h-4 w-4 transition-transform"
+              :class="{ 'rotate-180': open }"
+            />
+          </UButton>
+        </template>
+
+        <template v-if="field.children?.length" #content>
+          <div class="px-4 pb-4 space-y-4">
+            <div class="space-y-4">
+              <PodsPlayerBlockForm
+                :fields="field.children"
+                :model-value="(modelValue[field.name as string] as Record<string, unknown>) ?? {}"
+                :viewport="viewport"
+                @update:model-value="
+                  ({ field: child, value }) =>
+                    updateField(
+                      field.name as string,
+                      { ...((modelValue[field.name as string] as Record<string, unknown>) ?? {}), [child]: value },
+                      'group',
+                    )
+                "
+                @update:viewport="(val) => emit('update:viewport', val)"
+              />
+            </div>
+          </div>
+        </template>
+      </UCollapsible>
+      <div v-else class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
           {{ field.label }}
         </h3>
