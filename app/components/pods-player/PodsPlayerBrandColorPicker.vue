@@ -168,13 +168,16 @@ const ctaPreviewTextColor = computed(() => {
 const ctaPreviewStyle = computed<Record<string, string>>(() => {
   if (effectivePreviewMode.value === 'cta-primary') {
     return {
+      height: '56px',
       backgroundColor: currentColor.value,
+      borderColor: currentColor.value,
       color: ctaPreviewTextColor.value,
     }
   }
 
   if (effectivePreviewMode.value === 'cta-secondary') {
     return {
+      height: '56px',
       backgroundColor: 'transparent',
       borderColor: currentColor.value,
       color: ctaPreviewTextColor.value,
@@ -355,7 +358,7 @@ watch(customColor, (newValue) => {
           </div>
           <button
             type="button"
-            class="inline-flex rounded-lg border px-4 py-2 text-sm font-medium"
+            class="inline-flex items-center justify-center rounded-md border px-6 text-[15px] leading-none font-medium tracking-[0.01em] no-underline"
             :class="effectivePreviewMode === 'cta-primary' ? 'border-transparent' : 'bg-transparent'"
             :style="ctaPreviewStyle"
           >
@@ -401,7 +404,7 @@ watch(customColor, (newValue) => {
           </div>
           <button
             type="button"
-            class="inline-flex rounded-lg border px-4 py-2 text-sm font-medium"
+            class="inline-flex items-center justify-center rounded-md border px-6 text-[15px] leading-none font-medium tracking-[0.01em] no-underline"
             :class="effectivePreviewMode === 'cta-primary' ? 'border-transparent' : 'bg-transparent'"
             :style="ctaPreviewStyle"
           >
