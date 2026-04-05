@@ -119,6 +119,20 @@ const isCustomAdjusted = computed(() => {
   return adjustedCustomColor.value.toUpperCase() !== customColor.value.toUpperCase()
 })
 
+const effectivePreviewColor = computed(() => {
+  if (!props.enforceAaForText) return currentColor.value
+  if (!contrastBackgroundHex.value) return currentColor.value
+  return ensureAaTextOnBackground(contrastBackgroundHex.value, currentColor.value)
+})
+
+const isPreviewAdjusted = computed(() => {
+  if (!props.enforceAaForText) return false
+  if (!contrastBackgroundHex.value) return false
+  const current = currentColor.value
+  if (!isHexColor(current)) return false
+  return effectivePreviewColor.value.toUpperCase() !== current.toUpperCase()
+})
+
 const currentColor = computed(() => {
   if (effectiveOutputMode.value === 'token') {
     return getGroupColor500(selectedTokenKey.value)
@@ -131,8 +145,7 @@ const currentColor = computed(() => {
 })
 
 const collapsedDisplayColor = computed(() => {
-  if (isCustomAdjusted.value) return adjustedCustomColor.value
-  return currentColor.value
+  return effectivePreviewColor.value
 })
 
 watch(
@@ -209,7 +222,15 @@ function swatchLabel(key: string): string {
           class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600"
           :style="{ backgroundColor: collapsedDisplayColor }"
         />
-        <span class="text-xs text-gray-600 dark:text-gray-400 font-mono">{{ collapsedDisplayColor }}</span>
+        <div class="min-w-0">
+          <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{{ collapsedDisplayColor }}</div>
+          <div
+            v-if="isPreviewAdjusted"
+            class="text-[11px] text-amber-600 dark:text-amber-400"
+          >
+            Preview adjusted for accessibility
+          </div>
+        </div>
       </div>
       <UIcon
         :name="isExpanded ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
@@ -280,10 +301,10 @@ function swatchLabel(key: string): string {
           />
         </label>
         <div
-          v-if="isCustomAdjusted"
+          v-if="isPreviewAdjusted"
           class="text-xs text-amber-600 dark:text-amber-400 rounded border border-amber-300/60 dark:border-amber-700/60 bg-amber-50/70 dark:bg-amber-900/20 px-2 py-1.5"
         >
-          Adjusted for AA: {{ adjustedCustomColor }}
+          Preview adjusted for accessibility: {{ effectivePreviewColor }}
         </div>
       </div>
     </div>

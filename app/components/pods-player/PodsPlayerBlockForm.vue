@@ -8,6 +8,7 @@ import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
+import PodsPlayerPositionPicker from './PodsPlayerPositionPicker.vue'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -23,6 +24,7 @@ const props = defineProps<{
   fields: FormField[]
   modelValue: Record<string, unknown>
   viewport?: PodsPlayerViewport
+  compositeFieldUpdates?: boolean
 }>()
 
 interface UpdatePayload {
@@ -38,6 +40,14 @@ const emit = defineEmits<{
 function updateField(name: string, value: unknown, type: string) {
   const v = type === 'number' ? Number(value) : value
   emit('update:modelValue', { field: name, value: v })
+}
+
+function isObjectLike(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isUiOnlyMergeField(name: string | undefined): boolean {
+  return Boolean(name && name.startsWith('__'))
 }
 
 interface Condition {
@@ -70,6 +80,10 @@ function isReadOnly(field: FormField): boolean {
 }
 
 function getA11yConfig(field: FormField): { againstField?: string; kind?: string } | null {
+  const explicit = (field as any)?.['x-a11y']
+  if (explicit && typeof explicit === 'object') {
+    return explicit as { againstField?: string; kind?: string }
+  }
   const ui = (field as any)?.['x-ui']
   const a11y = ui?.a11y
   if (!a11y || typeof a11y !== 'object') return null
@@ -80,6 +94,15 @@ function getGroupUiConfig(field: FormField): { collapsible?: boolean; defaultOpe
   const ui = (field as any)?.['x-ui']
   if (!ui || typeof ui !== 'object') return null
   return ui as { collapsible?: boolean; defaultOpen?: boolean }
+}
+
+function getPositionGridConfig(field: FormField): { verticalField: string; horizontalField: string; mode: 'text' | 'block' } | null {
+  const ui = (field as any)?.['x-ui']
+  const verticalField = ui?.verticalField
+  const horizontalField = ui?.horizontalField
+  const mode = ui?.mode === 'block' ? 'block' : 'text'
+  if (typeof verticalField !== 'string' || typeof horizontalField !== 'string') return null
+  return { verticalField, horizontalField, mode }
 }
 
 function isGroupCollapsible(field: FormField): boolean {
@@ -261,7 +284,11 @@ watch(
 
 function updateRepeaterItem(block: string, idx: number, child: string, value: unknown) {
   const list = listFor(block)
-  list.value = list.value.map((it, i) => (i === idx ? { ...it, [child]: value } : it))
+  list.value = list.value.map((it, i) => {
+    if (i !== idx) return it
+    if (isUiOnlyMergeField(child) && isObjectLike(value)) return { ...it, ...value }
+    return { ...it, [child]: value }
+  })
   emit('update:modelValue', { field: block, value: list.value })
   saveLocal(block)
 }
@@ -282,6 +309,42 @@ function removeRepeaterItem(block: string, idx: number) {
     emit('update:modelValue', { field: block, value: list.value })
     saveLocal(block)
   }, 300)
+}
+
+function mergeGroupValue(groupName: string, child: string, value: unknown) {
+  const current = isObjectLike(props.modelValue[groupName]) ? (props.modelValue[groupName] as Record<string, unknown>) : {}
+  const next =
+    isUiOnlyMergeField(child) && isObjectLike(value)
+      ? { ...current, ...value }
+      : { ...current, [child]: value }
+  updateField(groupName, next, 'group')
+}
+
+function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  const config = getPositionGridConfig(field)
+  if (!config) return
+  emit('update:modelValue', {
+    field: field.name || '__positionGrid',
+    value: {
+      [config.verticalField]: value.verticalPosition,
+      [config.horizontalField]: value.horizontalPosition,
+    },
+  })
+}
+
+function updateRootPositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  const config = getPositionGridConfig(field)
+  if (!config) return
+  updateField(config.verticalField, value.verticalPosition, 'select')
+  updateField(config.horizontalField, value.horizontalPosition, 'select')
+}
+
+function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  if (props.compositeFieldUpdates) {
+    emitGroupPositionUpdate(field, value)
+    return
+  }
+  updateRootPositionGrid(field, value)
 }
 </script>
 
@@ -319,13 +382,9 @@ function removeRepeaterItem(block: string, idx: number) {
                 :fields="field.children"
                 :model-value="(modelValue[field.name as string] as Record<string, unknown>) ?? {}"
                 :viewport="viewport"
+                :composite-field-updates="true"
                 @update:model-value="
-                  ({ field: child, value }) =>
-                    updateField(
-                      field.name as string,
-                      { ...((modelValue[field.name as string] as Record<string, unknown>) ?? {}), [child]: value },
-                      'group',
-                    )
+                  ({ field: child, value }) => mergeGroupValue(field.name as string, child, value)
                 "
                 @update:viewport="(val) => emit('update:viewport', val)"
               />
@@ -343,13 +402,9 @@ function removeRepeaterItem(block: string, idx: number) {
           :fields="field.children"
           :model-value="(modelValue[field.name as string] as Record<string, unknown>) ?? {}"
           :viewport="viewport"
+          :composite-field-updates="true"
           @update:model-value="
-            ({ field: child, value }) =>
-              updateField(
-                field.name as string,
-                { ...((modelValue[field.name as string] as Record<string, unknown>) ?? {}), [child]: value },
-                'group',
-              )
+            ({ field: child, value }) => mergeGroupValue(field.name as string, child, value)
           "
           @update:viewport="(val) => emit('update:viewport', val)"
         />
@@ -497,8 +552,16 @@ function removeRepeaterItem(block: string, idx: number) {
           <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(field as any) }}</span>
         </div>
       </template>
+      <PodsPlayerPositionPicker
+        v-if="field.type === 'position-grid'"
+        :vertical="modelValue[getPositionGridConfig(field)?.verticalField as string] as string"
+        :horizontal="modelValue[getPositionGridConfig(field)?.horizontalField as string] as string"
+        :mode="getPositionGridConfig(field)?.mode"
+        :disabled="isReadOnly(field)"
+        @update="(val) => updatePositionGrid(field, val)"
+      />
       <UInput
-        v-if="field.type === 'input'"
+        v-else-if="field.type === 'input'"
         class="w-full"
         size="sm"
         :disabled="isReadOnly(field)"
@@ -665,6 +728,7 @@ function removeRepeaterItem(block: string, idx: number) {
                     :fields="(field.fields || []) as any"
                     :model-value="(item as any)"
                     :viewport="viewport"
+                    :composite-field-updates="true"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
