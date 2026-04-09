@@ -241,6 +241,19 @@ function initSortable(el: HTMLElement, name: string) {
   })
 }
 
+function hoistUiOnlyGroupValues() {
+  for (const field of props.fields) {
+    if (field.type !== 'group' || !field.children?.length || !isUiOnlyMergeField(field.name)) continue
+    const nested = props.modelValue[field.name]
+    if (!isObjectLike(nested)) continue
+
+    for (const [child, value] of Object.entries(nested)) {
+      if (props.modelValue[child] !== undefined || value === undefined) continue
+      emitUiOnlyRootUpdate(child, value)
+    }
+  }
+}
+
 function initializeRepeater(field: FormField) {
   if (field.type !== 'repeater') return
   const modelValue = props.modelValue[field.name]
@@ -263,12 +276,14 @@ function initializeRepeater(field: FormField) {
 }
 
 onMounted(() => {
+  hoistUiOnlyGroupValues()
   for (const field of props.fields) initializeRepeater(field)
 })
 
 watch(
   () => props.modelValue,
   (newValue) => {
+    hoistUiOnlyGroupValues()
     for (const field of props.fields) {
       if (field.type === 'repeater') {
         const mv = newValue[field.name]
@@ -318,6 +333,31 @@ function mergeGroupValue(groupName: string, child: string, value: unknown) {
       ? { ...current, ...value }
       : { ...current, [child]: value }
   updateField(groupName, next, 'group')
+}
+
+function groupModelValue(groupName: string | undefined): Record<string, unknown> {
+  if (!groupName || isUiOnlyMergeField(groupName)) return props.modelValue
+  return (props.modelValue[groupName] as Record<string, unknown>) ?? {}
+}
+
+function emitUiOnlyRootUpdate(child: string, value: unknown) {
+  if (isUiOnlyMergeField(child) && isObjectLike(value)) {
+    for (const [key, nestedValue] of Object.entries(value)) {
+      emit('update:modelValue', { field: key, value: nestedValue })
+    }
+    return
+  }
+
+  emit('update:modelValue', { field: child, value })
+}
+
+function handleGroupUpdate(groupName: string | undefined, child: string, value: unknown) {
+  if (!groupName || isUiOnlyMergeField(groupName)) {
+    emitUiOnlyRootUpdate(child, value)
+    return
+  }
+
+  mergeGroupValue(groupName, child, value)
 }
 
 function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
@@ -380,11 +420,11 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             <div class="space-y-4">
               <PodsPlayerBlockForm
                 :fields="field.children"
-                :model-value="(modelValue[field.name as string] as Record<string, unknown>) ?? {}"
+                :model-value="groupModelValue(field.name as string | undefined)"
                 :viewport="viewport"
                 :composite-field-updates="true"
                 @update:model-value="
-                  ({ field: child, value }) => mergeGroupValue(field.name as string, child, value)
+                  ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
                 "
                 @update:viewport="(val) => emit('update:viewport', val)"
               />
@@ -400,11 +440,11 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         <PodsPlayerBlockForm
           v-if="field.children?.length"
           :fields="field.children"
-          :model-value="(modelValue[field.name as string] as Record<string, unknown>) ?? {}"
+          :model-value="groupModelValue(field.name as string | undefined)"
           :viewport="viewport"
           :composite-field-updates="true"
           @update:model-value="
-            ({ field: child, value }) => mergeGroupValue(field.name as string, child, value)
+            ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
           "
           @update:viewport="(val) => emit('update:viewport', val)"
         />
