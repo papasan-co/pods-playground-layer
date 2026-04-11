@@ -4,6 +4,7 @@ const props = defineProps<{
   horizontal?: string
   disabled?: boolean
   mode?: 'text' | 'block'
+  axis?: 'both' | 'horizontal'
 }>()
 
 const emit = defineEmits<{
@@ -29,8 +30,24 @@ const options: PositionOption[] = [
   { key: 'bottom-right', label: 'Bottom right', vertical: 'bottom', horizontal: 'right' },
 ]
 
-const selectedKey = computed(() => `${props.vertical || 'middle'}-${props.horizontal || 'center'}`)
-const selectedLabel = computed(() => options.find((option) => option.key === selectedKey.value)?.label ?? 'Center')
+const axisMode = computed(() => props.axis ?? (props.vertical ? 'both' : 'horizontal'))
+const visibleOptions = computed(() =>
+  axisMode.value === 'horizontal'
+    ? options.filter((option) => option.vertical === 'middle')
+    : options,
+)
+function optionLabel(option: PositionOption): string {
+  if (axisMode.value !== 'horizontal') return option.label
+  return option.horizontal === 'left' ? 'Left' : option.horizontal === 'right' ? 'Right' : 'Center'
+}
+const selectedKey = computed(() => {
+  const vertical = axisMode.value === 'horizontal' ? 'middle' : (props.vertical || 'middle')
+  return `${vertical}-${props.horizontal || 'center'}`
+})
+const selectedLabel = computed(() => {
+  const selectedOption = visibleOptions.value.find((option) => option.key === selectedKey.value)
+  return selectedOption ? optionLabel(selectedOption) : 'Center'
+})
 const markerMode = computed(() => props.mode ?? 'text')
 
 function anchorClass(option: PositionOption): string[] {
@@ -70,17 +87,17 @@ function choose(option: PositionOption) {
   <div class="space-y-1.5">
     <div class="grid w-full grid-cols-3 gap-1.5">
       <UButton
-        v-for="option in options"
+        v-for="option in visibleOptions"
         :key="option.key"
         type="button"
         color="neutral"
         :variant="selectedKey === option.key ? 'solid' : 'outline'"
         :disabled="disabled"
-        :title="option.label"
+        :title="optionLabel(option)"
         class="relative h-9 w-full justify-center rounded-md px-0"
         @click="choose(option)"
       >
-        <span class="sr-only">{{ option.label }}</span>
+        <span class="sr-only">{{ optionLabel(option) }}</span>
         <span
           class="relative block h-5 w-5 rounded-[4px] border"
           :class="selectedKey === option.key ? 'border-white/45' : 'border-gray-300 dark:border-gray-600'"

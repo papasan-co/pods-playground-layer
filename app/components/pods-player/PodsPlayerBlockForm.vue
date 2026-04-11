@@ -96,13 +96,13 @@ function getGroupUiConfig(field: FormField): { collapsible?: boolean; defaultOpe
   return ui as { collapsible?: boolean; defaultOpen?: boolean }
 }
 
-function getPositionGridConfig(field: FormField): { verticalField: string; horizontalField: string; mode: 'text' | 'block' } | null {
+function getPositionGridConfig(field: FormField): { verticalField?: string; horizontalField: string; mode: 'text' | 'block' } | null {
   const ui = (field as any)?.['x-ui']
   const verticalField = ui?.verticalField
   const horizontalField = ui?.horizontalField
   const mode = ui?.mode === 'block' ? 'block' : 'text'
-  if (typeof verticalField !== 'string' || typeof horizontalField !== 'string') return null
-  return { verticalField, horizontalField, mode }
+  if (typeof horizontalField !== 'string') return null
+  return { verticalField: typeof verticalField === 'string' ? verticalField : undefined, horizontalField, mode }
 }
 
 function isGroupCollapsible(field: FormField): boolean {
@@ -366,7 +366,7 @@ function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 't
   emit('update:modelValue', {
     field: field.name || '__positionGrid',
     value: {
-      [config.verticalField]: value.verticalPosition,
+      ...(config.verticalField ? { [config.verticalField]: value.verticalPosition } : {}),
       [config.horizontalField]: value.horizontalPosition,
     },
   })
@@ -375,7 +375,7 @@ function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 't
 function updateRootPositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
   const config = getPositionGridConfig(field)
   if (!config) return
-  updateField(config.verticalField, value.verticalPosition, 'select')
+  if (config.verticalField) updateField(config.verticalField, value.verticalPosition, 'select')
   updateField(config.horizontalField, value.horizontalPosition, 'select')
 }
 
@@ -597,6 +597,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :vertical="modelValue[getPositionGridConfig(field)?.verticalField as string] as string"
         :horizontal="modelValue[getPositionGridConfig(field)?.horizontalField as string] as string"
         :mode="getPositionGridConfig(field)?.mode"
+        :axis="getPositionGridConfig(field)?.verticalField ? 'both' : 'horizontal'"
         :disabled="isReadOnly(field)"
         @update="(val) => updatePositionGrid(field, val)"
       />
