@@ -23,6 +23,7 @@ defineOptions({ name: 'PodsPlayerBlockForm' })
 const props = defineProps<{
   fields: FormField[]
   modelValue: Record<string, unknown>
+  rootModelValue?: Record<string, unknown>
   viewport?: PodsPlayerViewport
   compositeFieldUpdates?: boolean
 }>()
@@ -115,11 +116,72 @@ function groupDefaultOpen(field: FormField): boolean {
 }
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
+  const dynamicItems = dynamicSelectItems(field)
+  if (dynamicItems.length > 0) return dynamicItems
+
+  if (Array.isArray(field.options)) {
+    return field.options.map((value) => ({ value, label: value }))
+  }
+
   if (field.options && typeof field.options === 'object') {
     return Object.entries(field.options).map(([value, label]) => ({ value, label }))
   }
 
   return []
+}
+
+type DynamicSelectConfig =
+  | {
+      kind: 'array-field'
+      path: string
+      field: string
+      source?: 'root' | 'current'
+    }
+  | {
+      kind: 'chart-line-domain'
+      path: string
+      source?: 'root' | 'current'
+    }
+
+function dynamicSelectItems(field: FormField) {
+  const ui = (field as any)?.['x-ui']
+  const config = ui?.optionsFrom as DynamicSelectConfig | undefined
+  if (!config || typeof config !== 'object' || typeof config.path !== 'string') return []
+
+  const sourceModel = config.source === 'current'
+    ? props.modelValue
+    : (props.rootModelValue ?? props.modelValue)
+
+  const pushUnique = (items: Array<{ value: string; label: string }>, value: unknown) => {
+    const normalized = String(value ?? '').trim()
+    if (!normalized || items.some((item) => item.value === normalized)) return
+    items.push({ value: normalized, label: normalized })
+  }
+
+  const items: Array<{ value: string; label: string }> = []
+  const sourceValue = dotGet(sourceModel, config.path)
+
+  if (config.kind === 'array-field' && Array.isArray(sourceValue)) {
+    for (const entry of sourceValue) {
+      if (!entry || typeof entry !== 'object') continue
+      pushUnique(items, (entry as Record<string, unknown>)[config.field])
+    }
+    return items
+  }
+
+  if (config.kind === 'chart-line-domain' && Array.isArray(sourceValue)) {
+    for (const series of sourceValue) {
+      if (!series || typeof series !== 'object') continue
+      const points = (series as Record<string, unknown>).points
+      if (!Array.isArray(points)) continue
+      for (const point of points) {
+        if (!point || typeof point !== 'object') continue
+        pushUnique(items, (point as Record<string, unknown>).x)
+      }
+    }
+  }
+
+  return items
 }
 
 function colorSelectKeys(field: FormField & { options?: Record<string, string> | string[] }): string[] {
@@ -421,6 +483,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               <PodsPlayerBlockForm
                 :fields="field.children"
                 :model-value="groupModelValue(field.name as string | undefined)"
+                :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
                 @update:model-value="
@@ -441,6 +504,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           v-if="field.children?.length"
           :fields="field.children"
           :model-value="groupModelValue(field.name as string | undefined)"
+          :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
           @update:model-value="
@@ -774,6 +838,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                   <PodsPlayerBlockForm
                     :fields="(field.fields || []) as any"
                     :model-value="(item as any)"
+                    :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
                     :composite-field-updates="true"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
