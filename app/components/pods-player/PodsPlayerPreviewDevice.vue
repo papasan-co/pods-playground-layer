@@ -346,7 +346,7 @@ watchEffect(() => {
 </script>
 
 <template>
-  <div ref="hostRef" class="preview-device-host w-full h-full flex items-center justify-center">
+  <div ref="hostRef" class="preview-device-host w-full h-full flex items-start justify-center">
     <div class="preview-device-slot" :style="{ width: `${scaledSize.width}px`, height: `${scaledSize.height}px` }">
       <div
         class="preview-device transition-all duration-300 ease-in-out rounded-md shadow-lg bg-gray-100 dark:bg-gray-800"
