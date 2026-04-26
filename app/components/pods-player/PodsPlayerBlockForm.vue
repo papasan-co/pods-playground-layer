@@ -469,11 +469,20 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">
               {{ field.label }}
             </span>
-            <UIcon
-              name="i-lucide-chevron-down"
-              class="h-4 w-4 transition-transform"
+            <svg
+              data-collapsible-caret="1"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-300"
               :class="{ 'rotate-180': open }"
-            />
+              aria-hidden="true"
+            >
+              <path d="m5 7.5 5 5 5-5" />
+            </svg>
           </UButton>
         </template>
 
@@ -560,6 +569,8 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string]"
               :placeholder="child.placeholder as any"
               :items="selectItems(child as any)"
+              value-key="value"
+              label-key="label"
               value-attribute="value"
               label-attribute="label"
               arrow
@@ -689,6 +700,8 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name]"
         :placeholder="field.placeholder as any"
         :items="selectItems(field as any)"
+        value-key="value"
+        label-key="label"
         value-attribute="value"
         label-attribute="label"
         arrow
@@ -818,10 +831,24 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                       color="neutral"
                       variant="ghost"
                       size="xs"
-                      icon="i-lucide-chevron-down"
-                      :class="{ 'rotate-180': open }"
+                      aria-label="Toggle repeater item"
                       @click.stop="toggleItemOpen(field.name, itemKey(item as any, idx))"
-                    />
+                    >
+                      <svg
+                        data-collapsible-caret="1"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="h-4 w-4 transition-transform"
+                        :class="{ 'rotate-180': open }"
+                        aria-hidden="true"
+                      >
+                        <path d="m5 7.5 5 5 5-5" />
+                      </svg>
+                    </UButton>
                     <UButton
                       color="neutral"
                       variant="ghost"

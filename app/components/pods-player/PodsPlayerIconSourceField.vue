@@ -158,6 +158,8 @@ function onIconifyValueChange(value: unknown) {
       :disabled="disabled"
       :model-value="source.type"
       :items="sourceTypes as any"
+      value-key="value"
+      label-key="label"
       value-attribute="value"
       label-attribute="label"
       @update:model-value="(value) => updateSource({ type: value as IconSourceType })"

@@ -26,9 +26,16 @@ const props = defineProps<{
 }>()
 
 const runtime = usePodsPlayerRuntime()
+const route = useRoute()
+
+function requestedModeFromRoute(): PodsPlayerMode | null {
+  const requested = route.query.mode
+  if (typeof requested !== 'string') return null
+  return runtime.supportedModes.includes(requested as PodsPlayerMode) ? (requested as PodsPlayerMode) : null
+}
 
 const pod = ref<PodDetails | null>(null)
-const mode = ref<PodsPlayerMode>((runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode)
+const mode = ref<PodsPlayerMode>((requestedModeFromRoute() ?? runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode)
 const viewport = ref<PodsPlayerViewport>('laptop')
 
 const fixture = ref<Record<string, unknown> | null>(null)
@@ -344,6 +351,14 @@ watch(
     await loadPodData()
   },
   { immediate: true },
+)
+
+watch(
+  () => route.query.mode,
+  () => {
+    const requestedMode = requestedModeFromRoute()
+    if (requestedMode) mode.value = requestedMode
+  },
 )
 
 watchEffect(() => {
