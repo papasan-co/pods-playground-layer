@@ -26,6 +26,10 @@ const props = defineProps<{
   rootModelValue?: Record<string, unknown>
   viewport?: PodsPlayerViewport
   compositeFieldUpdates?: boolean
+  mediaItems?: Array<Record<string, unknown>>
+  storyMediaItems?: Array<Record<string, unknown>>
+  libraryMediaItems?: Array<Record<string, unknown>>
+  mediaSourceMode?: 'cms' | 'playground'
 }>()
 
 interface UpdatePayload {
@@ -516,6 +520,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
+          :media-items="mediaItems || []"
+          :story-media-items="storyMediaItems || []"
+          :library-media-items="libraryMediaItems || []"
+          :media-source-mode="mediaSourceMode || 'playground'"
           @update:model-value="
             ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
           "
@@ -619,6 +627,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string]"
               :constraint="(child as any)['x-ui']"
               :emit-object="shouldEmitMediaObject(child)"
+              :media-items="mediaItems || []"
+              :story-media-items="storyMediaItems || []"
+              :library-media-items="libraryMediaItems || []"
+              :source-mode="mediaSourceMode || 'playground'"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerGeoPointPicker
@@ -774,6 +786,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name]"
         :constraint="(field as any)['x-ui']"
         :emit-object="shouldEmitMediaObject(field)"
+        :media-items="mediaItems || []"
+        :story-media-items="storyMediaItems || []"
+        :library-media-items="libraryMediaItems || []"
+        :source-mode="mediaSourceMode || 'playground'"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <PodsPlayerGeoPointPicker
@@ -868,6 +884,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                     :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
                     :composite-field-updates="true"
+                    :media-items="mediaItems || []"
+                    :story-media-items="storyMediaItems || []"
+                    :library-media-items="libraryMediaItems || []"
+                    :media-source-mode="mediaSourceMode || 'playground'"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
