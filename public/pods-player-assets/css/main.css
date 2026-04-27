@@ -13,13 +13,17 @@
 /* Define CSS custom properties for primary colors */
 :root {
   --mobile-step-height: 100vh;
+  /* Default brand palette (mirrors backend defaults for playground testing) */
+  --color-primary-500: #0F172A;
+  --color-secondary-500: #4A70A9;
+  --color-tertiary-500: #EFECE3;
+  --color-quaternary-500: #8FABD4;
   /* Off-black tone based on #1e1e1f */
   --color-primary-50: #f4f4f5;
   --color-primary-100: #e4e4e7;
   --color-primary-200: #c9c9cd;
   --color-primary-300: #8f8f92;
   --color-primary-400: #4f4f52;
-  --color-primary-500: #1e1e1f; /* Your chosen color */
   --color-primary-600: #1a1a1b; /* Slightly darker hover */
   --color-primary-700: #161617;
   --color-primary-800: #121213;
@@ -33,7 +37,10 @@
   --color-primary-200: #e4e4e7;
   --color-primary-300: #d4d4d8;
   --color-primary-400: #a1a1aa;
-  --color-primary-500: #737373; /* More contrast in dark mode */
+  --color-primary-500: #0F172A;
+  --color-secondary-500: #4A70A9;
+  --color-tertiary-500: #EFECE3;
+  --color-quaternary-500: #8FABD4;
   --color-primary-600: #a1a1a1;
   --color-primary-700: #d1d1d1;
   --color-primary-800: #e5e5e5;
@@ -47,11 +54,14 @@
   --color-primary-200: #c9c9cd;
   --color-primary-300: #8f8f92;
   --color-primary-400: #4f4f52;
-  --color-primary-500: #1e1e1f;
+  --color-primary-500: #0F172A;
   --color-primary-600: #1a1a1b;
   --color-primary-700: #161617;
   --color-primary-800: #121213;
   --color-primary-900: #0e0e0f;
+  --color-secondary-500: #4A70A9;
+  --color-tertiary-500: #EFECE3;
+  --color-quaternary-500: #8FABD4;
 }
 
 /* Enable dark mode variant for Tailwind */

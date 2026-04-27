@@ -8,6 +8,7 @@ export type MediaCatalogItem = {
   title: string
   orientation?: Exclude<MediaOrientation, 'any'>
   kind?: Exclude<MediaKind, 'any'>
+  thumbnailFilename?: string
   roles?: string[]
   alt?: string
   tags?: string[]
@@ -16,9 +17,15 @@ export type MediaCatalogItem = {
 
 export type MediaCatalogEntry = MediaCatalogItem & {
   url: string
+  thumbnailUrl?: string
 }
 
-const BASE = '/pods-player-assets/images/'
+const BASE_BY_KIND: Record<Exclude<MediaKind, 'any'>, string> = {
+  photo: '/pods-player-assets/images/',
+  logo: '/pods-player-assets/images/',
+  video: '/pods-player-assets/video/',
+  file: '/pods-player-assets/',
+}
 
 function normalizeRole(r: string): string {
   return String(r || '').trim().toLowerCase()
@@ -28,12 +35,17 @@ export function mediaCatalog(): MediaCatalogEntry[] {
   const arr = Array.isArray(raw) ? (raw as MediaCatalogItem[]) : []
   return arr
     .filter((x) => x && typeof x.filename === 'string' && x.filename.length > 0)
-    .map((x) => ({
-      ...x,
-      roles: Array.isArray(x.roles) ? x.roles.map(normalizeRole).filter(Boolean) : [],
-      tags: Array.isArray(x.tags) ? x.tags.map((t) => String(t).trim()).filter(Boolean) : [],
-      url: `${BASE}${x.filename}`,
-    }))
+    .map((x) => {
+      const kind = x.kind ?? 'file'
+      const base = BASE_BY_KIND[kind]
+      return {
+        ...x,
+        roles: Array.isArray(x.roles) ? x.roles.map(normalizeRole).filter(Boolean) : [],
+        tags: Array.isArray(x.tags) ? x.tags.map((t) => String(t).trim()).filter(Boolean) : [],
+        url: `${base}${x.filename}`,
+        thumbnailUrl: x.thumbnailFilename ? `${BASE_BY_KIND.photo}${x.thumbnailFilename}` : undefined,
+      }
+    })
 }
 
 export function findByUrl(url: string | undefined | null): MediaCatalogEntry | null {

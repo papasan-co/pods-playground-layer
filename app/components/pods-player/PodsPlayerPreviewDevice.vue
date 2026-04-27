@@ -46,6 +46,10 @@ const props = defineProps<{
    * Extra classes applied to iframe document root.
    */
   rootClasses?: string[]
+  /**
+   * Debug-only fill diagnostic that makes unused space obvious without changing the normal preview chrome.
+   */
+  debugFill?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -329,6 +333,7 @@ watchEffect(() => {
   void props.cssVars
   void props.extraStylesheets
   void props.rootClasses
+  void props.debugFill
   slotVNode.value =
     props.ready === false
       ? null
@@ -338,7 +343,19 @@ watchEffect(() => {
            * Scroll mode: do NOT force a fixed height or overflow-hidden on the root wrapper.
            * The iframe document should be able to grow and scroll naturally.
            */
-          { class: props.scrollable ? 'w-full min-h-full' : 'w-full h-full overflow-hidden' },
+          {
+            class: props.scrollable ? 'w-full min-h-full' : 'w-full h-full overflow-hidden',
+            'data-pods-preview-root': '1',
+            'data-pods-debug-fill': props.debugFill ? '1' : '0',
+            style: props.debugFill
+              ? {
+                  backgroundImage:
+                    'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 18px, rgba(248,113,113,0.16) 18px 36px)',
+                  outline: '2px solid rgba(220,38,38,0.7)',
+                  outlineOffset: '-2px',
+                }
+              : undefined,
+          },
           slots.default?.(),
         )
   void bootIframe()

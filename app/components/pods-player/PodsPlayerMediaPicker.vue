@@ -35,10 +35,12 @@ type PickerEntry = MediaCatalogEntry & {
 
 type SourceMode = 'cms' | 'playground'
 type SourceScope = 'story' | 'library'
+type MediaValue = string | Record<string, unknown> | null | undefined
 
 const props = defineProps<{
-  modelValue?: string | Record<string, unknown> | null
+  modelValue?: MediaValue
   constraint?: UiConstraint
+  emitObject?: boolean
   mediaItems?: RuntimeMediaItem[]
   storyMediaItems?: RuntimeMediaItem[]
   libraryMediaItems?: RuntimeMediaItem[]
@@ -46,7 +48,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void
+  (e: 'update:modelValue', value: string | { src: string; url: string; alt?: string }): void
 }>()
 
 const isOpen = ref(false)
@@ -57,6 +59,34 @@ const constraint = computed(() => props.constraint ?? {})
 const kind = computed<MediaKind>(() => (constraint.value.mediaKind ?? constraint.value.kind ?? 'any') as MediaKind)
 const orientation = computed<MediaOrientation>(() => (constraint.value.orientation ?? 'any') as MediaOrientation)
 const roles = computed<string[]>(() => (Array.isArray(constraint.value.roles) ? constraint.value.roles : []))
+
+const currentUrl = computed(() => {
+  if (typeof props.modelValue === 'string') return props.modelValue
+  if (props.modelValue && typeof props.modelValue === 'object') {
+    return String(
+      props.modelValue.s3Key
+      || props.modelValue.src
+      || props.modelValue.url
+      || props.modelValue.id
+      || '',
+    )
+  }
+  return ''
+})
+
+function isVideoEntry(entry: MediaCatalogEntry | PickerEntry | null | undefined): boolean {
+  const mediaType = String((entry as PickerEntry | undefined)?.mediaType || '').toLowerCase()
+  return entry?.kind === 'video' || mediaType.startsWith('video')
+}
+
+function toEmittedValue(entryOrUrl: string | PickerEntry, alt?: string) {
+  const value = typeof entryOrUrl === 'string' ? entryOrUrl : (entryOrUrl.s3Key || entryOrUrl.url)
+  const label = typeof entryOrUrl === 'string' ? alt : (entryOrUrl.alt || entryOrUrl.title)
+  if (props.emitObject) {
+    return { src: value, url: value, ...(label ? { alt: label } : {}) }
+  }
+  return value
+}
 
 function toNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -154,12 +184,7 @@ watch(
 )
 
 const selected = computed<PickerEntry | null>(() => {
-  const rawValue = props.modelValue
-  const value = typeof rawValue === 'string'
-    ? rawValue.trim()
-    : (rawValue && typeof rawValue === 'object'
-        ? String((rawValue as Record<string, unknown>).s3Key || (rawValue as Record<string, unknown>).src || (rawValue as Record<string, unknown>).url || (rawValue as Record<string, unknown>).id || '').trim()
-        : '')
+  const value = currentUrl.value.trim()
   if (!value) return null
 
   if (usingRuntimeCatalog.value) {
@@ -170,7 +195,8 @@ const selected = computed<PickerEntry | null>(() => {
     ) ?? null
   }
 
-  return findByUrl(props.modelValue)
+  const fixture = findByUrl(value)
+  return fixture ? { ...fixture, source: 'fixture' as const } : null
 })
 
 function shortNameFromUrl(raw: string | undefined): string {
@@ -190,7 +216,7 @@ function shortNameFromUrl(raw: string | undefined): string {
   }
 }
 
-const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(props.modelValue)))
+const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(currentUrl.value)))
 
 function runtimeMatchesRoles(entry: PickerEntry, requested: string[]): boolean {
   if (!requested.length) return true
@@ -232,21 +258,21 @@ const items = computed<PickerEntry[]>(() => {
   })
 })
 
-// Image fields should always have a selection; default to first matching item.
+// Visual media fields should always have a selection; default to first matching item.
 watch(
-  () => [props.modelValue, items.value.length, kind.value] as const,
+  () => [currentUrl.value, items.value.length, kind.value] as const,
   () => {
-    if (props.modelValue) return
-    if (kind.value !== 'photo' && kind.value !== 'logo') return
+    if (currentUrl.value) return
+    if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
     const first = items.value[0]
     if (!first) return
-    emit('update:modelValue', first.s3Key || first.url)
+    emit('update:modelValue', toEmittedValue(first))
   },
   { immediate: true },
 )
 
 function choose(it: PickerEntry) {
-  emit('update:modelValue', it.s3Key || it.url)
+  emit('update:modelValue', toEmittedValue(it))
   isOpen.value = false
 }
 </script>
@@ -264,8 +290,18 @@ function choose(it: PickerEntry) {
           <div
             class="w-10 h-10 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 overflow-hidden shrink-0"
           >
+            <video
+              v-if="selected && isVideoEntry(selected)"
+              :src="selected.url"
+              :poster="selected.thumbnailUrl"
+              class="w-full h-full object-cover"
+              muted
+              playsinline
+              preload="metadata"
+              aria-hidden="true"
+            />
             <nuxt-img
-              v-if="selected && selected.s3Key"
+              v-else-if="selected && selected.s3Key"
               :src="selected.s3Key"
               provider="aws"
               fit="cover"
@@ -283,6 +319,13 @@ function choose(it: PickerEntry) {
               class="w-full h-full object-cover"
               loading="lazy"
             />
+            <div
+              v-else-if="kind === 'video'"
+              class="flex h-full w-full items-center justify-center text-gray-400 dark:text-gray-500"
+              aria-hidden="true"
+            >
+              <UIcon name="i-lucide-video" class="h-5 w-5" />
+            </div>
           </div>
 
           <div class="min-w-0 max-w-full overflow-hidden">
@@ -303,8 +346,8 @@ function choose(it: PickerEntry) {
       size="sm"
       class="w-full"
       placeholder="Paste media URL"
-      :model-value="modelValue"
-      @update:model-value="(v) => emit('update:modelValue', String(v || ''))"
+      :model-value="currentUrl"
+      @update:model-value="(v) => emit('update:modelValue', toEmittedValue(String(v || '')))"
     />
 
     <div v-if="isOpen" class="fixed inset-0 z-50">
@@ -367,8 +410,18 @@ function choose(it: PickerEntry) {
                 @click="choose(it)"
               >
                 <div class="aspect-[4/3] bg-gray-50 dark:bg-gray-800 overflow-hidden">
+                  <video
+                    v-if="isVideoEntry(it)"
+                    :src="it.url"
+                    :poster="it.thumbnailUrl"
+                    class="w-full h-full object-cover"
+                    muted
+                    playsinline
+                    preload="metadata"
+                    aria-hidden="true"
+                  />
                   <nuxt-img
-                    v-if="it.s3Key"
+                    v-else-if="it.s3Key"
                     :src="it.s3Key"
                     provider="aws"
                     fit="cover"

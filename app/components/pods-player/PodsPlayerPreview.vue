@@ -19,6 +19,7 @@ const props = defineProps<{
 }>()
 
 const runtime = usePodsPlayerRuntime()
+const route = useRoute()
 
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
@@ -26,6 +27,8 @@ const error = ref<string | null>(null)
 
 const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
+const previewCssVars = ref<Record<string, string> | null>(null)
+const debugFill = computed(() => route.query.debugFill === '1')
 
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
@@ -64,6 +67,7 @@ watch(
 
     loading.value = true
     try {
+      previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
@@ -106,7 +110,9 @@ watch(
       :device="viewport"
       :module-scripts="mode === 'vue' ? vueScripts : []"
       :ready="mode === 'sfc' ? true : vueReady"
+      :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
+      :debug-fill="debugFill"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
@@ -127,7 +133,7 @@ watch(
       </template>
       <template v-else-if="mode === 'vue'">
         <div class="h-full w-full">
-          <div class="h-full w-full" data-pods-vue-mount="1" />
+          <div class="w-full h-full" data-pods-vue-mount="1" />
         </div>
       </template>
       <template v-else>

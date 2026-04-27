@@ -38,6 +38,7 @@ export interface PodDetails extends PodListItem {
   schema?: unknown | null
   yaml?: string | null
   fixture?: Record<string, unknown> | null
+  fixtureVariants?: Record<string, Record<string, unknown>> | null
   /**
    * Canonical field definitions for the pod's CMS UI.
    *
@@ -99,6 +100,12 @@ export interface PodsPlayerRuntime {
    * Optional: load a default fixture for initial preview.
    */
   getFixture?(slug: string): Promise<Record<string, unknown> | null>
+
+  /**
+   * Optional: CSS custom properties applied to preview roots/iframes.
+   * Hosts can use this to make pack-level token changes visible in preview.
+   */
+  getPreviewCssVars?(): Promise<Record<string, string> | null>
 
   /**
    * SFC mode: load a Vue component for preview.

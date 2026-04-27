@@ -63,6 +63,7 @@ function normalizeIconSource(value: unknown): IconSource {
 
 const source = ref<IconSource>(normalizeIconSource(props.modelValue))
 const iconQuery = ref('')
+const showAdvanced = ref(false)
 
 watch(
   () => props.modelValue,
@@ -74,6 +75,22 @@ watch(
   },
   { deep: true },
 )
+
+function sentenceFromToken(token: string): string {
+  const raw = token.split(':').pop() || token
+  const phrase = raw
+    .replace(/[-_]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+  if (!phrase) return 'Icon.'
+  return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)} icon.`
+}
+
+function autoTitleForToken(token: string): string {
+  const matched = CURATED_STORY_ICONS.find((icon) => icon.token === token)
+  if (matched?.label) return `${matched.label} icon.`
+  return sentenceFromToken(token)
+}
 
 function updateSource(next: Partial<IconSource>) {
   source.value = {
@@ -120,90 +137,88 @@ const filteredIcons = computed(() => {
 
 function selectIcon(token: string) {
   iconQuery.value = token
-  updateSource({ type: 'iconify', value: token })
+  updateSource({ type: 'iconify', value: token, title: autoTitleForToken(token) })
 }
 
 function onIconifyValueChange(value: unknown) {
   const token = String(value ?? '')
   iconQuery.value = token
-  updateSource({ value: token })
+  updateSource({
+    value: token,
+    title: token.trim() ? autoTitleForToken(token.trim()) : undefined,
+  })
 }
 </script>
 
 <template>
-  <div class="space-y-2">
+  <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3 space-y-3">
     <USelect
       class="w-full"
       size="sm"
       :disabled="disabled"
       :model-value="source.type"
       :items="sourceTypes as any"
+      value-key="value"
+      label-key="label"
       value-attribute="value"
       label-attribute="label"
       @update:model-value="(value) => updateSource({ type: value as IconSourceType })"
     />
 
-    <template v-if="source.type === 'iconify'">
+    <div class="space-y-2">
+      <template v-if="source.type === 'iconify'">
+        <UInput
+          class="w-full"
+          size="sm"
+          :disabled="disabled"
+          :model-value="source.value"
+          placeholder="Search or type icon token (e.g. lucide:rocket, phosphor:rocket-duotone)"
+          @update:model-value="onIconifyValueChange"
+        />
+
+        <div class="rounded-md border border-gray-200 dark:border-gray-700 p-2 space-y-2">
+          <p class="text-[11px] text-gray-500 dark:text-gray-400">
+            Curated lucide + phosphor duotone icons for presentation and sales stories.
+          </p>
+          <div class="max-h-52 overflow-y-auto space-y-1 pr-1">
+            <button
+              v-for="icon in filteredIcons"
+              :key="icon.token"
+              type="button"
+              class="w-full text-left rounded-md border border-transparent hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 px-2 py-1.5 flex items-center gap-2"
+              :disabled="disabled"
+              @click="selectIcon(icon.token)"
+            >
+              <Icon :name="icon.token" class="w-4 h-4 text-gray-800 dark:text-gray-200 shrink-0" />
+              <span class="text-xs text-gray-800 dark:text-gray-100 truncate">{{ icon.label }}</span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400 truncate ml-auto">{{ icon.token }}</span>
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <UTextarea
+        v-else-if="source.type === 'svg'"
+        class="w-full"
+        size="sm"
+        :disabled="disabled"
+        autoresize
+        :maxrows="4"
+        :model-value="source.value"
+        placeholder="<svg ...>...</svg>"
+        @update:model-value="(value) => updateSource({ value: String(value ?? '') })"
+      />
+
       <UInput
+        v-else
         class="w-full"
         size="sm"
         :disabled="disabled"
         :model-value="source.value"
-        placeholder="Search or type icon token (e.g. lucide:rocket, phosphor:rocket-duotone)"
-        @update:model-value="onIconifyValueChange"
+        placeholder="https://cdn.example.com/icon.svg"
+        @update:model-value="(value) => updateSource({ value: String(value ?? '') })"
       />
-
-      <div class="rounded-md border border-gray-200 dark:border-gray-700 p-2 space-y-2">
-        <p class="text-[11px] text-gray-500 dark:text-gray-400">
-          Curated lucide + phosphor duotone icons for presentation and sales stories.
-        </p>
-        <div class="max-h-52 overflow-y-auto space-y-1 pr-1">
-          <button
-            v-for="icon in filteredIcons"
-            :key="icon.token"
-            type="button"
-            class="w-full text-left rounded-md border border-transparent hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 px-2 py-1.5 flex items-center gap-2"
-            :disabled="disabled"
-            @click="selectIcon(icon.token)"
-          >
-            <Icon :name="icon.token" class="w-4 h-4 text-gray-800 dark:text-gray-200 shrink-0" />
-            <span class="text-xs text-gray-800 dark:text-gray-100 truncate">{{ icon.label }}</span>
-            <span class="text-[11px] text-gray-500 dark:text-gray-400 truncate ml-auto">{{ icon.token }}</span>
-          </button>
-        </div>
-      </div>
-    </template>
-
-    <UTextarea
-      v-else-if="source.type === 'svg'"
-      class="w-full"
-      size="sm"
-      :disabled="disabled"
-      autoresize
-      :maxrows="4"
-      :model-value="source.value"
-      placeholder="<svg ...>...</svg>"
-      @update:model-value="(value) => updateSource({ value: String(value ?? '') })"
-    />
-
-    <UInput
-      v-else
-      class="w-full"
-      size="sm"
-      :disabled="disabled"
-      :model-value="source.value"
-      placeholder="https://cdn.example.com/icon.svg"
-      @update:model-value="(value) => updateSource({ value: String(value ?? '') })"
-    />
-
-    <UInput
-      class="w-full"
-      size="sm"
-      :disabled="disabled"
-      :model-value="source.title || ''"
-      placeholder="Accessibility title (optional)"
-      @update:model-value="(value) => updateSource({ title: String(value ?? '').trim() || undefined })"
-    />
+    </div>
 
     <div
       v-if="source.type === 'svg' && source.value"
@@ -218,6 +233,30 @@ function onIconifyValueChange(value: unknown) {
     >
       <Icon :name="source.value" class="w-5 h-5" />
     </div>
+
+    <UCollapsible :open="showAdvanced" @update:open="(v) => showAdvanced = Boolean(v)">
+      <template #default="{ open }">
+        <button
+          type="button"
+          class="w-full text-left text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 flex items-center gap-1"
+        >
+          <UIcon name="i-lucide-chevron-right" class="w-3 h-3 transition-transform" :class="{ 'rotate-90': open }" />
+          Advanced icon fields
+        </button>
+      </template>
+      <template #content>
+        <div class="pt-2">
+          <UInput
+            class="w-full"
+            size="sm"
+            :disabled="disabled"
+            :model-value="source.title || ''"
+            placeholder="Accessibility title"
+            @update:model-value="(value) => updateSource({ title: String(value ?? '').trim() || undefined })"
+          />
+        </div>
+      </template>
+    </UCollapsible>
   </div>
 </template>
 

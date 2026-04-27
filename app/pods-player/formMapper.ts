@@ -26,6 +26,15 @@ export interface FormField {
   [key: string]: unknown
 }
 
+function matchesWhen(
+  when: FormField['when'],
+  model: Record<string, unknown>,
+): boolean {
+  if (!when) return true
+  const conditions = Array.isArray(when) ? when : [when]
+  return conditions.every((condition) => dotGet(model, condition.field) === condition.equals)
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v)
 }
@@ -63,24 +72,109 @@ function joinPath(prefix: string, next: string): string {
   return `${prefix}.${next}`
 }
 
+function hasFixtureValue(
+  field: FormField,
+  fixture: Record<string, unknown>,
+  pathPrefix: string = '',
+  rootFixture: Record<string, unknown> = fixture,
+  explicitPathsAreAbsolute: boolean = true,
+): boolean {
+  if (field.type === 'group' && field.children) {
+    const groupName = field.name
+    if (groupName && !isUiOnlyGroupName(groupName)) {
+      const provided = dotGet(fixture, groupName)
+      if (isRecord(provided) && Object.keys(provided).length > 0) return true
+      const nestedFixture = {
+        ...(isRecord(field.fixture) ? field.fixture : {}),
+        ...(isRecord(provided) ? provided : {}),
+      }
+      return field.children.some((child) =>
+        hasFixtureValue(child, nestedFixture, '', rootFixture, explicitPathsAreAbsolute),
+      )
+    }
+
+    const nextPrefix = groupName && !isUiOnlyGroupName(groupName) ? joinPath(pathPrefix, groupName) : pathPrefix
+    return field.children.some((child) =>
+      hasFixtureValue(child, fixture, nextPrefix, rootFixture, explicitPathsAreAbsolute),
+    )
+  }
+
+  if (field.type === 'row' && field.fields) {
+    return field.fields.some((child) =>
+      hasFixtureValue(child, fixture, pathPrefix, rootFixture, explicitPathsAreAbsolute),
+    )
+  }
+
+  if (field.type === 'repeater' && field.fields && field.name) {
+    const listPath = field.path || joinPath(pathPrefix, field.name)
+    const provided = dotGet(fixture, listPath)
+    return Array.isArray(provided) && provided.length > 0
+  }
+
+  if (!field.name) return false
+  const path = field.path || joinPath(pathPrefix, field.name)
+  const value = dotGet(
+    field.path && explicitPathsAreAbsolute ? rootFixture : fixture,
+    path,
+  )
+  return value !== undefined
+}
+
 export function flatFromFixture(
   fields: FormField[],
   fixture: Record<string, unknown>,
   pathPrefix: string = '',
+  rootFixture: Record<string, unknown> = fixture,
+  explicitPathsAreAbsolute: boolean = true,
 ): Record<string, unknown> {
   const flat: Record<string, unknown> = {}
 
   for (const field of fields) {
+    if (!matchesWhen(field.when, flat) && !hasFixtureValue(field, fixture, pathPrefix, rootFixture, explicitPathsAreAbsolute)) continue
+
     if (field.type === 'group' && field.children) {
       const groupName = field.name
-      const nextPrefix = groupName && !isUiOnlyGroupName(groupName) ? joinPath(pathPrefix, groupName) : pathPrefix
-      Object.assign(flat, flatFromFixture(field.children, fixture, nextPrefix))
+      if (groupName && !isUiOnlyGroupName(groupName)) {
+        const provided = dotGet(fixture, groupName) as Record<string, unknown> | undefined
+        const nestedFixture = {
+          ...(isRecord(field.fixture) ? field.fixture : {}),
+          ...(provided ?? {}),
+        }
+        flat[groupName] = flatFromFixture(
+          field.children,
+          nestedFixture,
+          '',
+          rootFixture,
+          explicitPathsAreAbsolute,
+        )
+      } else {
+        const nextPrefix = groupName && !isUiOnlyGroupName(groupName) ? joinPath(pathPrefix, groupName) : pathPrefix
+        Object.assign(
+          flat,
+          flatFromFixture(field.children, fixture, nextPrefix, rootFixture, explicitPathsAreAbsolute),
+        )
+      }
       continue
     }
 
     if (field.type === 'row' && field.fields) {
-      // Row is purely UI/layout; children read from the same fixture scope.
-      Object.assign(flat, flatFromFixture(field.fields, fixture, pathPrefix))
+      const parentFixture = pathPrefix
+        ? (dotGet(fixture, pathPrefix) as Record<string, unknown> | undefined)
+        : isRecord(fixture)
+          ? fixture
+          : {}
+      const transformedFixture: Record<string, unknown> = {
+        ...(isRecord(field.fixture) ? field.fixture : {}),
+        ...(parentFixture ?? {}),
+      }
+      const rowFlat = flatFromFixture(
+        field.fields,
+        transformedFixture,
+        '',
+        rootFixture,
+        explicitPathsAreAbsolute,
+      )
+      Object.assign(flat, rowFlat)
       continue
     }
 
@@ -89,7 +183,9 @@ export function flatFromFixture(
       const listPath = field.path || joinPath(pathPrefix, field.name)
       const provided = dotGet(fixture, listPath) as unknown[] | undefined
       if (Array.isArray(provided) && provided.length > 0) {
-        flat[field.name] = provided.map((item) => flatFromFixture(field.fields!, (item ?? {}) as any))
+        flat[field.name] = provided.map((item) =>
+          flatFromFixture(field.fields!, (item ?? {}) as Record<string, unknown>, '', (item ?? {}) as Record<string, unknown>, false),
+        )
       } else if (field.default !== undefined) {
         flat[field.name] = field.default
       } else {
@@ -104,7 +200,10 @@ export function flatFromFixture(
 
     if (field.responsive) {
       const path = field.path || joinPath(pathPrefix, fieldKey)
-      const value = dotGet(fixture, path)
+      const value = dotGet(
+        field.path && explicitPathsAreAbsolute ? rootFixture : fixture,
+        path,
+      )
       if (value !== undefined && isRecord(value)) {
         flat[field.name] = value
       } else if (field.value) {
@@ -120,7 +219,10 @@ export function flatFromFixture(
     }
 
     const path = field.path || joinPath(pathPrefix, fieldKey)
-    const value = dotGet(fixture, path)
+    const value = dotGet(
+      field.path && explicitPathsAreAbsolute ? rootFixture : fixture,
+      path,
+    )
 
     if (value !== undefined) {
       flat[field.name] = field.type === 'number' ? Number(value) : value
@@ -138,35 +240,51 @@ export function flatFromFixture(
   return flat
 }
 
-function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>) {
-  for (const [k, v] of Object.entries(source)) {
-    const existing = target[k]
-    if (isRecord(existing) && isRecord(v)) {
-      deepMerge(existing, v)
-    } else {
-      target[k] = v
-    }
-  }
+export function rebuildPayload(
+  fields: FormField[],
+  flat: Record<string, unknown>,
+  pathPrefix: string = '',
+  explicitPathsAreAbsolute: boolean = true,
+): Record<string, unknown> {
+  const nested: Record<string, unknown> = {}
+  rebuildIntoPayload(fields, flat, nested, pathPrefix, explicitPathsAreAbsolute)
+  return nested
 }
 
-export function rebuildPayload(fields: FormField[], flat: Record<string, unknown>, pathPrefix: string = ''): Record<string, unknown> {
-  const nested: Record<string, unknown> = {}
-
+function rebuildIntoPayload(
+  fields: FormField[],
+  flat: Record<string, unknown>,
+  target: Record<string, unknown>,
+  pathPrefix: string = '',
+  explicitPathsAreAbsolute: boolean = true,
+) {
   for (const field of fields) {
+    if (!matchesWhen(field.when, flat)) continue
+
     if (field.type === 'group' && field.children) {
-      const groupName = field.name
-      const nextPrefix = groupName && !isUiOnlyGroupName(groupName) ? joinPath(pathPrefix, groupName) : pathPrefix
-      const nestedGroup = rebuildPayload(field.children, flat, nextPrefix)
-      deepMerge(nested, nestedGroup)
+      if (field.name && !isUiOnlyGroupName(field.name)) {
+        const value = flat[field.name] as Record<string, unknown> | undefined
+        if (value) {
+          const nextPrefix = field.path || joinPath(pathPrefix, field.name)
+          rebuildIntoPayload(field.children, value, target, nextPrefix, explicitPathsAreAbsolute)
+        }
+      } else {
+        const groupName = field.name
+        const nextPrefix = groupName && !isUiOnlyGroupName(groupName) ? joinPath(pathPrefix, groupName) : pathPrefix
+        rebuildIntoPayload(field.children, flat, target, nextPrefix, explicitPathsAreAbsolute)
+      }
       continue
     }
 
     if (field.type === 'row' && field.fields) {
       for (const rowField of field.fields) {
         if (!rowField.name) continue
+        if (!matchesWhen(rowField.when, flat)) continue
         if (flat[rowField.name] !== undefined) {
-          const path = rowField.path || joinPath(pathPrefix, rowField.name)
-          dotSet(nested, path, flat[rowField.name])
+          const path = rowField.path && explicitPathsAreAbsolute
+            ? rowField.path
+            : rowField.path || joinPath(pathPrefix, rowField.name)
+          dotSet(target, path, flat[rowField.name])
         }
       }
       continue
@@ -177,21 +295,21 @@ export function rebuildPayload(fields: FormField[], flat: Record<string, unknown
       const value = flat[field.name] as unknown[]
       if (Array.isArray(value)) {
         const nestedRepeater = value.map((item) =>
-          rebuildPayload(field.fields!, (item ?? {}) as Record<string, unknown>),
+          rebuildPayload(field.fields!, (item ?? {}) as Record<string, unknown>, '', false),
         )
         const listPath = field.path || joinPath(pathPrefix, field.name)
-        dotSet(nested, listPath, nestedRepeater)
+        dotSet(target, listPath, nestedRepeater)
       }
       continue
     }
 
     if (!field.name) continue
-    const path = field.path || joinPath(pathPrefix, field.name)
+    const path = field.path && explicitPathsAreAbsolute
+      ? field.path
+      : field.path || joinPath(pathPrefix, field.name)
     if (flat[field.name] !== undefined) {
-      dotSet(nested, path, flat[field.name])
+      dotSet(target, path, flat[field.name])
     }
   }
-
-  return nested
 }
 

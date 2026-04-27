@@ -30,6 +30,22 @@
     "safeForTextOverlay": true
   },
   {
+    "filename": "hero-video.mp4",
+    "title": "Default Hero Video",
+    "orientation": "landscape",
+    "kind": "video",
+    "roles": ["hero", "video"],
+    "tags": ["default", "hero", "video"]
+  },
+  {
+    "filename": "hero-video-sound.mp4",
+    "title": "Hero Video With Sound",
+    "orientation": "landscape",
+    "kind": "video",
+    "roles": ["hero", "video"],
+    "tags": ["hero", "video", "audio"]
+  },
+  {
     "filename": "annie-spratt-5Xmk2nezjXY-unsplash.jpg",
     "title": "Foggy Road in Open Landscape",
     "orientation": "landscape",

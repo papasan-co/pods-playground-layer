@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Sortable from 'sortablejs'
+import { get as dotGet } from 'lodash-es'
 import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
@@ -7,6 +8,7 @@ import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
+import PodsPlayerPositionPicker from './PodsPlayerPositionPicker.vue'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -21,7 +23,9 @@ defineOptions({ name: 'PodsPlayerBlockForm' })
 const props = defineProps<{
   fields: FormField[]
   modelValue: Record<string, unknown>
+  rootModelValue?: Record<string, unknown>
   viewport?: PodsPlayerViewport
+  compositeFieldUpdates?: boolean
   mediaItems?: Array<Record<string, unknown>>
   storyMediaItems?: Array<Record<string, unknown>>
   libraryMediaItems?: Array<Record<string, unknown>>
@@ -43,6 +47,14 @@ function updateField(name: string, value: unknown, type: string) {
   emit('update:modelValue', { field: name, value: v })
 }
 
+function isObjectLike(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isUiOnlyMergeField(name: string | undefined): boolean {
+  return Boolean(name && name.startsWith('__'))
+}
+
 interface Condition {
   field: string
   equals: unknown
@@ -52,7 +64,14 @@ function isVisible(field: FormField) {
   const cond = (field as { when?: Condition | Condition[] }).when
   if (!cond) return true
   const conditions = Array.isArray(cond) ? cond : [cond]
-  return conditions.every((c) => props.modelValue[c.field] === c.equals)
+  return conditions.every((c) => dotGet(props.modelValue, c.field) === c.equals)
+}
+
+function shouldEmitMediaObject(field: FormField): boolean {
+  const path = typeof field.path === 'string' ? field.path.trim() : ''
+  if (!path) return true
+  if (path.includes('.')) return true
+  return path === field.name
 }
 
 function isHidden(field: FormField): boolean {
@@ -65,12 +84,108 @@ function isReadOnly(field: FormField): boolean {
   return Boolean(ui && typeof ui === 'object' && ui.readonly === true)
 }
 
+function getA11yConfig(field: FormField): { againstField?: string; kind?: string } | null {
+  const explicit = (field as any)?.['x-a11y']
+  if (explicit && typeof explicit === 'object') {
+    return explicit as { againstField?: string; kind?: string }
+  }
+  const ui = (field as any)?.['x-ui']
+  const a11y = ui?.a11y
+  if (!a11y || typeof a11y !== 'object') return null
+  return a11y as { againstField?: string; kind?: string }
+}
+
+function getGroupUiConfig(field: FormField): { collapsible?: boolean; defaultOpen?: boolean } | null {
+  const ui = (field as any)?.['x-ui']
+  if (!ui || typeof ui !== 'object') return null
+  return ui as { collapsible?: boolean; defaultOpen?: boolean }
+}
+
+function getPositionGridConfig(field: FormField): { verticalField?: string; horizontalField: string; mode: 'text' | 'block' } | null {
+  const ui = (field as any)?.['x-ui']
+  const verticalField = ui?.verticalField
+  const horizontalField = ui?.horizontalField
+  const mode = ui?.mode === 'block' ? 'block' : 'text'
+  if (typeof horizontalField !== 'string') return null
+  return { verticalField: typeof verticalField === 'string' ? verticalField : undefined, horizontalField, mode }
+}
+
+function isGroupCollapsible(field: FormField): boolean {
+  return getGroupUiConfig(field)?.collapsible === true
+}
+
+function groupDefaultOpen(field: FormField): boolean {
+  const configured = getGroupUiConfig(field)?.defaultOpen
+  return typeof configured === 'boolean' ? configured : true
+}
+
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
+  const dynamicItems = dynamicSelectItems(field)
+  if (dynamicItems.length > 0) return dynamicItems
+
+  if (Array.isArray(field.options)) {
+    return field.options.map((value) => ({ value, label: value }))
+  }
+
   if (field.options && typeof field.options === 'object') {
     return Object.entries(field.options).map(([value, label]) => ({ value, label }))
   }
 
   return []
+}
+
+type DynamicSelectConfig =
+  | {
+      kind: 'array-field'
+      path: string
+      field: string
+      source?: 'root' | 'current'
+    }
+  | {
+      kind: 'chart-line-domain'
+      path: string
+      source?: 'root' | 'current'
+    }
+
+function dynamicSelectItems(field: FormField) {
+  const ui = (field as any)?.['x-ui']
+  const config = ui?.optionsFrom as DynamicSelectConfig | undefined
+  if (!config || typeof config !== 'object' || typeof config.path !== 'string') return []
+
+  const sourceModel = config.source === 'current'
+    ? props.modelValue
+    : (props.rootModelValue ?? props.modelValue)
+
+  const pushUnique = (items: Array<{ value: string; label: string }>, value: unknown) => {
+    const normalized = String(value ?? '').trim()
+    if (!normalized || items.some((item) => item.value === normalized)) return
+    items.push({ value: normalized, label: normalized })
+  }
+
+  const items: Array<{ value: string; label: string }> = []
+  const sourceValue = dotGet(sourceModel, config.path)
+
+  if (config.kind === 'array-field' && Array.isArray(sourceValue)) {
+    for (const entry of sourceValue) {
+      if (!entry || typeof entry !== 'object') continue
+      pushUnique(items, (entry as Record<string, unknown>)[config.field])
+    }
+    return items
+  }
+
+  if (config.kind === 'chart-line-domain' && Array.isArray(sourceValue)) {
+    for (const series of sourceValue) {
+      if (!series || typeof series !== 'object') continue
+      const points = (series as Record<string, unknown>).points
+      if (!Array.isArray(points)) continue
+      for (const point of points) {
+        if (!point || typeof point !== 'object') continue
+        pushUnique(items, (point as Record<string, unknown>).x)
+      }
+    }
+  }
+
+  return items
 }
 
 function colorSelectKeys(field: FormField & { options?: Record<string, string> | string[] }): string[] {
@@ -192,6 +307,19 @@ function initSortable(el: HTMLElement, name: string) {
   })
 }
 
+function hoistUiOnlyGroupValues() {
+  for (const field of props.fields) {
+    if (field.type !== 'group' || !field.children?.length || !isUiOnlyMergeField(field.name)) continue
+    const nested = props.modelValue[field.name]
+    if (!isObjectLike(nested)) continue
+
+    for (const [child, value] of Object.entries(nested)) {
+      if (props.modelValue[child] !== undefined || value === undefined) continue
+      emitUiOnlyRootUpdate(child, value)
+    }
+  }
+}
+
 function initializeRepeater(field: FormField) {
   if (field.type !== 'repeater') return
   const modelValue = props.modelValue[field.name]
@@ -214,12 +342,14 @@ function initializeRepeater(field: FormField) {
 }
 
 onMounted(() => {
+  hoistUiOnlyGroupValues()
   for (const field of props.fields) initializeRepeater(field)
 })
 
 watch(
   () => props.modelValue,
   (newValue) => {
+    hoistUiOnlyGroupValues()
     for (const field of props.fields) {
       if (field.type === 'repeater') {
         const mv = newValue[field.name]
@@ -235,7 +365,11 @@ watch(
 
 function updateRepeaterItem(block: string, idx: number, child: string, value: unknown) {
   const list = listFor(block)
-  list.value = list.value.map((it, i) => (i === idx ? { ...it, [child]: value } : it))
+  list.value = list.value.map((it, i) => {
+    if (i !== idx) return it
+    if (isUiOnlyMergeField(child) && isObjectLike(value)) return { ...it, ...value }
+    return { ...it, [child]: value }
+  })
   emit('update:modelValue', { field: block, value: list.value })
   saveLocal(block)
 }
@@ -257,12 +391,124 @@ function removeRepeaterItem(block: string, idx: number) {
     saveLocal(block)
   }, 300)
 }
+
+function mergeGroupValue(groupName: string, child: string, value: unknown) {
+  const current = isObjectLike(props.modelValue[groupName]) ? (props.modelValue[groupName] as Record<string, unknown>) : {}
+  const next =
+    isUiOnlyMergeField(child) && isObjectLike(value)
+      ? { ...current, ...value }
+      : { ...current, [child]: value }
+  updateField(groupName, next, 'group')
+}
+
+function groupModelValue(groupName: string | undefined): Record<string, unknown> {
+  if (!groupName || isUiOnlyMergeField(groupName)) return props.modelValue
+  return (props.modelValue[groupName] as Record<string, unknown>) ?? {}
+}
+
+function emitUiOnlyRootUpdate(child: string, value: unknown) {
+  if (isUiOnlyMergeField(child) && isObjectLike(value)) {
+    for (const [key, nestedValue] of Object.entries(value)) {
+      emit('update:modelValue', { field: key, value: nestedValue })
+    }
+    return
+  }
+
+  emit('update:modelValue', { field: child, value })
+}
+
+function handleGroupUpdate(groupName: string | undefined, child: string, value: unknown) {
+  if (!groupName || isUiOnlyMergeField(groupName)) {
+    emitUiOnlyRootUpdate(child, value)
+    return
+  }
+
+  mergeGroupValue(groupName, child, value)
+}
+
+function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  const config = getPositionGridConfig(field)
+  if (!config) return
+  emit('update:modelValue', {
+    field: field.name || '__positionGrid',
+    value: {
+      ...(config.verticalField ? { [config.verticalField]: value.verticalPosition } : {}),
+      [config.horizontalField]: value.horizontalPosition,
+    },
+  })
+}
+
+function updateRootPositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  const config = getPositionGridConfig(field)
+  if (!config) return
+  if (config.verticalField) updateField(config.verticalField, value.verticalPosition, 'select')
+  updateField(config.horizontalField, value.horizontalPosition, 'select')
+}
+
+function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  if (props.compositeFieldUpdates) {
+    emitGroupPositionUpdate(field, value)
+    return
+  }
+  updateRootPositionGrid(field, value)
+}
 </script>
 
 <template>
   <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
     <div v-if="field.type === 'group' && isVisible(field) && !isHidden(field)" class="mb-4 last:mb-0">
-      <div class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+      <UCollapsible
+        v-if="isGroupCollapsible(field)"
+        :default-open="groupDefaultOpen(field)"
+        :unmount-on-hide="false"
+        class="rounded-md border border-gray-200 dark:border-gray-700"
+      >
+        <template #default="{ open }">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            block
+            class="w-full justify-between rounded-md px-4 py-3"
+          >
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+              {{ field.label }}
+            </span>
+            <svg
+              data-collapsible-caret="1"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-300"
+              :class="{ 'rotate-180': open }"
+              aria-hidden="true"
+            >
+              <path d="m5 7.5 5 5 5-5" />
+            </svg>
+          </UButton>
+        </template>
+
+        <template v-if="field.children?.length" #content>
+          <div class="px-4 pb-4 space-y-4">
+            <div class="space-y-4">
+              <PodsPlayerBlockForm
+                :fields="field.children"
+                :model-value="groupModelValue(field.name as string | undefined)"
+                :root-model-value="rootModelValue || modelValue"
+                :viewport="viewport"
+                :composite-field-updates="true"
+                @update:model-value="
+                  ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
+                "
+                @update:viewport="(val) => emit('update:viewport', val)"
+              />
+            </div>
+          </div>
+        </template>
+      </UCollapsible>
+      <div v-else class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
           {{ field.label }}
         </h3>
@@ -270,13 +516,17 @@ function removeRepeaterItem(block: string, idx: number) {
         <PodsPlayerBlockForm
           v-if="field.children?.length"
           :fields="field.children"
-          :model-value="modelValue"
+          :model-value="groupModelValue(field.name as string | undefined)"
+          :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
+          :composite-field-updates="true"
           :media-items="mediaItems || []"
           :story-media-items="storyMediaItems || []"
           :library-media-items="libraryMediaItems || []"
           :media-source-mode="mediaSourceMode || 'playground'"
-          @update:model-value="(payload) => emit('update:modelValue', payload)"
+          @update:model-value="
+            ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
+          "
           @update:viewport="(val) => emit('update:viewport', val)"
         />
       </div>
@@ -327,6 +577,8 @@ function removeRepeaterItem(block: string, idx: number) {
               :model-value="modelValue[child.name as string]"
               :placeholder="child.placeholder as any"
               :items="selectItems(child as any)"
+              value-key="value"
+              label-key="label"
               value-attribute="value"
               label-attribute="label"
               arrow
@@ -363,14 +615,18 @@ function removeRepeaterItem(block: string, idx: number) {
             <PodsPlayerBrandColorPicker
               v-else-if="child.type === 'background-color' || child.type === 'brand-color-picker' || child.type === 'color-select'"
               :model-value="modelValue[child.name as string] as string"
-              :output-mode="child.type === 'color-select' ? 'token' : 'hex'"
+              :output-mode="child.type === 'color-select' ? 'token' : (((child as any)['x-ui']?.outputMode as any) || 'hex')"
               :token-options="child.type === 'color-select' ? colorSelectKeys(child as any) : undefined"
+              :contrast-against="getA11yConfig(child)?.againstField ? (modelValue[getA11yConfig(child)?.againstField as string] as string) : undefined"
+              :enforce-aa-for-text="getA11yConfig(child)?.kind === 'text-aa'"
+              policy="disableTokens"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerMediaPicker
               v-else-if="child.type === 'medias'"
-              :model-value="modelValue[child.name as string] as string"
+              :model-value="modelValue[child.name as string]"
               :constraint="(child as any)['x-ui']"
+              :emit-object="shouldEmitMediaObject(child)"
               :media-items="mediaItems || []"
               :story-media-items="storyMediaItems || []"
               :library-media-items="libraryMediaItems || []"
@@ -423,8 +679,17 @@ function removeRepeaterItem(block: string, idx: number) {
           <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(field as any) }}</span>
         </div>
       </template>
+      <PodsPlayerPositionPicker
+        v-if="field.type === 'position-grid'"
+        :vertical="modelValue[getPositionGridConfig(field)?.verticalField as string] as string"
+        :horizontal="modelValue[getPositionGridConfig(field)?.horizontalField as string] as string"
+        :mode="getPositionGridConfig(field)?.mode"
+        :axis="getPositionGridConfig(field)?.verticalField ? 'both' : 'horizontal'"
+        :disabled="isReadOnly(field)"
+        @update="(val) => updatePositionGrid(field, val)"
+      />
       <UInput
-        v-if="field.type === 'input'"
+        v-else-if="field.type === 'input'"
         class="w-full"
         size="sm"
         :disabled="isReadOnly(field)"
@@ -447,6 +712,8 @@ function removeRepeaterItem(block: string, idx: number) {
         :model-value="modelValue[field.name]"
         :placeholder="field.placeholder as any"
         :items="selectItems(field as any)"
+        value-key="value"
+        label-key="label"
         value-attribute="value"
         label-attribute="label"
         arrow
@@ -502,12 +769,23 @@ function removeRepeaterItem(block: string, idx: number) {
       <PodsPlayerBrandColorPicker
         v-else-if="field.type === 'background-color' || field.type === 'brand-color-picker'"
         :model-value="modelValue[field.name] as string"
+        :output-mode="((field as any)['x-ui']?.outputMode as any) || 'hex'"
+        :token-options="((field as any)['x-ui']?.tokenOptions as string[]) || undefined"
+        :contrast-against="getA11yConfig(field)?.againstField ? (modelValue[getA11yConfig(field)?.againstField as string] as string) : undefined"
+        :enforce-aa-for-text="getA11yConfig(field)?.kind === 'text-aa'"
+        :allow-auto="Boolean((field as any)['x-ui']?.allowAuto)"
+        :allow-custom="(field as any)['x-ui']?.allowCustom !== false"
+        :auto-label="((field as any)['x-ui']?.autoLabel as string) || undefined"
+        :preview-mode="((field as any)['x-ui']?.previewMode as any) || 'swatch'"
+        :preview-text="((field as any)['x-ui']?.previewText as string) || undefined"
+        policy="disableTokens"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <PodsPlayerMediaPicker
         v-else-if="field.type === 'medias'"
-        :model-value="modelValue[field.name] as string"
+        :model-value="modelValue[field.name]"
         :constraint="(field as any)['x-ui']"
+        :emit-object="shouldEmitMediaObject(field)"
         :media-items="mediaItems || []"
         :story-media-items="storyMediaItems || []"
         :library-media-items="libraryMediaItems || []"
@@ -569,10 +847,24 @@ function removeRepeaterItem(block: string, idx: number) {
                       color="neutral"
                       variant="ghost"
                       size="xs"
-                      icon="i-lucide-chevron-down"
-                      :class="{ 'rotate-180': open }"
+                      aria-label="Toggle repeater item"
                       @click.stop="toggleItemOpen(field.name, itemKey(item as any, idx))"
-                    />
+                    >
+                      <svg
+                        data-collapsible-caret="1"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="h-4 w-4 transition-transform"
+                        :class="{ 'rotate-180': open }"
+                        aria-hidden="true"
+                      >
+                        <path d="m5 7.5 5 5 5-5" />
+                      </svg>
+                    </UButton>
                     <UButton
                       color="neutral"
                       variant="ghost"
@@ -589,7 +881,9 @@ function removeRepeaterItem(block: string, idx: number) {
                   <PodsPlayerBlockForm
                     :fields="(field.fields || []) as any"
                     :model-value="(item as any)"
+                    :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
+                    :composite-field-updates="true"
                     :media-items="mediaItems || []"
                     :story-media-items="storyMediaItems || []"
                     :library-media-items="libraryMediaItems || []"

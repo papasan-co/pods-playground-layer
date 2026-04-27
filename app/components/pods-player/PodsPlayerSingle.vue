@@ -26,9 +26,16 @@ const props = defineProps<{
 }>()
 
 const runtime = usePodsPlayerRuntime()
+const route = useRoute()
+
+function requestedModeFromRoute(): PodsPlayerMode | null {
+  const requested = route.query.mode
+  if (typeof requested !== 'string') return null
+  return runtime.supportedModes.includes(requested as PodsPlayerMode) ? (requested as PodsPlayerMode) : null
+}
 
 const pod = ref<PodDetails | null>(null)
-const mode = ref<PodsPlayerMode>((runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode)
+const mode = ref<PodsPlayerMode>((requestedModeFromRoute() ?? runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode)
 const viewport = ref<PodsPlayerViewport>('laptop')
 
 const fixture = ref<Record<string, unknown> | null>(null)
@@ -37,6 +44,7 @@ const loading = ref(true)
 
 const reloadKey = ref(0)
 const initialFormValues = ref<Record<string, unknown>>({})
+const hydratedVariant = ref<string | null>(null)
 
 function reloadComponent() {
   reloadKey.value++
@@ -91,6 +99,114 @@ function fieldsFromPod(p: PodDetails | null): FormField[] {
   if (uiFields) return uiFields
 
   return []
+}
+
+function matchesWhen(
+  when: FormField['when'],
+  model: Record<string, unknown>,
+): boolean {
+  if (!when) return true
+  const conditions = Array.isArray(when) ? when : [when]
+  return conditions.every((condition) => dotGet(model, condition.field) === condition.equals)
+}
+
+function isUiOnlyGroupName(name: string | undefined): boolean {
+  return !!name && name.startsWith('__')
+}
+
+function cloneDefault<T>(value: T): T {
+  if (value == null || typeof value !== 'object') return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function defaultValueForField(field: FormField): unknown {
+  if (field.responsive) {
+    if (field.value) return cloneDefault(field.value)
+    return {
+      desktop: field.default ?? '',
+      tablet: field.default ?? '',
+      phone: field.default ?? '',
+    }
+  }
+
+  if (field.default !== undefined) {
+    return field.type === 'number' ? Number(field.default) : cloneDefault(field.default)
+  }
+
+  if (field.type === 'toggle') return false
+  if (field.type === 'repeater') return []
+  if (field.type === 'input') return ''
+
+  return undefined
+}
+
+function ensureVisibleFieldDefaults(fields: FormField[], model: Record<string, unknown>): boolean {
+  let changed = false
+
+  const visit = (fs: FormField[], scope: Record<string, unknown>) => {
+    for (const field of fs) {
+      if (!matchesWhen(field.when, scope)) continue
+
+      if (field.type === 'group' && field.children) {
+        if (field.name && !isUiOnlyGroupName(field.name)) {
+          if (!isRecord(scope[field.name])) {
+            scope[field.name] = {}
+            changed = true
+          }
+          visit(field.children, scope[field.name] as Record<string, unknown>)
+        } else {
+          visit(field.children, scope)
+        }
+        continue
+      }
+
+      if (field.type === 'row' && field.fields) {
+        visit(field.fields, scope)
+        continue
+      }
+
+      if (!field.name) continue
+
+      if (scope[field.name] === undefined) {
+        const nextDefault = defaultValueForField(field)
+        if (nextDefault !== undefined) {
+          scope[field.name] = nextDefault
+          changed = true
+        }
+      }
+
+      if (field.type === 'repeater' && field.fields) {
+        const items = scope[field.name]
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (isRecord(item)) visit(field.fields, item)
+          }
+        }
+      }
+    }
+  }
+
+  visit(fields, model)
+  return changed
+}
+
+function mergeMissingValues(target: Record<string, unknown>, source: Record<string, unknown>): boolean {
+  let changed = false
+
+  for (const [key, sourceValue] of Object.entries(source)) {
+    const targetValue = target[key]
+    if (targetValue === undefined) {
+      target[key] = cloneDefault(sourceValue)
+      changed = true
+      continue
+    }
+
+    if (isRecord(targetValue) && isRecord(sourceValue)) {
+      changed = mergeMissingValues(targetValue, sourceValue) || changed
+    }
+  }
+
+  return changed
 }
 
 function extractResponsiveValue(value: unknown, viewport: PodsPlayerViewport): unknown {
@@ -217,9 +333,12 @@ async function loadPodData() {
       Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
       const flat = flatFromFixture(formSchema.value, fixture.value || {})
       Object.assign(flatForm, flat)
+      ensureVisibleFieldDefaults(formSchema.value, flatForm)
       initialFormValues.value = JSON.parse(JSON.stringify(flatForm))
+      hydratedVariant.value = typeof flatForm.type === 'string' ? flatForm.type : null
     } else {
       initialFormValues.value = {}
+      hydratedVariant.value = null
     }
   } finally {
     loading.value = false
@@ -232,6 +351,39 @@ watch(
     await loadPodData()
   },
   { immediate: true },
+)
+
+watch(
+  () => route.query.mode,
+  () => {
+    const requestedMode = requestedModeFromRoute()
+    if (requestedMode) mode.value = requestedMode
+  },
+)
+
+watchEffect(() => {
+  if (loading.value) return
+  if (formSchema.value.length === 0) return
+  ensureVisibleFieldDefaults(formSchema.value, flatForm)
+})
+
+watch(
+  () => (typeof flatForm.type === 'string' ? flatForm.type : null),
+  (nextVariant) => {
+    if (loading.value) return
+    if (!nextVariant) return
+    if (nextVariant === hydratedVariant.value) return
+    const variantFixture = pod.value?.fixtureVariants?.[nextVariant]
+    if (!variantFixture || formSchema.value.length === 0) {
+      hydratedVariant.value = nextVariant
+      return
+    }
+
+    const variantFlat = flatFromFixture(formSchema.value, variantFixture)
+    mergeMissingValues(flatForm, variantFlat)
+    ensureVisibleFieldDefaults(formSchema.value, flatForm)
+    hydratedVariant.value = nextVariant
+  },
 )
 
 function applyFormUpdate(payload: { field: string; value: unknown }) {
