@@ -70,7 +70,7 @@ export function filterCatalog(opts: {
     if (orientation !== 'any' && it.orientation && it.orientation !== orientation) return false
     if (roles.length) {
       const set = new Set((it.roles ?? []).map(normalizeRole))
-      if (!roles.every((r) => set.has(r))) return false
+      if (!roles.some((r) => set.has(r))) return false
     }
     if (q) {
       const hay = [it.title, it.filename, ...(it.tags ?? []), ...(it.roles ?? [])]

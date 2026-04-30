@@ -366,10 +366,11 @@ watchEffect(() => {
   <div ref="hostRef" class="preview-device-host w-full h-full flex items-start justify-center">
     <div class="preview-device-slot" :style="{ width: `${scaledSize.width}px`, height: `${scaledSize.height}px` }">
       <div
-        class="preview-device transition-all duration-300 ease-in-out rounded-md shadow-lg bg-gray-100 dark:bg-gray-800"
+        class="preview-device transition-all duration-300 ease-in-out rounded-md shadow-lg"
         :style="[
           frameStyle,
           {
+            background: 'var(--pg-device-bg, #f8f6f4)',
             position: 'absolute',
             top: '0px',
             left: '0px',

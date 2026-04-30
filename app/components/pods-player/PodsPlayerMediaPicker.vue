@@ -224,7 +224,7 @@ function runtimeMatchesRoles(entry: PickerEntry, requested: string[]): boolean {
   // Runtime media rarely carries role metadata; don't hide valid items when missing.
   if (entryRoles.length === 0) return true
   const roleSet = new Set(entryRoles)
-  return requested.every((role) => roleSet.has(String(role).toLowerCase().trim()))
+  return requested.some((role) => roleSet.has(String(role).toLowerCase().trim()))
 }
 
 const items = computed<PickerEntry[]>(() => {
