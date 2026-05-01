@@ -156,7 +156,7 @@ function toggleAdvanced() {
         @update:show-yaml-tab="setShowYamlTab"
       />
 
-      <PodsPlayerCanvasCard :artifact-ready="artifactReady !== false">
+      <PodsPlayerCanvasCard :artifact-ready="artifactReady !== false" :viewport="viewport">
         <div v-if="loading" class="flex flex-1 items-center justify-center p-8 text-sm" style="color: var(--pg-fg-meta)">
           Loading…
         </div>
