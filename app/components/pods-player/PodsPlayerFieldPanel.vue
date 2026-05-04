@@ -199,6 +199,12 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
           </div>
         </template>
       </div>
+
+      <div v-if="$slots.footer" class="shrink-0 border-t" style="border-color: var(--pg-hairline)">
+        <div class="px-4 py-3">
+          <slot name="footer" />
+        </div>
+      </div>
     </div>
   </div>
 

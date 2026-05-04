@@ -202,6 +202,10 @@ function toggleAdvanced() {
       @update:viewport="setViewport"
       @toggle-advanced="toggleAdvanced"
       @expand="toggleFieldPanel()"
-    />
+    >
+      <template v-if="$slots['field-panel-footer']" #footer>
+        <slot name="field-panel-footer" />
+      </template>
+    </PodsPlayerFieldPanel>
   </div>
 </template>
