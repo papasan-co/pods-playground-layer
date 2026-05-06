@@ -10,6 +10,16 @@
     "safeForTextOverlay": true
   },
   {
+    "filename": "swn/swn-logo.png",
+    "title": "She's Well Networked Logo",
+    "orientation": "landscape",
+    "kind": "logo",
+    "roles": ["logo", "brand"],
+    "alt": "She's Well Networked",
+    "tags": ["swn", "logo", "brand", "still-ours-to-build"],
+    "safeForTextOverlay": true
+  },
+  {
     "filename": "logo-light.png",
     "title": "Default Logo (Light)",
     "orientation": "landscape",

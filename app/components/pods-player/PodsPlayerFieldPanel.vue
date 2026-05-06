@@ -21,7 +21,6 @@ const emit = defineEmits<{
   'update:modelValue': [payload: { field: string; value: unknown }]
   'update:viewport': [value: PodsPlayerViewport]
   toggleAdvanced: []
-  expand: []
 }>()
 
 const runtime = usePodsPlayerRuntime()
@@ -206,20 +205,5 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
         </div>
       </div>
     </div>
-  </div>
-
-  <div
-    v-else
-    class="flex w-9 shrink-0 flex-col items-center pt-3.5"
-  >
-    <button
-      type="button"
-      class="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-      style="color: var(--pg-icon-muted)"
-      title="Show fields"
-      @click="emit('expand')"
-    >
-      <UIcon name="i-lucide-panel-right" class="h-3.5 w-3.5" />
-    </button>
   </div>
 </template>

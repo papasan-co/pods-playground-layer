@@ -10,7 +10,6 @@ defineProps<{
 const emit = defineEmits<{
   selectPod: [slug: string]
   back: []
-  expand: []
 }>()
 </script>
 
@@ -62,21 +61,5 @@ const emit = defineEmits<{
         <span class="truncate">{{ p.label || p.slug }}</span>
       </button>
     </div>
-  </div>
-
-  <div
-    v-else
-    class="flex w-9 shrink-0 flex-col items-center pt-3.5"
-    style="background: transparent"
-  >
-    <button
-      type="button"
-      class="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
-      style="color: var(--pg-icon-muted)"
-      title="Expand pod list"
-      @click="emit('expand')"
-    >
-      <UIcon name="i-lucide-panel-left" class="h-3.5 w-3.5" />
-    </button>
   </div>
 </template>

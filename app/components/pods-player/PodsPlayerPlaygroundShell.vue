@@ -128,7 +128,6 @@ function toggleAdvanced() {
       :collapsed="podListCollapsed"
       @select-pod="emit('selectPod', $event)"
       @back="emit('backToPacks')"
-      @expand="togglePodList()"
     />
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden pr-3.5 pt-3.5">
@@ -201,7 +200,6 @@ function toggleAdvanced() {
       @update:model-value="applyFormUpdate"
       @update:viewport="setViewport"
       @toggle-advanced="toggleAdvanced"
-      @expand="toggleFieldPanel()"
     >
       <template v-if="$slots['field-panel-footer']" #footer>
         <slot name="field-panel-footer" />

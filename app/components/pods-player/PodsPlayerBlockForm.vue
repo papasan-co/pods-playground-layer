@@ -71,6 +71,7 @@ function isVisible(field: FormField) {
 function shouldEmitMediaObject(field: FormField): boolean {
   const path = typeof field.path === 'string' ? field.path.trim() : ''
   if (!path) return true
+  if (path.endsWith('.src') || path.endsWith('.url')) return false
   if (path.includes('.')) return true
   return path === field.name
 }
