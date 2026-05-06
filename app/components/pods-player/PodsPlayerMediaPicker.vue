@@ -7,6 +7,7 @@ type UiConstraint = {
   kind?: MediaKind
   orientation?: MediaOrientation
   roles?: string[]
+  defaultUrl?: string
 }
 
 type RuntimeMediaItem = {
@@ -59,6 +60,7 @@ const constraint = computed(() => props.constraint ?? {})
 const kind = computed<MediaKind>(() => (constraint.value.mediaKind ?? constraint.value.kind ?? 'any') as MediaKind)
 const orientation = computed<MediaOrientation>(() => (constraint.value.orientation ?? 'any') as MediaOrientation)
 const roles = computed<string[]>(() => (Array.isArray(constraint.value.roles) ? constraint.value.roles : []))
+const defaultUrl = computed(() => String(constraint.value.defaultUrl || '').trim())
 
 const currentUrl = computed(() => {
   if (typeof props.modelValue === 'string') return props.modelValue
@@ -224,7 +226,7 @@ function runtimeMatchesRoles(entry: PickerEntry, requested: string[]): boolean {
   // Runtime media rarely carries role metadata; don't hide valid items when missing.
   if (entryRoles.length === 0) return true
   const roleSet = new Set(entryRoles)
-  return requested.every((role) => roleSet.has(String(role).toLowerCase().trim()))
+  return requested.some((role) => roleSet.has(String(role).toLowerCase().trim()))
 }
 
 const items = computed<PickerEntry[]>(() => {
@@ -260,10 +262,14 @@ const items = computed<PickerEntry[]>(() => {
 
 // Visual media fields should always have a selection; default to first matching item.
 watch(
-  () => [currentUrl.value, items.value.length, kind.value] as const,
+  () => [currentUrl.value, items.value.length, kind.value, defaultUrl.value] as const,
   () => {
     if (currentUrl.value) return
     if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
+    if (defaultUrl.value) {
+      emit('update:modelValue', toEmittedValue(defaultUrl.value))
+      return
+    }
     const first = items.value[0]
     if (!first) return
     emit('update:modelValue', toEmittedValue(first))

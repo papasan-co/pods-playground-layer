@@ -36,19 +36,27 @@ const yamlContent = ref<string | null>(null)
 const formFields = ref<FormField[]>([])
 const loadingYaml = ref(false)
 
+type PodDetailsWithCompiledContract = PodDetails & {
+  compiled_contract?: Record<string, unknown> | null
+}
+
 function fieldsFromPod(p: PodDetails | null): FormField[] {
   if (!p) return []
 
   const direct = Array.isArray(p.fields) ? p.fields : null
   if (direct) return direct as FormField[]
 
-  const fromContract = p.compiledContract && Array.isArray((p.compiledContract as any).fields)
-    ? ((p.compiledContract as any).fields as FormField[])
+  const podWithContract = p as PodDetailsWithCompiledContract
+  const compiledContract = podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
+  const contract = compiledContract as { fields?: unknown; ui?: { fields?: unknown } } | null
+
+  const fromContract = contract && Array.isArray(contract.fields)
+    ? (contract.fields as FormField[])
     : null
   if (fromContract) return fromContract
 
-  const uiFields = p.compiledContract && Array.isArray((p.compiledContract as any)?.ui?.fields)
-    ? ((p.compiledContract as any).ui.fields as FormField[])
+  const uiFields = contract && Array.isArray(contract.ui?.fields)
+    ? (contract.ui.fields as FormField[])
     : null
   if (uiFields) return uiFields
 

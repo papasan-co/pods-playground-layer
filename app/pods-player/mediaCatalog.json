@@ -10,6 +10,16 @@
     "safeForTextOverlay": true
   },
   {
+    "filename": "swn/swn-logo.png",
+    "title": "She's Well Networked Logo",
+    "orientation": "landscape",
+    "kind": "logo",
+    "roles": ["logo", "brand"],
+    "alt": "She's Well Networked",
+    "tags": ["swn", "logo", "brand", "still-ours-to-build"],
+    "safeForTextOverlay": true
+  },
+  {
     "filename": "logo-light.png",
     "title": "Default Logo (Light)",
     "orientation": "landscape",
@@ -144,6 +154,86 @@
     "alt": "Children standing in a circle outdoors playing a group game",
     "tags": ["children", "community", "education", "nonprofit"],
     "safeForTextOverlay": false
+  },
+  {
+    "filename": "swn/swn_front_group.jpg",
+    "title": "SWN Front Group",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "community"],
+    "alt": "Group of Black women entrepreneurs together outdoors",
+    "tags": ["swn", "still-ours-to-build", "community", "founders"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_group.jpg",
+    "title": "SWN Group Gathering",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "community"],
+    "alt": "Community gathering of founders",
+    "tags": ["swn", "still-ours-to-build", "quarterly-labs", "community"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_2ppl.jpg",
+    "title": "SWN Two Founders Collaborating",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "collaboration"],
+    "alt": "Two founders collaborating during a program session",
+    "tags": ["swn", "still-ours-to-build", "grow-to-scale", "representation-gap"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_full.jpg",
+    "title": "SWN Full Group",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "community"],
+    "alt": "Wide group photo at an event",
+    "tags": ["swn", "still-ours-to-build", "drivers", "community"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_3ppl.jpg",
+    "title": "SWN Three Entrepreneurs",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "community"],
+    "alt": "Three entrepreneurs in conversation",
+    "tags": ["swn", "still-ours-to-build", "reality", "founders"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_group_far.jpg",
+    "title": "SWN Group From Distance",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "community"],
+    "alt": "Large group photo from a distance",
+    "tags": ["swn", "still-ours-to-build", "crisis", "community"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_end.jpg",
+    "title": "SWN Closing Moment",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "community"],
+    "alt": "Closing moment from the initiative shoot",
+    "tags": ["swn", "still-ours-to-build", "closing", "movement"],
+    "safeForTextOverlay": true
+  },
+  {
+    "filename": "swn/swn_withmic.jpg",
+    "title": "SWN Speaker With Microphone",
+    "orientation": "landscape",
+    "kind": "photo",
+    "roles": ["hero", "background", "ambient", "story-scene", "speaker"],
+    "alt": "Speaker with microphone addressing an audience",
+    "tags": ["swn", "still-ours-to-build", "support", "early-ask"],
+    "safeForTextOverlay": true
   }
 ]
 

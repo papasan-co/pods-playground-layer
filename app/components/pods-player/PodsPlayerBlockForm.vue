@@ -9,6 +9,7 @@ import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
 import PodsPlayerPositionPicker from './PodsPlayerPositionPicker.vue'
+import PodsPlayerRichTextEditor from './PodsPlayerRichTextEditor.vue'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -70,6 +71,7 @@ function isVisible(field: FormField) {
 function shouldEmitMediaObject(field: FormField): boolean {
   const path = typeof field.path === 'string' ? field.path.trim() : ''
   if (!path) return true
+  if (path.endsWith('.src') || path.endsWith('.url')) return false
   if (path.includes('.')) return true
   return path === field.name
 }
@@ -570,6 +572,13 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string]"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
+            <PodsPlayerRichTextEditor
+              v-else-if="child.type === 'rich-text' || child.type === 'wysiwyg'"
+              :model-value="modelValue[child.name as string] as string"
+              :disabled="isReadOnly(child)"
+              :placeholder="child.placeholder as string"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
             <USelect
               v-else-if="child.type === 'select'"
               class="w-full"
@@ -702,6 +711,13 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         size="sm"
         :disabled="isReadOnly(field)"
         :model-value="modelValue[field.name]"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
+      <PodsPlayerRichTextEditor
+        v-else-if="field.type === 'rich-text' || field.type === 'wysiwyg'"
+        :model-value="modelValue[field.name] as string"
+        :disabled="isReadOnly(field)"
+        :placeholder="field.placeholder as string"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <USelect

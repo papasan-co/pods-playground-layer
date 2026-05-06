@@ -32,6 +32,27 @@ const vueReady = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function textValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback
+}
+
+function scrollVisualProps(
+  slug: string,
+  baseProps: Record<string, unknown>,
+  step: number,
+  stepCount = 0,
+) {
+  const visualProps: Record<string, unknown> = { ...(baseProps || {}), step }
+  if (slug === 'steps') {
+    visualProps.activeStep = Math.min(Math.max(step + 1, 1), Math.max(stepCount, 1))
+  }
+  return visualProps
+}
+
 /**
  * pods-playground-layer.VueRuntimeVisual
  *
@@ -44,6 +65,7 @@ const VueRuntimeVisual = defineComponent({
   props: {
     slug: { type: String, required: true },
     step: { type: Number, required: true },
+    stepCount: { type: Number, default: 0 },
     baseProps: { type: Object as PropType<Record<string, unknown>>, required: true },
   },
   setup(props) {
@@ -62,7 +84,7 @@ const VueRuntimeVisual = defineComponent({
       api.renderPod({
         slug: props.slug,
         mountSelector: '[data-pods-vue-mount=\"1\"]',
-        props: { ...(props.baseProps || {}), ...injected, step: props.step },
+        props: { ...scrollVisualProps(props.slug, props.baseProps || {}, props.step, props.stepCount), ...injected },
       })
     }
 
@@ -73,9 +95,52 @@ const VueRuntimeVisual = defineComponent({
   },
 })
 
+const stepsScrollRows = computed(() => {
+  if (props.pod?.slug !== 'steps') return []
+  const rawSteps = props.previewProps?.steps
+  if (!Array.isArray(rawSteps)) return []
+
+  return rawSteps
+    .filter(isRecord)
+    .map((step, index) => ({
+      title: textValue(step.title, `Step ${index + 1}`),
+      body: textValue(step.body),
+    }))
+    .filter((step) => step.title || step.body)
+})
+
+const stepCount = computed(() => stepsScrollRows.value.length)
+
 const scenes = computed<any[]>(() => {
   const label = props.pod?.label || props.pod?.slug || 'Pod'
   const slug = props.pod?.slug || 'pod'
+  const stepRows = stepsScrollRows.value
+
+  if (slug === 'steps' && stepRows.length) {
+    return [
+      {
+        key: 'steps-preview',
+        layout: 'split',
+        visual: { podSlug: slug },
+        mobileLeadInDvh: 90,
+        mobileLeadOutDvh: 60,
+        mobileCardGapDvh: 130,
+        articles: stepRows.map((step, index) => ({
+          align: 'left',
+          blocks: [
+            {
+              type: 'copy',
+              props: {
+                pre: `Step ${index + 1}`,
+                title: step.title,
+                paragraphs: step.body ? [step.body] : ['Scroll to activate this step in the visual.'],
+              },
+            },
+          ],
+        })),
+      },
+    ]
+  }
 
   return [
     {
@@ -172,7 +237,10 @@ function handleScriptsLoaded() {
 </script>
 
 <template>
-  <div class="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4 min-h-0">
+  <div
+    class="flex-1 overflow-hidden flex items-center justify-center p-4 min-h-0"
+    style="background: var(--pg-canvas-bg, var(--pg-bg))"
+  >
     <PodsPlayerPreviewDevice
       :key="`${pod.slug}::${mode}::${reloadKey ?? 0}`"
       :device="viewport"
@@ -204,12 +272,18 @@ function handleScriptsLoaded() {
                 <component
                   v-if="mode === 'sfc' && Comp"
                   :is="Comp"
-                  v-bind="{ ...(previewProps || {}), step }"
+                  v-bind="scrollVisualProps(pod.slug, previewProps || {}, step, stepCount)"
                   class="w-full h-full"
                 />
                 <template v-else-if="mode === 'vue'">
                   <div v-if="!vueReady" class="w-full h-full grid place-items-center text-gray-500">Loading runtime…</div>
-                  <VueRuntimeVisual v-else :slug="pod.slug" :step="step" :base-props="previewProps || {}" />
+                  <VueRuntimeVisual
+                    v-else
+                    :slug="pod.slug"
+                    :step="step"
+                    :step-count="stepCount"
+                    :base-props="previewProps || {}"
+                  />
                 </template>
                 <div v-else class="w-full h-full grid place-items-center text-gray-500">No preview available.</div>
               </div>
