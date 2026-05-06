@@ -105,7 +105,10 @@ watch(
 </script>
 
 <template>
-  <div class="flex-1 overflow-hidden bg-gray-100 dark:bg-gray-900 flex items-start justify-center p-4 min-h-0">
+  <div
+    class="flex-1 overflow-hidden flex items-start justify-center p-4 min-h-0"
+    style="background: var(--pg-canvas-bg, var(--pg-bg))"
+  >
     <PodsPlayerPreviewDevice
       :device="viewport"
       :module-scripts="mode === 'vue' ? vueScripts : []"
