@@ -7,6 +7,7 @@
 
 import { usePodPlayer } from '../../composables/pods-player/usePodPlayer'
 import { usePlaygroundLayout } from '../../composables/pods-player/usePlaygroundLayout'
+import type { PodListItem } from '#pods-player/types'
 import PodsPlayerWorkspaceRail from './PodsPlayerWorkspaceRail.vue'
 import PodsPlayerPodList from './PodsPlayerPodList.vue'
 import PodsPlayerCanvasToolbar from './PodsPlayerCanvasToolbar.vue'
@@ -17,7 +18,7 @@ import PodsPlayerStoryPreview from './PodsPlayerStoryPreview.vue'
 
 const props = defineProps<{
   packs: { id: string; label: string }[]
-  pods: { slug: string; label: string }[]
+  pods: PodListItem[]
   activePackId: string
   packLabel: string
   packMeta?: string

@@ -20,6 +20,12 @@ export interface PodListItem {
   version?: string
   category?: string
   /**
+   * Optional release layer provenance for artifact-based hosts.
+   * Lets shared browse UI distinguish org-authored pods from core templates.
+   */
+  sourceLayer?: 'org' | 'core'
+  sourceLabel?: string
+  /**
    * Optional preview thumbnail URL for browse/list views.
    * Hosts can compute this from `pods.json` preview metadata (preferred).
    */
