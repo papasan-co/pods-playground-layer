@@ -23,7 +23,11 @@ function letter(label: string) {
     <div class="mb-2 flex h-8 w-8 items-center justify-center">
       <slot name="logo">
         <img
-          :src="colorMode.value === 'dark' ? '/autumn-icon-dark.svg' : '/autumn-default-icon.svg'"
+          :src="
+            colorMode.value === 'dark'
+              ? '/autumn-icon-dark.svg'
+              : '/autumn-default-icon.svg'
+          "
           alt="Autumn"
           class="h-5 w-5"
         >
@@ -68,6 +72,16 @@ function letter(label: string) {
 
     <div class="min-h-0 flex-1" />
 
+    <UColorModeButton
+      color="neutral"
+      variant="ghost"
+      square
+      class="flex h-8 w-8 items-center justify-center rounded-lg p-0"
+      :ui="{ base: 'p-0', leadingIcon: 'h-4 w-4' }"
+      title="Toggle color mode"
+      aria-label="Toggle color mode"
+    />
+
     <button
       type="button"
       disabled
@@ -78,18 +92,20 @@ function letter(label: string) {
       <UIcon name="i-lucide-settings" class="h-4 w-4" />
     </button>
 
-    <div
-      class="mt-1 flex h-[30px] w-[30px] shrink-0 cursor-default items-center justify-center rounded-full text-[11px] font-semibold text-white"
-      style="
-        background: linear-gradient(
-          135deg,
-          var(--pg-brand-grad-start),
-          var(--pg-brand-grad-end)
-        );
-      "
-      title="Account"
-    >
-      <slot name="avatar">?</slot>
-    </div>
+    <slot name="avatar">
+      <div
+        class="mt-1 flex h-[30px] w-[30px] shrink-0 cursor-default items-center justify-center rounded-full text-[11px] font-semibold text-white"
+        style="
+          background: linear-gradient(
+            135deg,
+            var(--pg-brand-grad-start),
+            var(--pg-brand-grad-end)
+          );
+        "
+        title="Account"
+      >
+        ?
+      </div>
+    </slot>
   </div>
 </template>

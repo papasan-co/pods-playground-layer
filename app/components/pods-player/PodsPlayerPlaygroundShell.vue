@@ -27,6 +27,8 @@ const props = defineProps<{
   artifactReady?: boolean
   /** Cmd+K from playground chrome (e.g. host command palette) */
   onCmdK?: () => void
+  /** Let host shells provide the shared workspace rail. */
+  hideWorkspaceRail?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -114,12 +116,21 @@ function toggleAdvanced() {
     "
   >
     <!-- E2E / introspection: nearest Vue component owns usePodPlayer flatForm in setupState -->
-    <section data-pods-flat-form-anchor class="pointer-events-none sr-only w-96" aria-hidden="true" />
+    <section
+      data-pods-flat-form-anchor
+      class="pointer-events-none sr-only w-96"
+      aria-hidden="true"
+    />
     <PodsPlayerWorkspaceRail
+      v-if="!hideWorkspaceRail"
       :packs="packs"
       :active-pack-id="activePackId"
       @select-pack="emit('selectPack', $event)"
-    />
+    >
+      <template v-if="$slots['workspace-avatar']" #avatar>
+        <slot name="workspace-avatar" />
+      </template>
+    </PodsPlayerWorkspaceRail>
 
     <PodsPlayerPodList
       :pack-label="packLabel"
@@ -157,8 +168,15 @@ function toggleAdvanced() {
         @update:show-yaml-tab="setShowYamlTab"
       />
 
-      <PodsPlayerCanvasCard :artifact-ready="artifactReady !== false" :viewport="viewport">
-        <div v-if="loading" class="flex flex-1 items-center justify-center p-8 text-sm" style="color: var(--pg-fg-meta)">
+      <PodsPlayerCanvasCard
+        :artifact-ready="artifactReady !== false"
+        :viewport="viewport"
+      >
+        <div
+          v-if="loading"
+          class="flex flex-1 items-center justify-center p-8 text-sm"
+          style="color: var(--pg-fg-meta)"
+        >
           Loading…
         </div>
         <div
