@@ -31,6 +31,7 @@ const props = defineProps<{
   storyMediaItems?: Array<Record<string, unknown>>
   libraryMediaItems?: Array<Record<string, unknown>>
   mediaSourceMode?: 'cms' | 'playground'
+  readOnly?: boolean
 }>()
 
 interface UpdatePayload {
@@ -44,6 +45,8 @@ const emit = defineEmits<{
 }>()
 
 function updateField(name: string, value: unknown, type: string) {
+  if (props.readOnly) return
+
   const v = type === 'number' ? Number(value) : value
   emit('update:modelValue', { field: name, value: v })
 }
@@ -81,6 +84,8 @@ function isHidden(field: FormField): boolean {
 }
 
 function isReadOnly(field: FormField): boolean {
+  if (props.readOnly) return true
+
   const ui = (field as any)?.['x-ui']
   return Boolean(ui && typeof ui === 'object' && ui.readonly === true)
 }
@@ -297,6 +302,7 @@ function initSortable(el: HTMLElement, name: string) {
     filter: 'input, textarea, select, button, [contenteditable]',
     preventOnFilter: false,
     onEnd(evt) {
+      if (props.readOnly) return
       if (evt.oldIndex == null || evt.newIndex == null) return
       const arr = [...list.value]
       const [moved] = arr.splice(evt.oldIndex, 1)
@@ -365,6 +371,8 @@ watch(
 )
 
 function updateRepeaterItem(block: string, idx: number, child: string, value: unknown) {
+  if (props.readOnly) return
+
   const list = listFor(block)
   list.value = list.value.map((it, i) => {
     if (i !== idx) return it
@@ -376,6 +384,8 @@ function updateRepeaterItem(block: string, idx: number, child: string, value: un
 }
 
 function addRepeaterItem(block: string, blueprint = {}) {
+  if (props.readOnly) return
+
   const list = listFor(block)
   const newItem = { _key: makeKey(), ...(blueprint as any) }
   list.value = [...list.value, newItem]
@@ -384,6 +394,8 @@ function addRepeaterItem(block: string, blueprint = {}) {
 }
 
 function removeRepeaterItem(block: string, idx: number) {
+  if (props.readOnly) return
+
   const list = listFor(block)
   list.value = list.value.map((it, i) => (i === idx ? { ...it, _removing: true } : it))
   setTimeout(() => {
@@ -408,6 +420,8 @@ function groupModelValue(groupName: string | undefined): Record<string, unknown>
 }
 
 function emitUiOnlyRootUpdate(child: string, value: unknown) {
+  if (props.readOnly) return
+
   if (isUiOnlyMergeField(child) && isObjectLike(value)) {
     for (const [key, nestedValue] of Object.entries(value)) {
       emit('update:modelValue', { field: key, value: nestedValue })
@@ -428,6 +442,8 @@ function handleGroupUpdate(groupName: string | undefined, child: string, value: 
 }
 
 function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  if (props.readOnly) return
+
   const config = getPositionGridConfig(field)
   if (!config) return
   emit('update:modelValue', {

@@ -29,6 +29,10 @@ const props = defineProps<{
   onCmdK?: () => void
   /** Let host shells provide the shared workspace rail. */
   hideWorkspaceRail?: boolean
+  /** Prevent field edits when the active pack is a read-only template. */
+  readOnly?: boolean
+  /** Optional host-provided props, such as CMS scene data, for preview-only context. */
+  previewPropsOverride?: Record<string, unknown> | null
 }>()
 
 const emit = defineEmits<{
@@ -81,7 +85,39 @@ const {
   toggleScrollMode,
 } = layout
 
-const podLabel = computed(() => pod.value?.label || pod.value?.slug || props.slug)
+const podLabel = computed(
+  () => pod.value?.label || pod.value?.slug || props.slug,
+)
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function mergePreviewProps(
+  base: Record<string, unknown>,
+  override: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!override) {
+    return base
+  }
+
+  const merged = { ...base, ...override }
+
+  for (const key of ['content', 'contentLayout', 'logoLayout', 'image', 'logo', 'video', 'bg']) {
+    if (isRecord(base[key]) && isRecord(override[key])) {
+      merged[key] = {
+        ...base[key],
+        ...override[key],
+      }
+    }
+  }
+
+  return merged
+}
+
+const effectivePreviewProps = computed(
+  () => mergePreviewProps(previewProps.value, props.previewPropsOverride),
+)
 
 function setViewport(v: import('#pods-player/types').PodsPlayerViewport) {
   viewport.value = v
@@ -173,7 +209,7 @@ function toggleAdvanced() {
         :viewport="viewport"
       >
         <div
-          v-if="loading"
+          v-if="loading && !pod"
           class="flex flex-1 items-center justify-center p-8 text-sm"
           style="color: var(--pg-fg-meta)"
         >
@@ -191,7 +227,7 @@ function toggleAdvanced() {
           :pod="pod"
           :mode="mode"
           :viewport="viewport"
-          :preview-props="previewProps"
+          :preview-props="effectivePreviewProps"
           :reload-key="reloadKey"
           class="min-h-0 flex-1"
         />
@@ -202,7 +238,7 @@ function toggleAdvanced() {
           :pod="pod"
           :mode="mode"
           :viewport="viewport"
-          :preview-props="previewProps"
+          :preview-props="effectivePreviewProps"
         />
       </PodsPlayerCanvasCard>
     </div>
@@ -217,11 +253,18 @@ function toggleAdvanced() {
       :advanced-open="advancedFieldsOpen"
       :show-props-tab="showPropsTab"
       :show-yaml-tab="showYamlTab"
-      @update:model-value="applyFormUpdate"
+      :read-only="readOnly"
+      @update:model-value="(payload) => !readOnly && applyFormUpdate(payload)"
       @update:viewport="setViewport"
       @toggle-advanced="toggleAdvanced"
       @expand="toggleFieldPanel()"
     >
+      <template v-if="$slots['field-panel-chat']" #chat>
+        <slot name="field-panel-chat" />
+      </template>
+      <template v-if="$slots['field-panel-design']" #design>
+        <slot name="field-panel-design" />
+      </template>
       <template v-if="$slots['field-panel-footer']" #footer>
         <slot name="field-panel-footer" />
       </template>

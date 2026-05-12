@@ -15,6 +15,7 @@ const props = defineProps<{
   advancedOpen: boolean
   showPropsTab: boolean
   showYamlTab: boolean
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const runtime = usePodsPlayerRuntime()
+const slots = useSlots()
 
 const yamlContent = ref<string | null>(null)
 const formFields = ref<FormField[]>([])
@@ -41,17 +43,25 @@ function fieldsFromPod(p: PodDetails | null): FormField[] {
   if (direct) return direct as FormField[]
 
   const podWithContract = p as PodDetailsWithCompiledContract
-  const compiledContract = podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
-  const contract = compiledContract as { fields?: unknown; ui?: { fields?: unknown } } | null
+  const compiledContract =
+    podWithContract.compiledContract ??
+    podWithContract.compiled_contract ??
+    null
+  const contract = compiledContract as {
+    fields?: unknown
+    ui?: { fields?: unknown }
+  } | null
 
-  const fromContract = contract && Array.isArray(contract.fields)
-    ? (contract.fields as FormField[])
-    : null
+  const fromContract =
+    contract && Array.isArray(contract.fields)
+      ? (contract.fields as FormField[])
+      : null
   if (fromContract) return fromContract
 
-  const uiFields = contract && Array.isArray(contract.ui?.fields)
-    ? (contract.ui.fields as FormField[])
-    : null
+  const uiFields =
+    contract && Array.isArray(contract.ui?.fields)
+      ? (contract.ui.fields as FormField[])
+      : null
   if (uiFields) return uiFields
 
   return []
@@ -81,6 +91,28 @@ watch(
 )
 
 const advancedSubTab = ref<'props' | 'yaml'>('props')
+const activePanelTab = ref('chat')
+const panelTabs = computed(() => [
+  {
+    label: 'Chat',
+    value: 'chat',
+    icon: 'i-lucide-sparkles',
+  },
+  {
+    label: 'Fields',
+    value: 'fields',
+    icon: 'i-lucide-sliders-horizontal',
+  },
+  ...(slots.design
+    ? [
+        {
+          label: 'Design',
+          value: 'design',
+          icon: 'i-lucide-palette',
+        },
+      ]
+    : []),
+])
 </script>
 
 <template>
@@ -90,10 +122,7 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
   >
     <div
       class="pods-player-field-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border"
-      style="
-        background: var(--pg-surface);
-        border-color: var(--pg-border);
-      "
+      style="background: var(--pg-surface); border-color: var(--pg-border)"
     >
       <div class="px-4 pb-3 pt-4">
         <div class="flex items-baseline gap-2">
@@ -107,58 +136,117 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
           >
             {{ pod?.label || 'Pod' }}
           </div>
-          <div v-if="pod?.version" class="text-[11px]" style="color: var(--pg-fg-muted-warm)">
+          <div
+            v-if="pod?.version"
+            class="text-[11px]"
+            style="color: var(--pg-fg-muted-warm)"
+          >
             {{ pod.version }}
           </div>
         </div>
-        <p v-if="pod?.description" class="mt-1.5 text-xs leading-relaxed" style="color: var(--pg-fg-body)">
+        <p
+          v-if="pod?.description"
+          class="mt-1.5 text-xs leading-relaxed"
+          style="color: var(--pg-fg-body)"
+        >
           {{ pod.description }}
         </p>
       </div>
 
-      <div class="mx-4 h-px shrink-0" style="background: var(--pg-hairline)" />
-
-      <div class="flex items-center gap-2 px-4 pb-1 pt-2.5">
-        <span class="text-xs font-semibold" style="color: var(--pg-fg-primary)">Fields</span>
-        <div class="flex-1" />
-        <button
-          type="button"
-          class="flex items-center gap-1 text-[11px] font-medium"
-          style="color: var(--pg-fg-muted-warm)"
-          @click="emit('toggleAdvanced')"
-        >
-          <UIcon name="i-lucide-code-2" class="h-3 w-3" />
-          Advanced
-          <UIcon
-            :name="advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-            class="h-3 w-3"
-          />
-        </button>
+      <div
+        class="shrink-0 border-b px-2"
+        style="border-color: var(--pg-hairline)"
+      >
+        <UTabs
+          v-model="activePanelTab"
+          :items="panelTabs"
+          :content="false"
+          color="neutral"
+          variant="link"
+          size="sm"
+          class="w-full"
+        />
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
-        <div v-if="loadingYaml" class="text-xs" style="color: var(--pg-fg-meta)">Loading form…</div>
-        <PodsPlayerBlockForm
-          v-else-if="formFields.length > 0"
-          :fields="formFields"
-          :model-value="modelValue"
-          :viewport="viewport || 'laptop'"
-          @update:model-value="(payload) => emit('update:modelValue', payload)"
-          @update:viewport="(val) => emit('update:viewport', val)"
-        />
-        <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
-          No form fields available for this pod.
+      <div
+        v-if="activePanelTab === 'chat'"
+        class="min-h-0 flex-1 overflow-hidden"
+      >
+        <slot name="chat">
+          <div class="px-4 py-3 text-xs" style="color: var(--pg-fg-meta)">
+            Chat is unavailable in this editor shell.
+          </div>
+        </slot>
+      </div>
+
+      <div
+        v-else-if="activePanelTab === 'fields'"
+        class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3"
+      >
+        <div class="mb-3 flex items-center gap-2">
+          <span
+            class="text-xs font-semibold"
+            style="color: var(--pg-fg-primary)"
+            >Fields</span
+          >
+          <div class="flex-1" />
+          <button
+            type="button"
+            class="flex items-center gap-1 text-[11px] font-medium"
+            style="color: var(--pg-fg-muted-warm)"
+            @click="emit('toggleAdvanced')"
+          >
+            <UIcon name="i-lucide-code-2" class="h-3 w-3" />
+            Advanced
+            <UIcon
+              :name="
+                advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+              "
+              class="h-3 w-3"
+            />
+          </button>
         </div>
 
+        <div
+          v-if="loadingYaml"
+          class="text-xs"
+          style="color: var(--pg-fg-meta)"
+        >
+          Loading form…
+        </div>
+        <template v-else>
+          <PodsPlayerBlockForm
+            v-if="formFields.length > 0"
+            :fields="formFields"
+            :model-value="modelValue"
+            :viewport="viewport || 'laptop'"
+            :read-only="readOnly"
+            @update:model-value="
+              (payload) => !readOnly && emit('update:modelValue', payload)
+            "
+            @update:viewport="(val) => emit('update:viewport', val)"
+          />
+          <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
+            No form fields available for this pod.
+          </div>
+        </template>
+
         <template v-if="advancedOpen">
-          <div v-if="showPropsTab || showYamlTab" class="mt-4 flex gap-2 border-t pt-4" style="border-color: var(--pg-hairline)">
+          <div
+            v-if="showPropsTab || showYamlTab"
+            class="mt-4 flex gap-2 border-t pt-4"
+            style="border-color: var(--pg-hairline)"
+          >
             <button
               v-if="showPropsTab"
               type="button"
               class="rounded-md px-2 py-1 text-[11px] font-medium"
               :style="
                 advancedSubTab === 'props'
-                  ? { background: 'var(--pg-hover-surface)', color: 'var(--pg-fg-primary)' }
+                  ? {
+                      background: 'var(--pg-hover-surface)',
+                      color: 'var(--pg-fg-primary)',
+                    }
                   : { color: 'var(--pg-fg-muted-warm)' }
               "
               @click="advancedSubTab = 'props'"
@@ -171,7 +259,10 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
               class="rounded-md px-2 py-1 text-[11px] font-medium"
               :style="
                 advancedSubTab === 'yaml'
-                  ? { background: 'var(--pg-hover-surface)', color: 'var(--pg-fg-primary)' }
+                  ? {
+                      background: 'var(--pg-hover-surface)',
+                      color: 'var(--pg-fg-primary)',
+                    }
                   : { color: 'var(--pg-fg-muted-warm)' }
               "
               @click="advancedSubTab = 'yaml'"
@@ -180,27 +271,60 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
             </button>
           </div>
 
-          <div v-if="advancedOpen && showPropsTab && advancedSubTab === 'props'" class="mt-2">
-            <div v-if="fixture" class="rounded-md p-3 text-xs" style="background: var(--pg-hover-surface)">
-              <pre class="overflow-auto whitespace-pre-wrap font-mono" style="color: var(--pg-fg-secondary)">{{
-                JSON.stringify(fixture, null, 2)
-              }}</pre>
+          <div
+            v-if="advancedOpen && showPropsTab && advancedSubTab === 'props'"
+            class="mt-2"
+          >
+            <div
+              v-if="fixture"
+              class="rounded-md p-3 text-xs"
+              style="background: var(--pg-hover-surface)"
+            >
+              <pre
+                class="overflow-auto whitespace-pre-wrap font-mono"
+                style="color: var(--pg-fg-secondary)"
+                >{{ JSON.stringify(fixture, null, 2) }}</pre
+              >
             </div>
-            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">No fixture data</div>
+            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
+              No fixture data
+            </div>
           </div>
 
-          <div v-if="advancedOpen && showYamlTab && advancedSubTab === 'yaml'" class="mt-2">
-            <div v-if="yamlContent" class="rounded-md p-3 text-xs" style="background: var(--pg-hover-surface)">
-              <pre class="overflow-auto whitespace-pre-wrap font-mono" style="color: var(--pg-fg-secondary)">{{
-                yamlContent
-              }}</pre>
+          <div
+            v-if="advancedOpen && showYamlTab && advancedSubTab === 'yaml'"
+            class="mt-2"
+          >
+            <div
+              v-if="yamlContent"
+              class="rounded-md p-3 text-xs"
+              style="background: var(--pg-hover-surface)"
+            >
+              <pre
+                class="overflow-auto whitespace-pre-wrap font-mono"
+                style="color: var(--pg-fg-secondary)"
+                >{{ yamlContent }}</pre
+              >
             </div>
-            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">YAML not available</div>
+            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
+              YAML not available
+            </div>
           </div>
         </template>
       </div>
 
-      <div v-if="$slots.footer" class="shrink-0 border-t" style="border-color: var(--pg-hairline)">
+      <div
+        v-else-if="activePanelTab === 'design'"
+        class="min-h-0 flex-1 overflow-hidden"
+      >
+        <slot name="design" />
+      </div>
+
+      <div
+        v-if="$slots.footer"
+        class="shrink-0 border-t"
+        style="border-color: var(--pg-hairline)"
+      >
         <div class="px-4 py-3">
           <slot name="footer" />
         </div>
@@ -208,10 +332,7 @@ const advancedSubTab = ref<'props' | 'yaml'>('props')
     </div>
   </div>
 
-  <div
-    v-else
-    class="flex w-9 shrink-0 flex-col items-center pt-3.5"
-  >
+  <div v-else class="flex w-9 shrink-0 flex-col items-center pt-3.5">
     <button
       type="button"
       class="flex h-7 w-7 items-center justify-center rounded-md transition-colors"
