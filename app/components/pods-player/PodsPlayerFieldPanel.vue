@@ -91,13 +91,19 @@ watch(
 )
 
 const advancedSubTab = ref<'props' | 'yaml'>('props')
-const activePanelTab = ref('chat')
+const activePanelTab = ref<'chat' | 'fields' | 'design'>(
+  slots.chat ? 'chat' : 'fields',
+)
 const panelTabs = computed(() => [
-  {
-    label: 'Chat',
-    value: 'chat',
-    icon: 'i-lucide-sparkles',
-  },
+  ...(slots.chat
+    ? [
+        {
+          label: 'Chat',
+          value: 'chat',
+          icon: 'i-lucide-sparkles',
+        },
+      ]
+    : []),
   {
     label: 'Fields',
     value: 'fields',
@@ -113,6 +119,16 @@ const panelTabs = computed(() => [
       ]
     : []),
 ])
+
+watchEffect(() => {
+  if (activePanelTab.value === 'chat' && !slots.chat) {
+    activePanelTab.value = 'fields'
+  }
+
+  if (activePanelTab.value === 'design' && !slots.design) {
+    activePanelTab.value = 'fields'
+  }
+})
 </script>
 
 <template>
