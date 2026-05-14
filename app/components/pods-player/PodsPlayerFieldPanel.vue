@@ -90,24 +90,34 @@ watch(
 )
 
 const advancedSubTab = ref<'props' | 'yaml'>('props')
-const activePanelTab = ref<'chat' | 'fields' | 'design'>(
+const activePanelTab = ref<'chat' | 'fields' | 'timeline' | 'design'>(
   slots.chat ? 'chat' : 'fields',
 )
+const activePodLabel = computed(() => props.pod?.label || props.pod?.slug || 'Pod')
 const panelTabs = computed(() => [
   ...(slots.chat
     ? [
         {
-          label: 'Chat',
+          label: 'Pack chat',
           value: 'chat',
-          icon: 'i-lucide-sparkles',
+          icon: 'i-lucide-message-circle',
         },
       ]
     : []),
   {
-    label: 'Fields',
+    label: `${activePodLabel.value} fields`,
     value: 'fields',
     icon: 'i-lucide-sliders-horizontal',
   },
+  ...(slots.timeline
+    ? [
+        {
+          label: 'Timeline',
+          value: 'timeline',
+          icon: 'i-lucide-history',
+        },
+      ]
+    : []),
   ...(slots.design
     ? [
         {
@@ -130,6 +140,10 @@ watchEffect(() => {
   }
 
   if (activePanelTab.value === 'design' && !slots.design) {
+    activePanelTab.value = 'fields'
+  }
+
+  if (activePanelTab.value === 'timeline' && !slots.timeline) {
     activePanelTab.value = 'fields'
   }
 })
@@ -208,7 +222,9 @@ watchEffect(() => {
         class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3"
       >
         <div class="mb-3 flex items-center gap-2">
-          <span class="text-xs font-semibold" style="color: var(--pg-fg-primary)">Fields</span>
+          <span class="text-xs font-semibold" style="color: var(--pg-fg-primary)">
+            {{ activePodLabel }} fields
+          </span>
           <div class="flex-1" />
           <button
             type="button"
@@ -294,6 +310,13 @@ watchEffect(() => {
             <div v-else class="text-xs" style="color: var(--pg-fg-meta)">YAML not available</div>
           </div>
         </template>
+      </div>
+
+      <div
+        v-show="activePanelTab === 'timeline'"
+        class="min-h-0 flex-1 overflow-hidden"
+      >
+        <slot name="timeline" />
       </div>
 
       <div

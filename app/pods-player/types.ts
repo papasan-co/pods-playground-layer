@@ -37,7 +37,6 @@ export interface PodListItem {
    * from a slug-to-PascalCase transform (e.g., digits / acronyms).
    */
   folderName?: string
-
 }
 
 export interface PodDetails extends PodListItem {
@@ -58,6 +57,14 @@ export interface PodDetails extends PodListItem {
    * When provided, the player can derive `fields` from it.
    */
   compiledContract?: Record<string, unknown> | null
+}
+
+export interface PodsPlayerCanvasTarget {
+  key: string
+  path: string
+  label: string
+  value: unknown
+  displayValue: string
 }
 
 export interface PodsPlayerEnsureResult {
@@ -123,4 +130,3 @@ export interface PodsPlayerRuntime {
    */
   ensureRuntimeLoaded?(pod: PodDetails): Promise<PodsPlayerEnsureResult>
 }
-
