@@ -20,6 +20,7 @@ const props = defineProps<{
 
 const runtime = usePodsPlayerRuntime()
 const route = useRoute()
+const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 0)
 
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
@@ -56,7 +57,7 @@ async function renderVueRuntimeIntoIframe() {
 }
 
 watch(
-  () => [props.pod?.slug, props.mode] as const,
+  () => [props.pod?.slug, props.mode, brandPreviewRevision.value] as const,
   async ([slug, mode]) => {
     Comp.value = null
     error.value = null
