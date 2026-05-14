@@ -16,6 +16,8 @@ import PodsPlayerFieldPanel from './PodsPlayerFieldPanel.vue'
 import PodsPlayerPreview from './PodsPlayerPreview.vue'
 import PodsPlayerStoryPreview from './PodsPlayerStoryPreview.vue'
 
+type FieldPanelTab = 'chat' | 'fields' | 'timeline' | 'design'
+
 const props = defineProps<{
   packs: { id: string; label: string }[]
   pods: PodListItem[]
@@ -34,6 +36,7 @@ const props = defineProps<{
   /** Optional host-provided props, such as CMS scene data, for preview-only context. */
   previewPropsOverride?: Record<string, unknown> | null
   selectedCanvasTargetKey?: string | null
+  fieldPanelActiveTab?: FieldPanelTab | null
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +44,7 @@ const emit = defineEmits<{
   selectPod: [slug: string]
   backToPacks: []
   selectCanvasTarget: [target: PodsPlayerCanvasTarget]
+  'update:fieldPanelActiveTab': [value: FieldPanelTab]
 }>()
 
 const slugRef = toRef(props, 'slug')
@@ -362,8 +366,10 @@ function targetDisplayValue(value: unknown): string {
       :show-props-tab="showPropsTab"
       :show-yaml-tab="showYamlTab"
       :read-only="readOnly"
+      :active-tab="fieldPanelActiveTab"
       @update:model-value="(payload) => !readOnly && applyFormUpdate(payload)"
       @update:viewport="setViewport"
+      @update:active-tab="emit('update:fieldPanelActiveTab', $event)"
       @toggle-advanced="toggleAdvanced"
       @expand="toggleFieldPanel()"
     >

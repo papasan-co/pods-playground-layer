@@ -5,6 +5,8 @@ import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerBlockForm from './PodsPlayerBlockForm.vue'
 
+type PanelTab = 'chat' | 'fields' | 'timeline' | 'design'
+
 const props = defineProps<{
   pod: PodDetails | null
   schema: unknown
@@ -17,11 +19,14 @@ const props = defineProps<{
   showYamlTab: boolean
   /** When true, block field edits (for example, read-only template packs). */
   readOnly?: boolean
+  /** Optional host-controlled active tab. */
+  activeTab?: PanelTab | null
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [payload: { field: string; value: unknown }]
   'update:viewport': [value: PodsPlayerViewport]
+  'update:activeTab': [value: PanelTab]
   toggleAdvanced: []
   expand: []
 }>()
@@ -90,9 +95,8 @@ watch(
 )
 
 const advancedSubTab = ref<'props' | 'yaml'>('props')
-const activePanelTab = ref<'chat' | 'fields' | 'timeline' | 'design'>(
-  slots.chat ? 'chat' : 'fields',
-)
+const defaultPanelTab = computed<PanelTab>(() => (slots.chat ? 'chat' : 'fields'))
+const activePanelTab = ref<PanelTab>(props.activeTab || defaultPanelTab.value)
 const activePodLabel = computed(() => props.pod?.label || props.pod?.slug || 'Pod')
 const panelTabs = computed(() => [
   ...(slots.chat
@@ -128,6 +132,19 @@ const panelTabs = computed(() => [
       ]
     : []),
 ])
+
+watch(
+  () => props.activeTab,
+  (value) => {
+    if (value && value !== activePanelTab.value) {
+      activePanelTab.value = value
+    }
+  },
+)
+
+watch(activePanelTab, (value) => {
+  emit('update:activeTab', value)
+})
 
 /**
  * Snap back to Fields when a tab targets a slot the host did not provide.
