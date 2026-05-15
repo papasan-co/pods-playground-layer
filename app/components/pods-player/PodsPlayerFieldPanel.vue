@@ -5,6 +5,8 @@ import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerBlockForm from './PodsPlayerBlockForm.vue'
 
+type PanelTab = 'chat' | 'fields' | 'timeline' | 'design'
+
 const props = defineProps<{
   pod: PodDetails | null
   schema: unknown
@@ -15,12 +17,16 @@ const props = defineProps<{
   advancedOpen: boolean
   showPropsTab: boolean
   showYamlTab: boolean
+  /** When true, block field edits (for example, read-only template packs). */
   readOnly?: boolean
+  /** Optional host-controlled active tab. */
+  activeTab?: PanelTab | null
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [payload: { field: string; value: unknown }]
   'update:viewport': [value: PodsPlayerViewport]
+  'update:activeTab': [value: PanelTab]
   toggleAdvanced: []
   expand: []
 }>()
@@ -36,6 +42,11 @@ type PodDetailsWithCompiledContract = PodDetails & {
   compiled_contract?: Record<string, unknown> | null
 }
 
+/**
+ * Resolve editable fields for the active pod from embedded form definitions or compiled contracts.
+ *
+ * Role: Keeps YAML + schema fallbacks aligned with `usePodPlayer` field hydration.
+ */
 function fieldsFromPod(p: PodDetails | null): FormField[] {
   if (!p) return []
 
@@ -44,24 +55,17 @@ function fieldsFromPod(p: PodDetails | null): FormField[] {
 
   const podWithContract = p as PodDetailsWithCompiledContract
   const compiledContract =
-    podWithContract.compiledContract ??
-    podWithContract.compiled_contract ??
-    null
-  const contract = compiledContract as {
-    fields?: unknown
-    ui?: { fields?: unknown }
-  } | null
+    podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
+  const contract = compiledContract as { fields?: unknown; ui?: { fields?: unknown } } | null
 
-  const fromContract =
-    contract && Array.isArray(contract.fields)
-      ? (contract.fields as FormField[])
-      : null
+  const fromContract = contract && Array.isArray(contract.fields)
+    ? (contract.fields as FormField[])
+    : null
   if (fromContract) return fromContract
 
-  const uiFields =
-    contract && Array.isArray(contract.ui?.fields)
-      ? (contract.ui.fields as FormField[])
-      : null
+  const uiFields = contract && Array.isArray(contract.ui?.fields)
+    ? (contract.ui.fields as FormField[])
+    : null
   if (uiFields) return uiFields
 
   return []
@@ -91,24 +95,33 @@ watch(
 )
 
 const advancedSubTab = ref<'props' | 'yaml'>('props')
-const activePanelTab = ref<'chat' | 'fields' | 'design'>(
-  slots.chat ? 'chat' : 'fields',
-)
+const defaultPanelTab = computed<PanelTab>(() => (slots.chat ? 'chat' : 'fields'))
+const activePanelTab = ref<PanelTab>(props.activeTab || defaultPanelTab.value)
+const activePodLabel = computed(() => props.pod?.label || props.pod?.slug || 'Pod')
 const panelTabs = computed(() => [
   ...(slots.chat
     ? [
         {
-          label: 'Chat',
+          label: 'Pack chat',
           value: 'chat',
-          icon: 'i-lucide-sparkles',
+          icon: 'i-lucide-message-circle',
         },
       ]
     : []),
   {
-    label: 'Fields',
+    label: `${activePodLabel.value} fields`,
     value: 'fields',
     icon: 'i-lucide-sliders-horizontal',
   },
+  ...(slots.timeline
+    ? [
+        {
+          label: 'Timeline',
+          value: 'timeline',
+          icon: 'i-lucide-history',
+        },
+      ]
+    : []),
   ...(slots.design
     ? [
         {
@@ -120,6 +133,24 @@ const panelTabs = computed(() => [
     : []),
 ])
 
+watch(
+  () => props.activeTab,
+  (value) => {
+    if (value && value !== activePanelTab.value) {
+      activePanelTab.value = value
+    }
+  },
+)
+
+watch(activePanelTab, (value) => {
+  emit('update:activeTab', value)
+})
+
+/**
+ * Snap back to Fields when a tab targets a slot the host did not provide.
+ *
+ * Role: Prevents blank panel states when slots are omitted between shells or pack modes.
+ */
 watchEffect(() => {
   if (activePanelTab.value === 'chat' && !slots.chat) {
     activePanelTab.value = 'fields'
@@ -128,22 +159,29 @@ watchEffect(() => {
   if (activePanelTab.value === 'design' && !slots.design) {
     activePanelTab.value = 'fields'
   }
+
+  if (activePanelTab.value === 'timeline' && !slots.timeline) {
+    activePanelTab.value = 'fields'
+  }
 })
 </script>
 
 <template>
   <div
     v-if="!collapsed"
-    class="flex w-[308px] shrink-0 flex-col overflow-hidden pt-3.5 pb-3.5 pr-3.5 pl-0"
+    class="flex w-[352px] shrink-0 flex-col overflow-hidden pt-3.5 pb-3.5 pr-3.5 pl-0"
   >
     <div
       class="pods-player-field-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border"
-      style="background: var(--pg-surface); border-color: var(--pg-border)"
+      style="
+        background: var(--pg-surface);
+        border-color: var(--pg-border);
+      "
     >
-      <div class="px-4 pb-3 pt-4">
-        <div class="flex items-baseline gap-2">
+      <div class="shrink-0 px-4 pb-5 pt-4">
+        <div class="flex min-w-0 items-baseline gap-2">
           <div
-            class="font-semibold tracking-tight"
+            class="min-w-0 truncate font-semibold tracking-tight"
             style="
               font-family: var(--pg-font-display);
               font-size: 20px;
@@ -152,20 +190,20 @@ watchEffect(() => {
           >
             {{ pod?.label || 'Pod' }}
           </div>
-          <div
-            v-if="pod?.version"
-            class="text-[11px]"
-            style="color: var(--pg-fg-muted-warm)"
-          >
+          <div v-if="pod?.version" class="shrink-0 text-[11px]" style="color: var(--pg-fg-muted-warm)">
             {{ pod.version }}
           </div>
         </div>
         <p
-          v-if="pod?.description"
-          class="mt-1.5 text-xs leading-relaxed"
-          style="color: var(--pg-fg-body)"
+          class="mt-1.5 h-[40px] overflow-hidden text-xs leading-relaxed"
+          style="
+            color: var(--pg-fg-body);
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+          "
         >
-          {{ pod.description }}
+          {{ pod?.description || '' }}
         </p>
       </div>
 
@@ -184,8 +222,9 @@ watchEffect(() => {
         />
       </div>
 
+      <!-- v-show keeps Chat (and host-provided AI widgets) mounted while switching Fields / Design or pods. -->
       <div
-        v-if="activePanelTab === 'chat'"
+        v-show="activePanelTab === 'chat'"
         class="min-h-0 flex-1 overflow-hidden"
       >
         <slot name="chat">
@@ -196,15 +235,13 @@ watchEffect(() => {
       </div>
 
       <div
-        v-else-if="activePanelTab === 'fields'"
+        v-show="activePanelTab === 'fields'"
         class="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3"
       >
         <div class="mb-3 flex items-center gap-2">
-          <span
-            class="text-xs font-semibold"
-            style="color: var(--pg-fg-primary)"
-            >Fields</span
-          >
+          <span class="text-xs font-semibold" style="color: var(--pg-fg-primary)">
+            {{ activePodLabel }} fields
+          </span>
           <div class="flex-1" />
           <button
             type="button"
@@ -215,20 +252,17 @@ watchEffect(() => {
             <UIcon name="i-lucide-code-2" class="h-3 w-3" />
             Advanced
             <UIcon
-              :name="
-                advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-              "
+              :name="advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
               class="h-3 w-3"
             />
           </button>
         </div>
 
-        <div
-          v-if="loadingYaml"
-          class="text-xs"
-          style="color: var(--pg-fg-meta)"
-        >
-          Loading form…
+        <div v-if="loadingYaml" class="space-y-4" aria-label="Loading form fields">
+          <div v-for="index in 5" :key="index" class="space-y-2">
+            <USkeleton class="h-3 w-24 rounded-full" />
+            <USkeleton class="h-9 w-full rounded-lg" />
+          </div>
         </div>
         <template v-else>
           <PodsPlayerBlockForm
@@ -237,9 +271,7 @@ watchEffect(() => {
             :model-value="modelValue"
             :viewport="viewport || 'laptop'"
             :read-only="readOnly"
-            @update:model-value="
-              (payload) => !readOnly && emit('update:modelValue', payload)
-            "
+            @update:model-value="(payload) => !readOnly && emit('update:modelValue', payload)"
             @update:viewport="(val) => emit('update:viewport', val)"
           />
           <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
@@ -248,21 +280,14 @@ watchEffect(() => {
         </template>
 
         <template v-if="advancedOpen">
-          <div
-            v-if="showPropsTab || showYamlTab"
-            class="mt-4 flex gap-2 border-t pt-4"
-            style="border-color: var(--pg-hairline)"
-          >
+          <div v-if="showPropsTab || showYamlTab" class="mt-4 flex gap-2 border-t pt-4" style="border-color: var(--pg-hairline)">
             <button
               v-if="showPropsTab"
               type="button"
               class="rounded-md px-2 py-1 text-[11px] font-medium"
               :style="
                 advancedSubTab === 'props'
-                  ? {
-                      background: 'var(--pg-hover-surface)',
-                      color: 'var(--pg-fg-primary)',
-                    }
+                  ? { background: 'var(--pg-hover-surface)', color: 'var(--pg-fg-primary)' }
                   : { color: 'var(--pg-fg-muted-warm)' }
               "
               @click="advancedSubTab = 'props'"
@@ -275,10 +300,7 @@ watchEffect(() => {
               class="rounded-md px-2 py-1 text-[11px] font-medium"
               :style="
                 advancedSubTab === 'yaml'
-                  ? {
-                      background: 'var(--pg-hover-surface)',
-                      color: 'var(--pg-fg-primary)',
-                    }
+                  ? { background: 'var(--pg-hover-surface)', color: 'var(--pg-fg-primary)' }
                   : { color: 'var(--pg-fg-muted-warm)' }
               "
               @click="advancedSubTab = 'yaml'"
@@ -287,60 +309,41 @@ watchEffect(() => {
             </button>
           </div>
 
-          <div
-            v-if="advancedOpen && showPropsTab && advancedSubTab === 'props'"
-            class="mt-2"
-          >
-            <div
-              v-if="fixture"
-              class="rounded-md p-3 text-xs"
-              style="background: var(--pg-hover-surface)"
-            >
-              <pre
-                class="overflow-auto whitespace-pre-wrap font-mono"
-                style="color: var(--pg-fg-secondary)"
-                >{{ JSON.stringify(fixture, null, 2) }}</pre
-              >
+          <div v-if="advancedOpen && showPropsTab && advancedSubTab === 'props'" class="mt-2">
+            <div v-if="fixture" class="rounded-md p-3 text-xs" style="background: var(--pg-hover-surface)">
+              <pre class="overflow-auto whitespace-pre-wrap font-mono" style="color: var(--pg-fg-secondary)">{{
+                JSON.stringify(fixture, null, 2)
+              }}</pre>
             </div>
-            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
-              No fixture data
-            </div>
+            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">No fixture data</div>
           </div>
 
-          <div
-            v-if="advancedOpen && showYamlTab && advancedSubTab === 'yaml'"
-            class="mt-2"
-          >
-            <div
-              v-if="yamlContent"
-              class="rounded-md p-3 text-xs"
-              style="background: var(--pg-hover-surface)"
-            >
-              <pre
-                class="overflow-auto whitespace-pre-wrap font-mono"
-                style="color: var(--pg-fg-secondary)"
-                >{{ yamlContent }}</pre
-              >
+          <div v-if="advancedOpen && showYamlTab && advancedSubTab === 'yaml'" class="mt-2">
+            <div v-if="yamlContent" class="rounded-md p-3 text-xs" style="background: var(--pg-hover-surface)">
+              <pre class="overflow-auto whitespace-pre-wrap font-mono" style="color: var(--pg-fg-secondary)">{{
+                yamlContent
+              }}</pre>
             </div>
-            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">
-              YAML not available
-            </div>
+            <div v-else class="text-xs" style="color: var(--pg-fg-meta)">YAML not available</div>
           </div>
         </template>
       </div>
 
       <div
-        v-else-if="activePanelTab === 'design'"
+        v-show="activePanelTab === 'timeline'"
+        class="min-h-0 flex-1 overflow-hidden"
+      >
+        <slot name="timeline" />
+      </div>
+
+      <div
+        v-show="activePanelTab === 'design'"
         class="min-h-0 flex-1 overflow-hidden"
       >
         <slot name="design" />
       </div>
 
-      <div
-        v-if="$slots.footer"
-        class="shrink-0 border-t"
-        style="border-color: var(--pg-hairline)"
-      >
+      <div v-if="$slots.footer" class="shrink-0 border-t" style="border-color: var(--pg-hairline)">
         <div class="px-4 py-3">
           <slot name="footer" />
         </div>
@@ -348,7 +351,10 @@ watchEffect(() => {
     </div>
   </div>
 
-  <div v-else class="flex w-9 shrink-0 flex-col items-center pt-3.5">
+  <div
+    v-else
+    class="flex w-9 shrink-0 flex-col items-center pt-3.5"
+  >
     <button
       type="button"
       class="flex h-7 w-7 items-center justify-center rounded-md transition-colors"

@@ -7,7 +7,7 @@
 
 import { usePodPlayer } from '../../composables/pods-player/usePodPlayer'
 import { usePlaygroundLayout } from '../../composables/pods-player/usePlaygroundLayout'
-import type { PodListItem } from '#pods-player/types'
+import type { PodsPlayerCanvasTarget, PodListItem } from '#pods-player/types'
 import PodsPlayerWorkspaceRail from './PodsPlayerWorkspaceRail.vue'
 import PodsPlayerPodList from './PodsPlayerPodList.vue'
 import PodsPlayerCanvasToolbar from './PodsPlayerCanvasToolbar.vue'
@@ -15,6 +15,8 @@ import PodsPlayerCanvasCard from './PodsPlayerCanvasCard.vue'
 import PodsPlayerFieldPanel from './PodsPlayerFieldPanel.vue'
 import PodsPlayerPreview from './PodsPlayerPreview.vue'
 import PodsPlayerStoryPreview from './PodsPlayerStoryPreview.vue'
+
+type FieldPanelTab = 'chat' | 'fields' | 'timeline' | 'design'
 
 const props = defineProps<{
   packs: { id: string; label: string }[]
@@ -33,12 +35,16 @@ const props = defineProps<{
   readOnly?: boolean
   /** Optional host-provided props, such as CMS scene data, for preview-only context. */
   previewPropsOverride?: Record<string, unknown> | null
+  selectedCanvasTargetKey?: string | null
+  fieldPanelActiveTab?: FieldPanelTab | null
 }>()
 
 const emit = defineEmits<{
   selectPack: [id: string]
   selectPod: [slug: string]
   backToPacks: []
+  selectCanvasTarget: [target: PodsPlayerCanvasTarget]
+  'update:fieldPanelActiveTab': [value: FieldPanelTab]
 }>()
 
 const slugRef = toRef(props, 'slug')
@@ -53,6 +59,7 @@ const {
   loading,
   reloadKey,
   flatForm,
+  formSchema,
   previewProps,
   hasChanges,
   reloadComponent,
@@ -103,7 +110,15 @@ function mergePreviewProps(
 
   const merged = { ...base, ...override }
 
-  for (const key of ['content', 'contentLayout', 'logoLayout', 'image', 'logo', 'video', 'bg']) {
+  for (const key of [
+    'content',
+    'contentLayout',
+    'logoLayout',
+    'image',
+    'logo',
+    'video',
+    'bg',
+  ]) {
     if (isRecord(base[key]) && isRecord(override[key])) {
       merged[key] = {
         ...base[key],
@@ -115,8 +130,11 @@ function mergePreviewProps(
   return merged
 }
 
-const effectivePreviewProps = computed(
-  () => mergePreviewProps(previewProps.value, props.previewPropsOverride),
+const effectivePreviewProps = computed(() =>
+  mergePreviewProps(previewProps.value, props.previewPropsOverride),
+)
+const selectableCanvasTargets = computed<PodsPlayerCanvasTarget[]>(() =>
+  canvasTargetsFromFields(formSchema.value, effectivePreviewProps.value),
 )
 
 function setViewport(v: import('#pods-player/types').PodsPlayerViewport) {
@@ -139,6 +157,97 @@ function setShowYamlTab(v: boolean) {
 
 function toggleAdvanced() {
   advancedFieldsOpen.value = !advancedFieldsOpen.value
+}
+
+function canvasTargetsFromFields(
+  fields: unknown[],
+  values: Record<string, unknown>,
+): PodsPlayerCanvasTarget[] {
+  const targets: PodsPlayerCanvasTarget[] = []
+
+  const visit = (items: unknown[], prefix = '') => {
+    for (const item of items) {
+      if (!isRecord(item)) continue
+
+      const type = typeof item.type === 'string' ? item.type : ''
+
+      if (type === 'group' && Array.isArray(item.children)) {
+        const name = typeof item.name === 'string' ? item.name : ''
+        const explicitPath = typeof item.path === 'string' ? item.path : ''
+        const nextPrefix =
+          explicitPath ||
+          (name && !name.startsWith('__') ? joinPath(prefix, name) : prefix)
+        visit(item.children, nextPrefix)
+        continue
+      }
+
+      if (type === 'row' && Array.isArray(item.fields)) {
+        visit(item.fields, prefix)
+        continue
+      }
+
+      if (type === 'repeater') {
+        continue
+      }
+
+      const fieldName = typeof item.name === 'string' ? item.name : ''
+      const explicitPath = typeof item.path === 'string' ? item.path : ''
+      const path =
+        explicitPath || (fieldName ? joinPath(prefix, fieldName) : '')
+
+      if (!path) continue
+
+      const value = pathValue(values, path)
+      const displayValue = targetDisplayValue(value)
+
+      if (!displayValue) continue
+
+      targets.push({
+        key: path,
+        path,
+        label: fieldLabel(item, fieldName || path),
+        value,
+        displayValue,
+      })
+    }
+  }
+
+  visit(fields)
+
+  return targets
+}
+
+function joinPath(prefix: string, next: string): string {
+  return prefix ? `${prefix}.${next}` : next
+}
+
+function pathValue(source: Record<string, unknown>, path: string): unknown {
+  let current: unknown = source
+
+  for (const part of path.split('.')) {
+    if (!isRecord(current)) return undefined
+    current = current[part]
+  }
+
+  return current
+}
+
+function fieldLabel(field: Record<string, unknown>, fallback: string): string {
+  const label = field.label
+
+  return typeof label === 'string' && label.trim().length > 0 ? label : fallback
+}
+
+function targetDisplayValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim().length >= 2 ? value.trim() : ''
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  return ''
 }
 </script>
 
@@ -239,6 +348,9 @@ function toggleAdvanced() {
           :mode="mode"
           :viewport="viewport"
           :preview-props="effectivePreviewProps"
+          :selectable-targets="selectableCanvasTargets"
+          :selected-target-key="selectedCanvasTargetKey"
+          @select-target="emit('selectCanvasTarget', $event)"
         />
       </PodsPlayerCanvasCard>
     </div>
@@ -254,13 +366,18 @@ function toggleAdvanced() {
       :show-props-tab="showPropsTab"
       :show-yaml-tab="showYamlTab"
       :read-only="readOnly"
+      :active-tab="fieldPanelActiveTab"
       @update:model-value="(payload) => !readOnly && applyFormUpdate(payload)"
       @update:viewport="setViewport"
+      @update:active-tab="emit('update:fieldPanelActiveTab', $event)"
       @toggle-advanced="toggleAdvanced"
       @expand="toggleFieldPanel()"
     >
       <template v-if="$slots['field-panel-chat']" #chat>
         <slot name="field-panel-chat" />
+      </template>
+      <template v-if="$slots['field-panel-timeline']" #timeline>
+        <slot name="field-panel-timeline" />
       </template>
       <template v-if="$slots['field-panel-design']" #design>
         <slot name="field-panel-design" />

@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-player/types'
+import type {
+  PodDetails,
+  PodsPlayerCanvasTarget,
+  PodsPlayerMode,
+  PodsPlayerViewport,
+} from '#pods-player/types'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
@@ -16,11 +21,20 @@ const props = defineProps<{
   mode: PodsPlayerMode
   viewport: PodsPlayerViewport
   previewProps: Record<string, unknown>
+  selectableTargets?: PodsPlayerCanvasTarget[]
+  selectedTargetKey?: string | null
+}>()
+
+const emit = defineEmits<{
+  selectTarget: [target: PodsPlayerCanvasTarget]
 }>()
 
 const runtime = usePodsPlayerRuntime()
 const route = useRoute()
-const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 0)
+const brandPreviewRevision = useState(
+  'pod-studio.brand.previewRevision',
+  () => 0,
+)
 
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
@@ -30,6 +44,33 @@ const vueScripts = ref<string[]>([])
 const vueReady = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
+const targetableValues = computed(() =>
+  [...(props.selectableTargets || [])]
+    .filter((target) => target.displayValue.trim().length > 0)
+    .sort((a, b) => b.displayValue.length - a.displayValue.length),
+)
+
+function handleCanvasClick(event: MouseEvent): void {
+  if (!targetableValues.value.length) return
+
+  const path =
+    typeof event.composedPath === 'function' ? event.composedPath() : []
+
+  for (const node of path) {
+    if (!(node instanceof HTMLElement)) continue
+
+    const text = (node.textContent || '').replace(/\s+/g, ' ').trim()
+    if (!text) continue
+
+    const match = targetableValues.value.find((target) =>
+      text.includes(target.displayValue),
+    )
+    if (match) {
+      emit('selectTarget', match)
+      break
+    }
+  }
+}
 
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
@@ -38,7 +79,9 @@ async function renderVueRuntimeIntoIframe() {
   if (!props.pod?.slug) return
 
   // The iframe is hosted by PodsPlayerPreviewDevice; find it and call into the runtime API.
-  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
+  const frame = document.querySelector<HTMLIFrameElement>(
+    'iframe[title="Pod preview"]',
+  )
   const win = frame?.contentWindow as any
   const api = win?.__AUTUMN_PODS_VUE__
   if (!api || typeof api.renderPod !== 'function') return
@@ -68,7 +111,9 @@ watch(
 
     loading.value = true
     try {
-      previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
+      previewCssVars.value = runtime.getPreviewCssVars
+        ? await runtime.getPreviewCssVars()
+        : null
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
@@ -99,7 +144,8 @@ function handleScriptsLoaded() {
 }
 
 watch(
-  () => [props.mode, vueReady.value, props.pod?.slug, props.previewProps] as const,
+  () =>
+    [props.mode, vueReady.value, props.pod?.slug, props.previewProps] as const,
   () => void renderVueRuntimeIntoIframe(),
   { deep: true, immediate: true, flush: 'post' },
 )
@@ -131,8 +177,23 @@ watch(
         </div>
       </template>
       <template v-else-if="mode === 'sfc' && Comp">
-        <div class="h-full w-full">
+        <div
+          class="relative h-full w-full"
+          :class="targetableValues.length ? 'cursor-crosshair' : ''"
+          @click.capture="handleCanvasClick"
+        >
           <component :is="Comp" v-bind="previewProps" />
+          <div
+            v-if="targetableValues.length"
+            class="pointer-events-none absolute left-3 top-3 z-30 rounded-full border bg-white/90 px-2 py-1 text-[10px] font-medium shadow-sm backdrop-blur"
+            style="border-color: rgba(15, 23, 42, 0.16); color: rgb(51, 65, 85)"
+          >
+            {{
+              selectedTargetKey
+                ? `Target: ${targetableValues.find((target) => target.key === selectedTargetKey)?.label || 'selected element'}`
+                : 'Click canvas text to target'
+            }}
+          </div>
         </div>
       </template>
       <template v-else-if="mode === 'vue'">

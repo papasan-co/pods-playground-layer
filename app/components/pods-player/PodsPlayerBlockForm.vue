@@ -329,6 +329,8 @@ function hoistUiOnlyGroupValues() {
 
 function initializeRepeater(field: FormField) {
   if (field.type !== 'repeater') return
+  if (props.readOnly) return
+
   const modelValue = props.modelValue[field.name]
 
   if (modelValue && Array.isArray(modelValue) && modelValue.length > 0) {
