@@ -44,6 +44,7 @@ const emit = defineEmits<{
   selectPod: [slug: string]
   backToPacks: []
   selectCanvasTarget: [target: PodsPlayerCanvasTarget]
+  previewReady: [payload: { sourcePreviewId: string | null }]
   'update:fieldPanelActiveTab': [value: FieldPanelTab]
 }>()
 
@@ -351,6 +352,7 @@ function targetDisplayValue(value: unknown): string {
           :selectable-targets="selectableCanvasTargets"
           :selected-target-key="selectedCanvasTargetKey"
           @select-target="emit('selectCanvasTarget', $event)"
+          @ready="emit('previewReady', $event)"
         />
       </PodsPlayerCanvasCard>
     </div>

@@ -27,8 +27,26 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return runtime.supportedModes.includes(requested as PodsPlayerMode) ? (requested as PodsPlayerMode) : null
   }
 
+  function requestedSourcePreviewFromRoute(): string {
+    if (typeof route.query.sourcePreview === 'string') return route.query.sourcePreview
+    if (typeof route.query.sourcePreviewId === 'string') return route.query.sourcePreviewId
+
+    return ''
+  }
+
+  function preferredModeFromRoute(): PodsPlayerMode {
+    const requested = requestedModeFromRoute()
+    if (requested) return requested
+
+    if (requestedSourcePreviewFromRoute() && runtime.supportedModes.includes('vue')) {
+      return 'vue'
+    }
+
+    return (runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode
+  }
+
   const pod = ref<PodDetails | null>(null)
-  const mode = ref<PodsPlayerMode>((requestedModeFromRoute() ?? runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode)
+  const mode = ref<PodsPlayerMode>(preferredModeFromRoute())
   const viewport = ref<PodsPlayerViewport>('laptop')
 
   const fixture = ref<Record<string, unknown> | null>(null)
@@ -299,6 +317,11 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     const s = toValue(slug)
     loading.value = true
     try {
+      const preferredMode = preferredModeFromRoute()
+      if (preferredMode !== mode.value) {
+        mode.value = preferredMode
+      }
+
       pod.value = await runtime.getPod(s)
       if (!pod.value) return
 
@@ -338,7 +361,13 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   }
 
   watch(
-    () => toValue(slug),
+    () =>
+      [
+        toValue(slug),
+        route.query.sourcePreview,
+        route.query.sourcePreviewId,
+        route.query.fixtureVariant,
+      ] as const,
     async () => {
       await loadPodData()
     },
@@ -348,8 +377,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   watch(
     () => route.query.mode,
     () => {
-      const requestedMode = requestedModeFromRoute()
-      if (requestedMode) mode.value = requestedMode
+      mode.value = preferredModeFromRoute()
     },
   )
 

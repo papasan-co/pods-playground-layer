@@ -27,6 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   selectTarget: [target: PodsPlayerCanvasTarget]
+  ready: [payload: { sourcePreviewId: string | null }]
 }>()
 
 const runtime = usePodsPlayerRuntime()
@@ -72,6 +73,22 @@ function handleCanvasClick(event: MouseEvent): void {
   }
 }
 
+function currentSourcePreviewId(): string | null {
+  if (typeof route.query.sourcePreview === 'string' && route.query.sourcePreview) {
+    return route.query.sourcePreview
+  }
+
+  if (typeof route.query.sourcePreviewId === 'string' && route.query.sourcePreviewId) {
+    return route.query.sourcePreviewId
+  }
+
+  return null
+}
+
+function emitPreviewReady(): void {
+  emit('ready', { sourcePreviewId: currentSourcePreviewId() })
+}
+
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
   if (props.mode !== 'vue') return
@@ -97,10 +114,18 @@ async function renderVueRuntimeIntoIframe() {
     mountSelector: '[data-pods-vue-mount="1"]',
     props: { ...(props.previewProps || {}), ...injected },
   })
+  emitPreviewReady()
 }
 
 watch(
-  () => [props.pod?.slug, props.mode, brandPreviewRevision.value] as const,
+  () =>
+    [
+      props.pod?.slug,
+      props.mode,
+      brandPreviewRevision.value,
+      route.query.sourcePreview,
+      route.query.sourcePreviewId,
+    ] as const,
   async ([slug, mode]) => {
     Comp.value = null
     error.value = null
@@ -120,6 +145,7 @@ watch(
         }
         const mod = await runtime.loadSfcComponent(props.pod)
         Comp.value = markRaw(mod as any)
+        emitPreviewReady()
       } else if (mode === 'vue') {
         if (!runtime.ensureRuntimeLoaded) {
           throw new Error('Vue runtime mode is not supported by this host.')
