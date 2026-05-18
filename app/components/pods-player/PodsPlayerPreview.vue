@@ -42,6 +42,8 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 
 const vueScripts = ref<string[]>([])
+const vueStylesheets = ref<string[]>([])
+const vueRuntimeLoadKey = ref('')
 const vueReady = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
@@ -85,8 +87,31 @@ function currentSourcePreviewId(): string | null {
   return null
 }
 
-function emitPreviewReady(): void {
-  emit('ready', { sourcePreviewId: currentSourcePreviewId() })
+function emitPreviewReady(sourcePreviewId: string | null): void {
+  emit('ready', { sourcePreviewId })
+}
+
+function waitForPreviewPaint(win: Window | null): Promise<void> {
+  if (!import.meta.client) return Promise.resolve()
+
+  const raf = win?.requestAnimationFrame?.bind(win) ?? window.requestAnimationFrame.bind(window)
+
+  return new Promise((resolve) => {
+    raf(() => {
+      raf(() => resolve())
+    })
+  })
+}
+
+async function emitPreviewReadyAfterPaint(win: Window | null, sourcePreviewId: string | null): Promise<void> {
+  await nextTick()
+  await waitForPreviewPaint(win)
+
+  if (sourcePreviewId !== currentSourcePreviewId()) {
+    return
+  }
+
+  emitPreviewReady(sourcePreviewId)
 }
 
 async function renderVueRuntimeIntoIframe() {
@@ -99,8 +124,8 @@ async function renderVueRuntimeIntoIframe() {
   const frame = document.querySelector<HTMLIFrameElement>(
     'iframe[title="Pod preview"]',
   )
-  const win = frame?.contentWindow as any
-  const api = win?.__AUTUMN_PODS_VUE__
+  const win = frame?.contentWindow ?? null
+  const api = (win as any)?.__AUTUMN_PODS_VUE__
   if (!api || typeof api.renderPod !== 'function') return
 
   const googleKey = (window as any)?.__AUTUMN_RUNTIME__?.maps?.google?.key
@@ -109,12 +134,21 @@ async function renderVueRuntimeIntoIframe() {
       ? { googleMapsKey: googleKey, apiKey: googleKey }
       : {}
 
+  const sourcePreviewId = currentSourcePreviewId()
+
   api.renderPod({
     slug: props.pod.slug,
     mountSelector: '[data-pods-vue-mount="1"]',
     props: { ...(props.previewProps || {}), ...injected },
   })
-  emitPreviewReady()
+  await emitPreviewReadyAfterPaint(win, sourcePreviewId)
+}
+
+function runtimeLoadKey(scripts: readonly string[], stylesheets: readonly string[]): string {
+  return JSON.stringify({
+    scripts,
+    stylesheets,
+  })
 }
 
 watch(
@@ -130,6 +164,8 @@ watch(
     Comp.value = null
     error.value = null
     vueScripts.value = []
+    vueStylesheets.value = []
+    vueRuntimeLoadKey.value = ''
     vueReady.value = false
 
     if (!slug || !props.pod) return
@@ -145,14 +181,18 @@ watch(
         }
         const mod = await runtime.loadSfcComponent(props.pod)
         Comp.value = markRaw(mod as any)
-        emitPreviewReady()
+        await emitPreviewReadyAfterPaint(import.meta.client ? window : null, currentSourcePreviewId())
       } else if (mode === 'vue') {
         if (!runtime.ensureRuntimeLoaded) {
           throw new Error('Vue runtime mode is not supported by this host.')
         }
         const ensured = await runtime.ensureRuntimeLoaded(props.pod)
-        vueScripts.value = ensured.vueBundleUrls ?? []
-        vueReady.value = ensured.ready && vueScripts.value.length === 0
+        const nextScripts = ensured.vueBundleUrls ?? []
+        const nextStylesheets = ensured.stylesheetUrls ?? []
+        vueRuntimeLoadKey.value = runtimeLoadKey(nextScripts, nextStylesheets)
+        vueScripts.value = nextScripts
+        vueStylesheets.value = nextStylesheets
+        vueReady.value = ensured.ready && nextScripts.length === 0
       } else {
         throw new Error(`Unknown mode: ${mode}`)
       }
@@ -165,8 +205,11 @@ watch(
   { immediate: true },
 )
 
-function handleScriptsLoaded() {
-  if (props.mode === 'vue') vueReady.value = true
+function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheets: string[] }) {
+  if (props.mode !== 'vue') return
+  if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value) return
+
+  vueReady.value = true
 }
 
 watch(
@@ -185,6 +228,7 @@ watch(
     <PodsPlayerPreviewDevice
       :device="viewport"
       :module-scripts="mode === 'vue' ? vueScripts : []"
+      :extra-stylesheets="mode === 'vue' ? vueStylesheets : []"
       :ready="mode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"

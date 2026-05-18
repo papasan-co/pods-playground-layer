@@ -53,7 +53,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'scriptsLoaded'): void
+  (
+    e: 'scriptsLoaded',
+    payload: {
+      moduleScripts: string[]
+      scripts: string[]
+      extraStylesheets: string[]
+    },
+  ): void
 }>()
 
 const frameSize = computed(() => ({
@@ -243,10 +250,61 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
   }
 }
 
-function syncExtraStylesheets(doc: Document, urls: string[]) {
+function stylesheetLoaded(link: HTMLLinkElement): boolean {
+  if (link.dataset.podsExtraStyleLoaded === '1') return true
+
+  try {
+    return Boolean(link.sheet)
+  } catch {
+    return false
+  }
+}
+
+function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
+  if (stylesheetLoaded(link)) {
+    link.dataset.podsExtraStyleLoaded = '1'
+
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      if (stylesheetLoaded(link)) {
+        link.dataset.podsExtraStyleLoaded = '1'
+      }
+      resolve()
+    }, 5000)
+    const cleanup = () => {
+      window.clearTimeout(timeout)
+      link.removeEventListener('load', handleLoad)
+      link.removeEventListener('error', handleError)
+    }
+    const handleLoad = () => {
+      cleanup()
+      link.dataset.podsExtraStyleLoaded = '1'
+      resolve()
+    }
+    const handleError = () => {
+      cleanup()
+      resolve()
+    }
+
+    link.addEventListener('load', handleLoad, { once: true })
+    link.addEventListener('error', handleError, { once: true })
+  })
+}
+
+function sameStringList(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false
+
+  return left.every((value, index) => value === right[index])
+}
+
+async function syncExtraStylesheets(doc: Document, urls: string[]) {
   const wanted = [...new Set(urls)]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .map((value) => value.trim())
+    .map((value) => new URL(value.trim(), window.location.origin).href)
 
   const existingNodes = Array.from(doc.querySelectorAll('link[data-pods-extra-style="1"]')) as HTMLLinkElement[]
   const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
@@ -265,12 +323,18 @@ function syncExtraStylesheets(doc: Document, urls: string[]) {
     link.dataset.podsExtraStyle = '1'
     doc.head.appendChild(link)
   }
+
+  const activeLinks = Array.from(doc.querySelectorAll('link[data-pods-extra-style="1"]')) as HTMLLinkElement[]
+  await Promise.all(activeLinks.filter((node) => wanted.includes(node.href)).map((node) => waitForStylesheet(node)))
 }
 
 async function bootIframe() {
   const iframe = iframeRef.value
   if (!iframe) return
 
+  const moduleScripts = [...(props.moduleScripts ?? [])]
+  const scripts = [...(props.scripts ?? [])]
+  const extraStylesheets = [...(props.extraStylesheets ?? [])]
   const doc = iframe.contentDocument
   if (!doc) return
   const win = iframe.contentWindow
@@ -292,7 +356,7 @@ async function bootIframe() {
 
     syncHead(document, doc)
     syncCSSVars(doc)
-    syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+    await syncExtraStylesheets(doc, extraStylesheets)
     if (win) syncRuntime(window, win)
 
     obs = new MutationObserver(() => syncHead(document, doc))
@@ -308,18 +372,28 @@ async function bootIframe() {
   // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
   // non-scroll previews (many pods rely on `h-full`).
   syncCSSVars(doc)
-  syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+  await syncExtraStylesheets(doc, extraStylesheets)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
-  if (props.moduleScripts?.length) {
-    await ensureModuleScripts(doc, props.moduleScripts)
-    emit('scriptsLoaded')
+  if (moduleScripts.length) {
+    await ensureModuleScripts(doc, moduleScripts)
+    if (
+      sameStringList(moduleScripts, props.moduleScripts ?? []) &&
+      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
+    ) {
+      emit('scriptsLoaded', { moduleScripts, scripts: [], extraStylesheets })
+    }
   }
 
-  if (props.scripts?.length) {
-    await ensureScripts(doc, props.scripts)
-    emit('scriptsLoaded')
+  if (scripts.length) {
+    await ensureScripts(doc, scripts)
+    if (
+      sameStringList(scripts, props.scripts ?? []) &&
+      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
+    ) {
+      emit('scriptsLoaded', { moduleScripts: [], scripts, extraStylesheets })
+    }
   }
 }
 

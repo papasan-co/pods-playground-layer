@@ -75,6 +75,13 @@ export interface PodsPlayerEnsureResult {
   vueBundleUrls?: string[]
 
   /**
+   * Stylesheet URL(s) that must be loaded inside the preview iframe before
+   * rendering a Vue runtime pod. Used by source previews to avoid briefly
+   * showing unstyled or partially styled layouts while artifact CSS loads.
+   */
+  stylesheetUrls?: string[]
+
+  /**
    * Whether it is safe to mount the preview element.
    * (Prevents setting props before the element definition exists.)
    */
