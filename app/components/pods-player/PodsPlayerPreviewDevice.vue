@@ -47,6 +47,10 @@ const props = defineProps<{
    */
   rootClasses?: string[]
   /**
+   * Optional data-* attributes applied to iframe body.
+   */
+  bodyDataset?: Record<string, string | number | boolean | null | undefined>
+  /**
    * Debug-only fill diagnostic that makes unused space obvious without changing the normal preview chrome.
    */
   debugFill?: boolean
@@ -195,6 +199,19 @@ function applyScrollMode(doc: Document, scrollable: boolean) {
   body.style.padding = '0'
 }
 
+function syncBodyDataset(doc: Document) {
+  const body = doc.body
+  if (!body) return
+
+  for (const [key, value] of Object.entries(props.bodyDataset ?? {})) {
+    if (value === null || value === undefined || value === '') {
+      delete body.dataset[key]
+      continue
+    }
+    body.dataset[key] = String(value)
+  }
+}
+
 async function ensureScripts(doc: Document, urls: string[]) {
   const unique = [...new Set(urls)].filter(Boolean)
   if (unique.length === 0) return
@@ -293,6 +310,7 @@ async function bootIframe() {
     syncHead(document, doc)
     syncCSSVars(doc)
     syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+    syncBodyDataset(doc)
     if (win) syncRuntime(window, win)
 
     obs = new MutationObserver(() => syncHead(document, doc))
@@ -309,6 +327,7 @@ async function bootIframe() {
   // non-scroll previews (many pods rely on `h-full`).
   syncCSSVars(doc)
   syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+  syncBodyDataset(doc)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
@@ -333,6 +352,7 @@ watchEffect(() => {
   void props.cssVars
   void props.extraStylesheets
   void props.rootClasses
+  void props.bodyDataset
   void props.debugFill
   slotVNode.value =
     props.ready === false
