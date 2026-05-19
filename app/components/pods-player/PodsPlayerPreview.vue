@@ -114,6 +114,24 @@ async function emitPreviewReadyAfterPaint(win: Window | null, sourcePreviewId: s
   emitPreviewReady(sourcePreviewId)
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function vueRuntimeApi(win: Window | null): Promise<{ renderPod: (args: unknown) => void } | null> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const api = (win as any)?.__AUTUMN_PODS_VUE__
+
+    if (api && typeof api.renderPod === 'function') {
+      return api
+    }
+
+    await wait(50)
+  }
+
+  return null
+}
+
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
   if (props.mode !== 'vue') return
@@ -125,8 +143,8 @@ async function renderVueRuntimeIntoIframe() {
     'iframe[title="Pod preview"]',
   )
   const win = frame?.contentWindow ?? null
-  const api = (win as any)?.__AUTUMN_PODS_VUE__
-  if (!api || typeof api.renderPod !== 'function') return
+  const api = await vueRuntimeApi(win)
+  if (!api) return
 
   const googleKey = (window as any)?.__AUTUMN_RUNTIME__?.maps?.google?.key
   const injected =

@@ -432,7 +432,7 @@ watchEffect(() => {
           },
           slots.default?.(),
         )
-  void bootIframe()
+  void nextTick().then(() => bootIframe())
 })
 </script>
 
