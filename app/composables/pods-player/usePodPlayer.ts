@@ -38,8 +38,8 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     const requested = requestedModeFromRoute()
     if (requested) return requested
 
-    if (requestedSourcePreviewFromRoute() && runtime.supportedModes.includes('vue')) {
-      return 'vue'
+    if (requestedSourcePreviewFromRoute()) {
+      return (runtime.supportedModes?.[0] ?? 'vue') as PodsPlayerMode
     }
 
     return (runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode
@@ -322,39 +322,58 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
         mode.value = preferredMode
       }
 
-      pod.value = await runtime.getPod(s)
-      if (!pod.value) return
+      const nextPod = await runtime.getPod(s)
+      if (!nextPod) {
+        pod.value = null
+        fixture.value = null
+        schema.value = null
+        formSchema.value = []
+        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+        initialFormValues.value = {}
+        hydratedVariant.value = null
+        return
+      }
 
       if (!runtime.supportedModes.includes(mode.value)) {
         mode.value = runtime.supportedModes[0] ?? 'sfc'
       }
 
-      fixture.value =
-        pod.value.fixture ??
+      const nextFixture =
+        nextPod.fixture ??
         (runtime.getFixture ? await runtime.getFixture(s) : null) ??
         null
-      schema.value =
-        pod.value.schema ??
+      const nextSchema =
+        nextPod.schema ??
         (runtime.getSchema ? await runtime.getSchema(s) : null) ??
         null
+      let nextFormSchema = fieldsFromPod(nextPod)
 
-      formSchema.value = fieldsFromPod(pod.value)
-
-      if (formSchema.value.length === 0 && schema.value) {
-        formSchema.value = schemaToFields(schema.value)
+      if (nextFormSchema.length === 0 && nextSchema) {
+        nextFormSchema = schemaToFields(nextSchema)
       }
 
-      if (formSchema.value.length > 0) {
-        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
-        const flat = flatFromFixture(formSchema.value, fixture.value || {})
-        Object.assign(flatForm, flat)
-        ensureVisibleFieldDefaults(formSchema.value, flatForm)
-        initialFormValues.value = JSON.parse(JSON.stringify(flatForm))
-        hydratedVariant.value = typeof flatForm.type === 'string' ? flatForm.type : null
-      } else {
-        initialFormValues.value = {}
-        hydratedVariant.value = null
+      const nextFlatForm: Record<string, unknown> = {}
+      let nextInitialFormValues: Record<string, unknown> = {}
+      let nextHydratedVariant: string | null = null
+
+      if (nextFormSchema.length > 0) {
+        const flat = flatFromFixture(nextFormSchema, nextFixture || {})
+        Object.assign(nextFlatForm, flat)
+        ensureVisibleFieldDefaults(nextFormSchema, nextFlatForm)
+        nextInitialFormValues = JSON.parse(JSON.stringify(nextFlatForm))
+        nextHydratedVariant = typeof nextFlatForm.type === 'string' ? nextFlatForm.type : null
       }
+
+      fixture.value = nextFixture
+      schema.value = nextSchema
+      formSchema.value = nextFormSchema
+      Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+      if (nextFormSchema.length > 0) {
+        Object.assign(flatForm, nextFlatForm)
+      }
+      initialFormValues.value = nextInitialFormValues
+      hydratedVariant.value = nextHydratedVariant
+      pod.value = nextPod
     } finally {
       loading.value = false
     }

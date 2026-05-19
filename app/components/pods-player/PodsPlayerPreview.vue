@@ -40,13 +40,16 @@ const brandPreviewRevision = useState(
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+let previewReadyRequestId = 0
 
 const vueScripts = ref<string[]>([])
 const vueStylesheets = ref<string[]>([])
 const vueRuntimeLoadKey = ref('')
 const vueReady = ref(false)
+const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
+const effectiveMode = computed(() => (props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode))
 const targetableValues = computed(() =>
   [...(props.selectableTargets || [])]
     .filter((target) => target.displayValue.trim().length > 0)
@@ -91,6 +94,31 @@ function emitPreviewReady(sourcePreviewId: string | null): void {
   emit('ready', { sourcePreviewId })
 }
 
+function recordPreviewTiming(
+  sourcePreviewId: string | null,
+  mark: string,
+  data?: Record<string, unknown>,
+): void {
+  if (!import.meta.client) return
+
+  const win = window as Window & {
+    __POD_STUDIO_PREVIEW_TIMINGS__?: Array<{
+      mark: string
+      at: number
+      sourcePreviewId: string | null
+      data?: Record<string, unknown>
+    }>
+  }
+  const timings = win.__POD_STUDIO_PREVIEW_TIMINGS__ || []
+  timings.push({
+    mark,
+    at: Math.round(performance.now()),
+    sourcePreviewId,
+    data,
+  })
+  win.__POD_STUDIO_PREVIEW_TIMINGS__ = timings
+}
+
 function waitForPreviewPaint(win: Window | null): Promise<void> {
   if (!import.meta.client) return Promise.resolve()
 
@@ -104,13 +132,19 @@ function waitForPreviewPaint(win: Window | null): Promise<void> {
 }
 
 async function emitPreviewReadyAfterPaint(win: Window | null, sourcePreviewId: string | null): Promise<void> {
+  const requestId = ++previewReadyRequestId
   await nextTick()
   await waitForPreviewPaint(win)
+
+  if (requestId !== previewReadyRequestId) {
+    return
+  }
 
   if (sourcePreviewId !== currentSourcePreviewId()) {
     return
   }
 
+  recordPreviewTiming(sourcePreviewId, 'canvas_painted_ready')
   emitPreviewReady(sourcePreviewId)
 }
 
@@ -132,9 +166,35 @@ async function vueRuntimeApi(win: Window | null): Promise<{ renderPod: (args: un
   return null
 }
 
+if (import.meta.client && import.meta.hot) {
+  const hot = import.meta.hot as {
+    on: (event: 'vite:afterUpdate', callback: (payload: unknown) => void) => void
+    off?: (event: 'vite:afterUpdate', callback: (payload: unknown) => void) => void
+  }
+  const handleViteAfterUpdate = (payload: unknown) => {
+    const sourcePreviewId = currentSourcePreviewId()
+    if (!sourcePreviewId) return
+
+    recordPreviewTiming(sourcePreviewId, 'hmr_client_hot_update_received', {
+      updateCount: Array.isArray((payload as { updates?: unknown[] } | null)?.updates)
+        ? ((payload as { updates?: unknown[] }).updates || []).length
+        : null,
+    })
+    void emitPreviewReadyAfterPaint(window, sourcePreviewId)
+  }
+
+  onMounted(() => {
+    hot.on('vite:afterUpdate', handleViteAfterUpdate)
+  })
+
+  onBeforeUnmount(() => {
+    hot.off?.('vite:afterUpdate', handleViteAfterUpdate)
+  })
+}
+
 async function renderVueRuntimeIntoIframe() {
   if (!import.meta.client) return
-  if (props.mode !== 'vue') return
+  if (effectiveMode.value !== 'vue') return
   if (!vueReady.value) return
   if (!props.pod?.slug) return
 
@@ -169,12 +229,28 @@ function runtimeLoadKey(scripts: readonly string[], stylesheets: readonly string
   })
 }
 
+function shouldFallbackToVueRuntime(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith('POD_STUDIO_HMR_PREVIEW_FALLBACK:')
+}
+
+async function loadVueRuntimePreview(): Promise<void> {
+  if (!runtime.ensureRuntimeLoaded) {
+    throw new Error('Vue runtime mode is not supported by this host.')
+  }
+  const ensured = await runtime.ensureRuntimeLoaded(props.pod as PodDetails)
+  const nextScripts = ensured.vueBundleUrls ?? []
+  const nextStylesheets = ensured.stylesheetUrls ?? []
+  vueRuntimeLoadKey.value = runtimeLoadKey(nextScripts, nextStylesheets)
+  vueScripts.value = nextScripts
+  vueStylesheets.value = nextStylesheets
+  vueReady.value = ensured.ready && nextScripts.length === 0
+}
+
 watch(
   () =>
     [
       props.pod?.slug,
       props.mode,
-      brandPreviewRevision.value,
       route.query.sourcePreview,
       route.query.sourcePreviewId,
     ] as const,
@@ -185,6 +261,7 @@ watch(
     vueStylesheets.value = []
     vueRuntimeLoadKey.value = ''
     vueReady.value = false
+    vueFallbackActive.value = false
 
     if (!slug || !props.pod) return
 
@@ -197,20 +274,21 @@ watch(
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
         }
-        const mod = await runtime.loadSfcComponent(props.pod)
+        let mod: unknown
+        try {
+          mod = await runtime.loadSfcComponent(props.pod)
+        } catch (err) {
+          if (!shouldFallbackToVueRuntime(err)) {
+            throw err
+          }
+          vueFallbackActive.value = true
+          await loadVueRuntimePreview()
+          return
+        }
         Comp.value = markRaw(mod as any)
         await emitPreviewReadyAfterPaint(import.meta.client ? window : null, currentSourcePreviewId())
       } else if (mode === 'vue') {
-        if (!runtime.ensureRuntimeLoaded) {
-          throw new Error('Vue runtime mode is not supported by this host.')
-        }
-        const ensured = await runtime.ensureRuntimeLoaded(props.pod)
-        const nextScripts = ensured.vueBundleUrls ?? []
-        const nextStylesheets = ensured.stylesheetUrls ?? []
-        vueRuntimeLoadKey.value = runtimeLoadKey(nextScripts, nextStylesheets)
-        vueScripts.value = nextScripts
-        vueStylesheets.value = nextStylesheets
-        vueReady.value = ensured.ready && nextScripts.length === 0
+        await loadVueRuntimePreview()
       } else {
         throw new Error(`Unknown mode: ${mode}`)
       }
@@ -223,8 +301,17 @@ watch(
   { immediate: true },
 )
 
+watch(
+  brandPreviewRevision,
+  async () => {
+    previewCssVars.value = runtime.getPreviewCssVars
+      ? await runtime.getPreviewCssVars()
+      : null
+  },
+)
+
 function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheets: string[] }) {
-  if (props.mode !== 'vue') return
+  if (effectiveMode.value !== 'vue') return
   if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value) return
 
   vueReady.value = true
@@ -232,7 +319,7 @@ function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheet
 
 watch(
   () =>
-    [props.mode, vueReady.value, props.pod?.slug, props.previewProps] as const,
+    [effectiveMode.value, vueReady.value, props.pod?.slug, props.previewProps] as const,
   () => void renderVueRuntimeIntoIframe(),
   { deep: true, immediate: true, flush: 'post' },
 )
@@ -243,28 +330,31 @@ watch(
     class="flex-1 overflow-hidden flex items-start justify-center p-4 min-h-0"
     style="background: var(--pg-canvas-bg, var(--pg-bg))"
   >
+    <div
+      v-if="loading"
+      class="w-full h-full flex items-center justify-center"
+    >
+      <div class="text-gray-500">Loading preview...</div>
+    </div>
+    <div
+      v-else-if="error"
+      class="w-full h-full flex items-center justify-center"
+    >
+      <div class="text-red-500 text-sm">{{ error }}</div>
+    </div>
     <PodsPlayerPreviewDevice
+      v-else
       :device="viewport"
-      :module-scripts="mode === 'vue' ? vueScripts : []"
-      :extra-stylesheets="mode === 'vue' ? vueStylesheets : []"
-      :ready="mode === 'sfc' ? true : vueReady"
+      :module-scripts="effectiveMode === 'vue' ? vueScripts : []"
+      :extra-stylesheets="effectiveMode === 'vue' ? vueStylesheets : []"
+      :ready="effectiveMode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
       :debug-fill="debugFill"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
-      <template v-if="loading">
-        <div class="w-full h-full flex items-center justify-center">
-          <div class="text-gray-500">Loading preview...</div>
-        </div>
-      </template>
-      <template v-else-if="error">
-        <div class="w-full h-full flex items-center justify-center">
-          <div class="text-red-500 text-sm">{{ error }}</div>
-        </div>
-      </template>
-      <template v-else-if="mode === 'sfc' && Comp">
+      <template v-if="effectiveMode === 'sfc' && Comp">
         <div
           class="relative h-full w-full"
           :class="targetableValues.length ? 'cursor-crosshair' : ''"
@@ -284,7 +374,7 @@ watch(
           </div>
         </div>
       </template>
-      <template v-else-if="mode === 'vue'">
+      <template v-else-if="effectiveMode === 'vue'">
         <div class="h-full w-full">
           <div class="w-full h-full" data-pods-vue-mount="1" />
         </div>

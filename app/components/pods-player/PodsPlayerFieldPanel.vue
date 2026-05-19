@@ -71,24 +71,41 @@ function fieldsFromPod(p: PodDetails | null): FormField[] {
   return []
 }
 
+let fieldLoadId = 0
+
 watch(
-  () => props.pod?.slug,
-  async (slug) => {
-    if (!slug) return
+  [() => props.pod, () => props.schema],
+  async ([pod, schema]) => {
+    const loadId = ++fieldLoadId
+    const slug = pod?.slug
+
+    if (!slug) {
+      yamlContent.value = null
+      formFields.value = []
+      loadingYaml.value = false
+      return
+    }
+
     loadingYaml.value = true
     try {
       const yaml = (await runtime.getYaml?.(slug)) ?? null
-      yamlContent.value = yaml
-      formFields.value = fieldsFromPod(props.pod ?? null)
+      if (loadId !== fieldLoadId) return
 
-      if (formFields.value.length === 0 && props.schema) {
-        formFields.value = schemaToFields(props.schema) as FormField[]
+      yamlContent.value = yaml
+      formFields.value = fieldsFromPod(pod ?? null)
+
+      if (formFields.value.length === 0 && schema) {
+        formFields.value = schemaToFields(schema) as FormField[]
       }
     } catch {
+      if (loadId !== fieldLoadId) return
+
       yamlContent.value = null
-      formFields.value = fieldsFromPod(props.pod ?? null)
+      formFields.value = fieldsFromPod(pod ?? null)
     } finally {
-      loadingYaml.value = false
+      if (loadId === fieldLoadId) {
+        loadingYaml.value = false
+      }
     }
   },
   { immediate: true },
