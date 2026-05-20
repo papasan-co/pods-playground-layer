@@ -194,6 +194,8 @@ async function emitPreviewReadyAfterPaint(
   await nextTick()
   await waitForPreviewContent(win)
   await waitForPreviewPaint(win)
+  await wait(50)
+  await waitForPreviewPaint(win)
 
   if (requestId !== previewReadyRequestId) {
     return
