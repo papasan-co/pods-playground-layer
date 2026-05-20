@@ -32,6 +32,15 @@ const emit = defineEmits<{
 
 const runtime = usePodsPlayerRuntime()
 const route = useRoute()
+const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
+const activeSourcePreviewPodSlug = useState<string>(
+  'pod-studio.activeSourcePreviewPodSlug',
+  () => '',
+)
+const activeSourcePreviewRevision = useState<number>(
+  'pod-studio.activeSourcePreviewRevision',
+  () => 0,
+)
 const brandPreviewRevision = useState(
   'pod-studio.brand.previewRevision',
   () => 0,
@@ -84,6 +93,10 @@ function handleCanvasClick(event: MouseEvent): void {
 }
 
 function currentSourcePreviewId(): string | null {
+  if (activeSourcePreviewId.value && activeSourcePreviewPodSlug.value === props.pod?.slug) {
+    return activeSourcePreviewId.value
+  }
+
   if (typeof route.query.sourcePreview === 'string' && route.query.sourcePreview) {
     return route.query.sourcePreview
   }
@@ -296,9 +309,8 @@ watch(
     [
       props.pod?.slug,
       props.mode,
-      route.query.sourcePreview,
-      route.query.sourcePreviewId,
-      route.query.draftArtifact,
+      currentCanvasArtifactId(),
+      activeSourcePreviewRevision.value,
     ] as const,
   async ([slug, mode]) => {
     error.value = null

@@ -20,6 +20,15 @@ type PodDetailsWithCompiledContract = PodDetails & {
 export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   const runtime = usePodsPlayerRuntime()
   const route = useRoute()
+  const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
+  const activeSourcePreviewPodSlug = useState<string>(
+    'pod-studio.activeSourcePreviewPodSlug',
+    () => '',
+  )
+  const activeSourcePreviewRevision = useState<number>(
+    'pod-studio.activeSourcePreviewRevision',
+    () => 0,
+  )
 
   function requestedModeFromRoute(): PodsPlayerMode | null {
     const requested = route.query.mode
@@ -28,6 +37,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   }
 
   function requestedSourcePreviewFromRoute(): string {
+    if (activeSourcePreviewId.value && activeSourcePreviewPodSlug.value === toValue(slug)) {
+      return activeSourcePreviewId.value
+    }
+
     if (typeof route.query.sourcePreview === 'string') return route.query.sourcePreview
     if (typeof route.query.sourcePreviewId === 'string') return route.query.sourcePreviewId
 
@@ -383,10 +396,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     () =>
       [
         toValue(slug),
-        route.query.sourcePreview,
-        route.query.sourcePreviewId,
+        requestedSourcePreviewFromRoute(),
         route.query.draftPack,
         route.query.draftArtifact,
+        activeSourcePreviewRevision.value,
         route.query.fixtureVariant,
       ] as const,
     async () => {
