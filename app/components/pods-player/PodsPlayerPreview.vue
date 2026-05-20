@@ -55,9 +55,11 @@ const vueReady = ref(false)
 const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
-const effectiveMode = computed(() =>
+const renderedMode = ref<PodsPlayerMode | null>(null)
+const requestedEffectiveMode = computed(() =>
   props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode,
 )
+const effectiveMode = computed(() => renderedMode.value || requestedEffectiveMode.value)
 const hasRenderablePreview = computed(() =>
   effectiveMode.value === 'sfc'
     ? Boolean(Comp.value)
@@ -321,6 +323,7 @@ watch(
       vueRuntimeLoadKey.value = ''
       vueReady.value = false
       vueFallbackActive.value = false
+      renderedMode.value = null
       return
     }
 
@@ -339,8 +342,9 @@ watch(
             throw err
           }
           vueFallbackActive.value = true
-          Comp.value = null
           await loadVueRuntimePreview()
+          Comp.value = null
+          renderedMode.value = 'vue'
           return
         }
         vueFallbackActive.value = false
@@ -349,11 +353,13 @@ watch(
         vueRuntimeLoadKey.value = ''
         vueReady.value = false
         Comp.value = markRaw(mod as any)
+        renderedMode.value = 'sfc'
         await emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId())
       } else if (mode === 'vue') {
-        Comp.value = null
         vueFallbackActive.value = false
         await loadVueRuntimePreview()
+        Comp.value = null
+        renderedMode.value = 'vue'
       } else {
         throw new Error(`Unknown mode: ${mode}`)
       }
