@@ -63,11 +63,14 @@ const emit = defineEmits<{
   ): void
 }>()
 
-const frameSize = computed(() => ({
-  laptop: { width: 1662, height: 1066 },
-  tablet: { width: 900, height: 1200 },
-  phone: { width: 440, height: 860 },
-})[props.device])
+const frameSize = computed(
+  () =>
+    ({
+      laptop: { width: 1662, height: 1066 },
+      tablet: { width: 900, height: 1200 },
+      phone: { width: 440, height: 860 },
+    })[props.device],
+)
 
 const frameStyle = computed(() => ({
   width: `${frameSize.value.width}px`,
@@ -115,6 +118,8 @@ const slots = useSlots()
 
 let obs: MutationObserver | null = null
 let miniApp: ReturnType<typeof createApp> | null = null
+let booting = false
+let bootAgain = false
 
 onBeforeUnmount(() => {
   obs?.disconnect()
@@ -207,8 +212,8 @@ async function ensureScripts(doc: Document, urls: string[]) {
   if (unique.length === 0) return
 
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-script="1"]')).map((s) =>
-      (s as HTMLScriptElement).src,
+    Array.from(doc.querySelectorAll('script[data-pods-player-script="1"]')).map(
+      (s) => (s as HTMLScriptElement).src,
     ),
   )
 
@@ -232,7 +237,9 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
   if (unique.length === 0) return
 
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map((s) => (s as HTMLScriptElement).src),
+    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map(
+      (s) => (s as HTMLScriptElement).src,
+    ),
   )
 
   for (const url of unique) {
@@ -306,7 +313,9 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .map((value) => new URL(value.trim(), window.location.origin).href)
 
-  const existingNodes = Array.from(doc.querySelectorAll('link[data-pods-extra-style="1"]')) as HTMLLinkElement[]
+  const existingNodes = Array.from(
+    doc.querySelectorAll('link[data-pods-extra-style="1"]'),
+  ) as HTMLLinkElement[]
   const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
 
   for (const node of existingNodes) {
@@ -324,11 +333,33 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
     doc.head.appendChild(link)
   }
 
-  const activeLinks = Array.from(doc.querySelectorAll('link[data-pods-extra-style="1"]')) as HTMLLinkElement[]
-  await Promise.all(activeLinks.filter((node) => wanted.includes(node.href)).map((node) => waitForStylesheet(node)))
+  const activeLinks = Array.from(
+    doc.querySelectorAll('link[data-pods-extra-style="1"]'),
+  ) as HTMLLinkElement[]
+  await Promise.all(
+    activeLinks.filter((node) => wanted.includes(node.href)).map((node) => waitForStylesheet(node)),
+  )
 }
 
 async function bootIframe() {
+  if (booting) {
+    bootAgain = true
+    return
+  }
+
+  booting = true
+  try {
+    await bootIframeNow()
+  } finally {
+    booting = false
+    if (bootAgain) {
+      bootAgain = false
+      void bootIframe()
+    }
+  }
+}
+
+async function bootIframeNow() {
   const iframe = iframeRef.value
   if (!iframe) return
 
@@ -438,7 +469,10 @@ watchEffect(() => {
 
 <template>
   <div ref="hostRef" class="preview-device-host w-full h-full flex items-start justify-center">
-    <div class="preview-device-slot" :style="{ width: `${scaledSize.width}px`, height: `${scaledSize.height}px` }">
+    <div
+      class="preview-device-slot"
+      :style="{ width: `${scaledSize.width}px`, height: `${scaledSize.height}px` }"
+    >
       <div
         class="preview-device transition-all duration-300 ease-in-out rounded-md shadow-lg"
         :style="[

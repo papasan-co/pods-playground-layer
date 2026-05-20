@@ -337,6 +337,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
       const nextPod = await runtime.getPod(s)
       if (!nextPod) {
+        if (requestedSourcePreviewFromRoute() && pod.value?.slug === s) {
+          return
+        }
+
         pod.value = null
         fixture.value = null
         schema.value = null
