@@ -33,7 +33,9 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   function requestedModeFromRoute(): PodsPlayerMode | null {
     const requested = route.query.mode
     if (typeof requested !== 'string') return null
-    return runtime.supportedModes.includes(requested as PodsPlayerMode) ? (requested as PodsPlayerMode) : null
+    return runtime.supportedModes.includes(requested as PodsPlayerMode)
+      ? (requested as PodsPlayerMode)
+      : null
   }
 
   function requestedSourcePreviewFromRoute(): string {
@@ -108,26 +110,25 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     if (direct) return direct as FormField[]
 
     const podWithContract = p as PodDetailsWithCompiledContract
-    const compiledContract = podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
-    const contract = compiledContract as { fields?: unknown; ui?: { fields?: unknown } } | null
+    const compiledContract =
+      podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
+    const contract = compiledContract as {
+      fields?: unknown
+      ui?: { fields?: unknown }
+    } | null
 
-    const fromContract = contract && Array.isArray(contract.fields)
-      ? (contract.fields as FormField[])
-      : null
+    const fromContract =
+      contract && Array.isArray(contract.fields) ? (contract.fields as FormField[]) : null
     if (fromContract) return fromContract
 
-    const uiFields = contract && Array.isArray(contract.ui?.fields)
-      ? (contract.ui.fields as FormField[])
-      : null
+    const uiFields =
+      contract && Array.isArray(contract.ui?.fields) ? (contract.ui.fields as FormField[]) : null
     if (uiFields) return uiFields
 
     return []
   }
 
-  function matchesWhen(
-    when: FormField['when'],
-    model: Record<string, unknown>,
-  ): boolean {
+  function matchesWhen(when: FormField['when'], model: Record<string, unknown>): boolean {
     if (!when) return true
     const conditions = Array.isArray(when) ? when : [when]
     return conditions.every((condition) => dotGet(model, condition.field) === condition.equals)
@@ -163,7 +164,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return undefined
   }
 
-  function ensureVisibleFieldDefaults(fields: FormField[], model: Record<string, unknown>): boolean {
+  function ensureVisibleFieldDefaults(
+    fields: FormField[],
+    model: Record<string, unknown>,
+  ): boolean {
     let changed = false
 
     const visit = (fs: FormField[], scope: Record<string, unknown>) => {
@@ -213,7 +217,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return changed
   }
 
-  function mergeMissingValues(target: Record<string, unknown>, source: Record<string, unknown>): boolean {
+  function mergeMissingValues(
+    target: Record<string, unknown>,
+    source: Record<string, unknown>,
+  ): boolean {
     let changed = false
 
     for (const [key, sourceValue] of Object.entries(source)) {
@@ -234,7 +241,11 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
   function extractResponsiveValue(value: unknown, vp: PodsPlayerViewport): unknown {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const viewportMap = { laptop: 'desktop', tablet: 'tablet', phone: 'phone' } as const
+      const viewportMap = {
+        laptop: 'desktop',
+        tablet: 'tablet',
+        phone: 'phone',
+      } as const
       const key = viewportMap[vp]
       if (key in (value as Record<string, unknown>)) return (value as Record<string, unknown>)[key]
     }
@@ -271,8 +282,14 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
               const copy = JSON.parse(JSON.stringify(item))
               const applyInItem = (itemFields: FormField[]) => {
                 for (const rf of itemFields) {
-                  if (rf.type === 'group' && rf.children) { applyInItem(rf.children); continue }
-                  if (rf.type === 'row' && rf.fields) { applyInItem(rf.fields); continue }
+                  if (rf.type === 'group' && rf.children) {
+                    applyInItem(rf.children)
+                    continue
+                  }
+                  if (rf.type === 'row' && rf.fields) {
+                    applyInItem(rf.fields)
+                    continue
+                  }
                   if (rf.responsive && rf.name) {
                     const p = rf.path || rf.name
                     const v = dotGet(copy, p)
@@ -356,13 +373,9 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
       }
 
       const nextFixture =
-        nextPod.fixture ??
-        (runtime.getFixture ? await runtime.getFixture(s) : null) ??
-        null
+        nextPod.fixture ?? (runtime.getFixture ? await runtime.getFixture(s) : null) ?? null
       const nextSchema =
-        nextPod.schema ??
-        (runtime.getSchema ? await runtime.getSchema(s) : null) ??
-        null
+        nextPod.schema ?? (runtime.getSchema ? await runtime.getSchema(s) : null) ?? null
       let nextFormSchema = fieldsFromPod(nextPod)
 
       if (nextFormSchema.length === 0 && nextSchema) {

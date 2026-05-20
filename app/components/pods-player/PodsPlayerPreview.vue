@@ -41,10 +41,7 @@ const activeSourcePreviewRevision = useState<number>(
   'pod-studio.activeSourcePreviewRevision',
   () => 0,
 )
-const brandPreviewRevision = useState(
-  'pod-studio.brand.previewRevision',
-  () => 0,
-)
+const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 0)
 
 const Comp = shallowRef<any>(null)
 const loading = ref(false)
@@ -58,7 +55,9 @@ const vueReady = ref(false)
 const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
-const effectiveMode = computed(() => (props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode))
+const effectiveMode = computed(() =>
+  props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode,
+)
 const hasRenderablePreview = computed(() =>
   effectiveMode.value === 'sfc'
     ? Boolean(Comp.value)
@@ -73,8 +72,7 @@ const targetableValues = computed(() =>
 function handleCanvasClick(event: MouseEvent): void {
   if (!targetableValues.value.length) return
 
-  const path =
-    typeof event.composedPath === 'function' ? event.composedPath() : []
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : []
 
   for (const node of path) {
     if (!(node instanceof HTMLElement)) continue
@@ -82,9 +80,7 @@ function handleCanvasClick(event: MouseEvent): void {
     const text = (node.textContent || '').replace(/\s+/g, ' ').trim()
     if (!text) continue
 
-    const match = targetableValues.value.find((target) =>
-      text.includes(target.displayValue),
-    )
+    const match = targetableValues.value.find((target) => text.includes(target.displayValue))
     if (match) {
       emit('selectTarget', match)
       break
@@ -162,9 +158,7 @@ function waitForPreviewPaint(win: Window | null): Promise<void> {
 function previewIframeWindow(): Window | null {
   if (!import.meta.client) return null
 
-  const frame = document.querySelector<HTMLIFrameElement>(
-    'iframe[title="Pod preview"]',
-  )
+  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
 
   return frame?.contentWindow ?? null
 }
@@ -178,7 +172,9 @@ async function waitForPreviewContent(win: Window | null): Promise<void> {
     const doc = win?.document ?? previewIframeWindow()?.document ?? document
 
     if (
-      doc.querySelector('[data-pod-surface="1"], [data-primitive], [data-pods-preview-root="1"] section') ||
+      doc.querySelector(
+        '[data-pod-surface="1"], [data-primitive], [data-pods-preview-root="1"] section',
+      ) ||
       (doc.body?.textContent || '').trim().length > 0
     ) {
       return
@@ -188,7 +184,10 @@ async function waitForPreviewContent(win: Window | null): Promise<void> {
   }
 }
 
-async function emitPreviewReadyAfterPaint(win: Window | null, sourcePreviewId: string | null): Promise<void> {
+async function emitPreviewReadyAfterPaint(
+  win: Window | null,
+  sourcePreviewId: string | null,
+): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
   await waitForPreviewContent(win)
@@ -210,7 +209,9 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-async function vueRuntimeApi(win: Window | null): Promise<{ renderPod: (args: unknown) => void } | null> {
+async function vueRuntimeApi(
+  win: Window | null,
+): Promise<{ renderPod: (args: unknown) => void } | null> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const api = (win as any)?.__AUTUMN_PODS_VUE__
 
@@ -257,9 +258,7 @@ async function renderVueRuntimeIntoIframe() {
   if (!props.pod?.slug) return
 
   // The iframe is hosted by PodsPlayerPreviewDevice; find it and call into the runtime API.
-  const frame = document.querySelector<HTMLIFrameElement>(
-    'iframe[title="Pod preview"]',
-  )
+  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
   const win = frame?.contentWindow ?? null
   const api = await vueRuntimeApi(win)
   if (!api) return
@@ -327,9 +326,7 @@ watch(
 
     loading.value = true
     try {
-      previewCssVars.value = runtime.getPreviewCssVars
-        ? await runtime.getPreviewCssVars()
-        : null
+      previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
@@ -369,25 +366,20 @@ watch(
   { immediate: true },
 )
 
-watch(
-  brandPreviewRevision,
-  async () => {
-    previewCssVars.value = runtime.getPreviewCssVars
-      ? await runtime.getPreviewCssVars()
-      : null
-  },
-)
+watch(brandPreviewRevision, async () => {
+  previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
+})
 
 function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheets: string[] }) {
   if (effectiveMode.value !== 'vue') return
-  if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value) return
+  if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value)
+    return
 
   vueReady.value = true
 }
 
 watch(
-  () =>
-    [effectiveMode.value, vueReady.value, props.pod?.slug, props.previewProps] as const,
+  () => [effectiveMode.value, vueReady.value, props.pod?.slug, props.previewProps] as const,
   () => void renderVueRuntimeIntoIframe(),
   { deep: true, immediate: true, flush: 'post' },
 )
