@@ -385,6 +385,8 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
         toValue(slug),
         route.query.sourcePreview,
         route.query.sourcePreviewId,
+        route.query.draftPack,
+        route.query.draftArtifact,
         route.query.fixtureVariant,
       ] as const,
     async () => {

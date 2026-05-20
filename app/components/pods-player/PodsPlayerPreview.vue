@@ -50,6 +50,11 @@ const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
 const effectiveMode = computed(() => (props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode))
+const hasRenderablePreview = computed(() =>
+  effectiveMode.value === 'sfc'
+    ? Boolean(Comp.value)
+    : Boolean(vueReady.value || vueScripts.value.length || vueStylesheets.value.length),
+)
 const targetableValues = computed(() =>
   [...(props.selectableTargets || [])]
     .filter((target) => target.displayValue.trim().length > 0)
@@ -88,6 +93,16 @@ function currentSourcePreviewId(): string | null {
   }
 
   return null
+}
+
+function currentDraftArtifactId(): string | null {
+  return typeof route.query.draftArtifact === 'string' && route.query.draftArtifact
+    ? route.query.draftArtifact
+    : null
+}
+
+function currentCanvasArtifactId(): string | null {
+  return currentSourcePreviewId() || currentDraftArtifactId()
 }
 
 function emitPreviewReady(sourcePreviewId: string | null): void {
@@ -131,16 +146,46 @@ function waitForPreviewPaint(win: Window | null): Promise<void> {
   })
 }
 
+function previewIframeWindow(): Window | null {
+  if (!import.meta.client) return null
+
+  const frame = document.querySelector<HTMLIFrameElement>(
+    'iframe[title="Pod preview"]',
+  )
+
+  return frame?.contentWindow ?? null
+}
+
+async function waitForPreviewContent(win: Window | null): Promise<void> {
+  if (!import.meta.client) return
+
+  const deadline = Date.now() + 4000
+
+  while (Date.now() < deadline) {
+    const doc = win?.document ?? previewIframeWindow()?.document ?? document
+
+    if (
+      doc.querySelector('[data-pod-surface="1"], [data-primitive], [data-pods-preview-root="1"] section') ||
+      (doc.body?.textContent || '').trim().length > 0
+    ) {
+      return
+    }
+
+    await wait(50)
+  }
+}
+
 async function emitPreviewReadyAfterPaint(win: Window | null, sourcePreviewId: string | null): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
+  await waitForPreviewContent(win)
   await waitForPreviewPaint(win)
 
   if (requestId !== previewReadyRequestId) {
     return
   }
 
-  if (sourcePreviewId !== currentSourcePreviewId()) {
+  if (sourcePreviewId !== currentCanvasArtifactId()) {
     return
   }
 
@@ -212,7 +257,7 @@ async function renderVueRuntimeIntoIframe() {
       ? { googleMapsKey: googleKey, apiKey: googleKey }
       : {}
 
-  const sourcePreviewId = currentSourcePreviewId()
+  const sourcePreviewId = currentCanvasArtifactId()
 
   api.renderPod({
     slug: props.pod.slug,
@@ -253,17 +298,20 @@ watch(
       props.mode,
       route.query.sourcePreview,
       route.query.sourcePreviewId,
+      route.query.draftArtifact,
     ] as const,
   async ([slug, mode]) => {
-    Comp.value = null
     error.value = null
-    vueScripts.value = []
-    vueStylesheets.value = []
-    vueRuntimeLoadKey.value = ''
-    vueReady.value = false
-    vueFallbackActive.value = false
 
-    if (!slug || !props.pod) return
+    if (!slug || !props.pod) {
+      Comp.value = null
+      vueScripts.value = []
+      vueStylesheets.value = []
+      vueRuntimeLoadKey.value = ''
+      vueReady.value = false
+      vueFallbackActive.value = false
+      return
+    }
 
     loading.value = true
     try {
@@ -282,12 +330,20 @@ watch(
             throw err
           }
           vueFallbackActive.value = true
+          Comp.value = null
           await loadVueRuntimePreview()
           return
         }
+        vueFallbackActive.value = false
+        vueScripts.value = []
+        vueStylesheets.value = []
+        vueRuntimeLoadKey.value = ''
+        vueReady.value = false
         Comp.value = markRaw(mod as any)
-        await emitPreviewReadyAfterPaint(import.meta.client ? window : null, currentSourcePreviewId())
+        await emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId())
       } else if (mode === 'vue') {
+        Comp.value = null
+        vueFallbackActive.value = false
         await loadVueRuntimePreview()
       } else {
         throw new Error(`Unknown mode: ${mode}`)
@@ -327,17 +383,17 @@ watch(
 
 <template>
   <div
-    class="flex-1 overflow-hidden flex items-start justify-center p-4 min-h-0"
+    class="relative flex-1 overflow-hidden flex items-start justify-center p-4 min-h-0"
     style="background: var(--pg-canvas-bg, var(--pg-bg))"
   >
     <div
-      v-if="loading"
+      v-if="loading && !hasRenderablePreview"
       class="w-full h-full flex items-center justify-center"
     >
       <div class="text-gray-500">Loading preview...</div>
     </div>
     <div
-      v-else-if="error"
+      v-else-if="error && !hasRenderablePreview"
       class="w-full h-full flex items-center justify-center"
     >
       <div class="text-red-500 text-sm">{{ error }}</div>
@@ -385,5 +441,27 @@ watch(
         </div>
       </template>
     </PodsPlayerPreviewDevice>
+    <div
+      v-if="loading && hasRenderablePreview"
+      class="pointer-events-none absolute left-6 top-6 z-40 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-sm backdrop-blur-md"
+      style="
+        border-color: rgba(15, 23, 42, 0.14);
+        background: rgba(255, 255, 255, 0.82);
+        color: rgb(51, 65, 85);
+      "
+    >
+      Updating canvas preview...
+    </div>
+    <div
+      v-if="error && hasRenderablePreview"
+      class="pointer-events-none absolute left-6 bottom-6 z-40 max-w-sm rounded-md border px-3 py-2 text-[11px] shadow-sm backdrop-blur-md"
+      style="
+        border-color: rgba(239, 68, 68, 0.25);
+        background: rgba(254, 242, 242, 0.92);
+        color: rgb(185, 28, 28);
+      "
+    >
+      {{ error }}
+    </div>
   </div>
 </template>
