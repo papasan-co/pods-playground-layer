@@ -388,7 +388,17 @@ function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheet
 
 watch(
   () => [effectiveMode.value, vueReady.value, props.pod?.slug, props.previewProps] as const,
-  () => void renderVueRuntimeIntoIframe(),
+  () => {
+    if (
+      loading.value &&
+      renderedMode.value &&
+      requestedEffectiveMode.value !== renderedMode.value
+    ) {
+      return
+    }
+
+    void renderVueRuntimeIntoIframe()
+  },
   { deep: true, immediate: true, flush: 'post' },
 )
 </script>
