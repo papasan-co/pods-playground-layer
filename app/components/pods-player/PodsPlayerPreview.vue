@@ -44,6 +44,7 @@ const activeSourcePreviewRevision = useState<number>(
 const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 0)
 
 const Comp = shallowRef<any>(null)
+const renderedPreviewProps = shallowRef<Record<string, unknown>>({})
 const loading = ref(false)
 const error = ref<string | null>(null)
 let previewReadyRequestId = 0
@@ -278,7 +279,7 @@ async function renderVueRuntimeIntoIframe() {
   api.renderPod({
     slug: props.pod.slug,
     mountSelector: '[data-pods-vue-mount="1"]',
-    props: { ...(props.previewProps || {}), ...injected },
+    props: { ...(renderedPreviewProps.value || {}), ...injected },
   })
   await emitPreviewReadyAfterPaint(win, sourcePreviewId)
 }
@@ -345,6 +346,7 @@ watch(
           }
           vueFallbackActive.value = true
           await loadVueRuntimePreview()
+          renderedPreviewProps.value = props.previewProps || {}
           Comp.value = null
           renderedMode.value = 'vue'
           return
@@ -354,12 +356,14 @@ watch(
         vueStylesheets.value = []
         vueRuntimeLoadKey.value = ''
         vueReady.value = false
+        renderedPreviewProps.value = props.previewProps || {}
         Comp.value = markRaw(mod as any)
         renderedMode.value = 'sfc'
         await emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId())
       } else if (mode === 'vue') {
         vueFallbackActive.value = false
         await loadVueRuntimePreview()
+        renderedPreviewProps.value = props.previewProps || {}
         Comp.value = null
         renderedMode.value = 'vue'
       } else {
@@ -378,6 +382,16 @@ watch(brandPreviewRevision, async () => {
   previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
 })
 
+watch(
+  () => props.previewProps,
+  (nextPreviewProps) => {
+    if (loading.value && hasRenderablePreview.value) return
+
+    renderedPreviewProps.value = nextPreviewProps || {}
+  },
+  { deep: true, immediate: true },
+)
+
 function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheets: string[] }) {
   if (effectiveMode.value !== 'vue') return
   if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value)
@@ -387,7 +401,7 @@ function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheet
 }
 
 watch(
-  () => [effectiveMode.value, vueReady.value, props.pod?.slug, props.previewProps] as const,
+  () => [effectiveMode.value, vueReady.value, props.pod?.slug, renderedPreviewProps.value] as const,
   () => {
     if (
       loading.value &&
@@ -438,7 +452,7 @@ watch(
           :class="targetableValues.length ? 'cursor-crosshair' : ''"
           @click.capture="handleCanvasClick"
         >
-          <component :is="Comp" v-bind="previewProps" />
+          <component :is="Comp" v-bind="renderedPreviewProps" />
           <div
             v-if="targetableValues.length"
             class="pointer-events-none absolute left-3 top-3 z-30 rounded-full border bg-white/90 px-2 py-1 text-[10px] font-medium shadow-sm backdrop-blur"
