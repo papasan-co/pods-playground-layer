@@ -37,6 +37,10 @@ const activeSourcePreviewPodSlug = useState<string>(
   'pod-studio.activeSourcePreviewPodSlug',
   () => '',
 )
+const activeSourcePreviewDraftPackId = useState<string>(
+  'pod-studio.activeSourcePreviewDraftPackId',
+  () => '',
+)
 const activeSourcePreviewRevision = useState<number>(
   'pod-studio.activeSourcePreviewRevision',
   () => 0,
@@ -92,7 +96,11 @@ function handleCanvasClick(event: MouseEvent): void {
 }
 
 function currentSourcePreviewId(): string | null {
-  if (activeSourcePreviewId.value && activeSourcePreviewPodSlug.value === props.pod?.slug) {
+  if (
+    activeSourcePreviewId.value &&
+    activeSourcePreviewPodSlug.value === props.pod?.slug &&
+    activeSourcePreviewDraftPackId.value === currentDraftPackId()
+  ) {
     return activeSourcePreviewId.value
   }
 
@@ -105,6 +113,10 @@ function currentSourcePreviewId(): string | null {
   }
 
   return null
+}
+
+function currentDraftPackId(): string {
+  return typeof route.query.draftPack === 'string' ? route.query.draftPack : ''
 }
 
 function currentDraftArtifactId(): string | null {
@@ -166,6 +178,31 @@ function previewIframeWindow(): Window | null {
   return frame?.contentWindow ?? null
 }
 
+function previewBodyText(win: Window | null): string {
+  if (!import.meta.client) return ''
+
+  const doc = win?.document ?? previewIframeWindow()?.document ?? document
+
+  return (doc.body?.innerText || doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
+}
+
+async function waitForPreviewTextChange(
+  win: Window | null,
+  previousText: string | null | undefined,
+): Promise<void> {
+  if (!import.meta.client || !previousText) return
+
+  const deadline = Date.now() + 1200
+  while (Date.now() < deadline) {
+    const nextText = previewBodyText(win)
+    if (nextText && nextText !== previousText) {
+      return
+    }
+
+    await wait(50)
+  }
+}
+
 async function waitForPreviewContent(win: Window | null): Promise<void> {
   if (!import.meta.client) return
 
@@ -190,10 +227,12 @@ async function waitForPreviewContent(win: Window | null): Promise<void> {
 async function emitPreviewReadyAfterPaint(
   win: Window | null,
   sourcePreviewId: string | null,
+  options: { previousText?: string | null } = {},
 ): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
   await waitForPreviewContent(win)
+  await waitForPreviewTextChange(win, options.previousText)
   await waitForPreviewPaint(win)
   await wait(50)
   await waitForPreviewPaint(win)
@@ -275,13 +314,14 @@ async function renderVueRuntimeIntoIframe() {
       : {}
 
   const sourcePreviewId = currentCanvasArtifactId()
+  const previousText = previewBodyText(win)
 
   api.renderPod({
     slug: props.pod.slug,
     mountSelector: '[data-pods-vue-mount="1"]',
     props: { ...(renderedPreviewProps.value || {}), ...injected },
   })
-  await emitPreviewReadyAfterPaint(win, sourcePreviewId)
+  await emitPreviewReadyAfterPaint(win, sourcePreviewId, { previousText })
 }
 
 function runtimeLoadKey(scripts: readonly string[], stylesheets: readonly string[]): string {
@@ -338,6 +378,7 @@ watch(
           throw new Error('SFC mode is not supported by this host.')
         }
         let mod: unknown
+        const previousText = previewBodyText(previewIframeWindow())
         try {
           mod = await runtime.loadSfcComponent(props.pod)
         } catch (err) {
@@ -359,7 +400,9 @@ watch(
         renderedPreviewProps.value = props.previewProps || {}
         Comp.value = markRaw(mod as any)
         renderedMode.value = 'sfc'
-        await emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId())
+        await emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId(), {
+          previousText,
+        })
       } else if (mode === 'vue') {
         vueFallbackActive.value = false
         await loadVueRuntimePreview()
@@ -387,7 +430,13 @@ watch(
   (nextPreviewProps) => {
     if (loading.value && hasRenderablePreview.value) return
 
+    const previousText = previewBodyText(previewIframeWindow())
     renderedPreviewProps.value = nextPreviewProps || {}
+    if (hasRenderablePreview.value) {
+      void emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId(), {
+        previousText,
+      })
+    }
   },
   { deep: true, immediate: true },
 )

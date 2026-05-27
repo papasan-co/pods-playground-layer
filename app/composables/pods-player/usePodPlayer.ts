@@ -25,6 +25,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     'pod-studio.activeSourcePreviewPodSlug',
     () => '',
   )
+  const activeSourcePreviewDraftPackId = useState<string>(
+    'pod-studio.activeSourcePreviewDraftPackId',
+    () => '',
+  )
   const activeSourcePreviewRevision = useState<number>(
     'pod-studio.activeSourcePreviewRevision',
     () => 0,
@@ -39,7 +43,11 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   }
 
   function requestedSourcePreviewFromRoute(): string {
-    if (activeSourcePreviewId.value && activeSourcePreviewPodSlug.value === toValue(slug)) {
+    if (
+      activeSourcePreviewId.value &&
+      activeSourcePreviewPodSlug.value === toValue(slug) &&
+      activeSourcePreviewDraftPackId.value === requestedDraftPackFromRoute()
+    ) {
       return activeSourcePreviewId.value
     }
 
@@ -47,6 +55,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     if (typeof route.query.sourcePreviewId === 'string') return route.query.sourcePreviewId
 
     return ''
+  }
+
+  function requestedDraftPackFromRoute(): string {
+    return typeof route.query.draftPack === 'string' ? route.query.draftPack : ''
   }
 
   function preferredModeFromRoute(): PodsPlayerMode {
