@@ -126,7 +126,7 @@ const panelTabs = computed(() => [
       ]
     : []),
   {
-    label: `${activePodLabel.value} fields`,
+    label: 'Fields',
     value: 'fields',
     icon: 'i-lucide-sliders-horizontal',
   },
@@ -257,7 +257,7 @@ watchEffect(() => {
       >
         <div class="mb-3 flex items-center gap-2">
           <span class="text-xs font-semibold" style="color: var(--pg-fg-primary)">
-            {{ activePodLabel }} fields
+            Fields
           </span>
           <div class="flex-1" />
           <button
