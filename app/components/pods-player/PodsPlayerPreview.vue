@@ -49,9 +49,12 @@ const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 
 
 const Comp = shallowRef<any>(null)
 const renderedPreviewProps = shallowRef<Record<string, unknown>>({})
+const renderedSfcArtifactId = ref<string | null>(null)
+const renderedSfcPodSlug = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let previewReadyRequestId = 0
+const committedSfcSwapTimingKeys = new Set<string>()
 
 const vueScripts = ref<string[]>([])
 const vueStylesheets = ref<string[]>([])
@@ -65,6 +68,9 @@ const requestedEffectiveMode = computed(() =>
   props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode,
 )
 const effectiveMode = computed(() => renderedMode.value || requestedEffectiveMode.value)
+const renderedCanvasArtifactId = computed(() =>
+  effectiveMode.value === 'sfc' ? renderedSfcArtifactId.value : currentCanvasArtifactId(),
+)
 const hasRenderablePreview = computed(() =>
   effectiveMode.value === 'sfc'
     ? Boolean(Comp.value)
@@ -283,6 +289,10 @@ if (import.meta.client && import.meta.hot) {
         ? ((payload as { updates?: unknown[] }).updates || []).length
         : null,
     })
+    if (loading.value) {
+      return
+    }
+
     void emitPreviewReadyAfterPaint(window, sourcePreviewId)
   }
 
@@ -335,6 +345,25 @@ function shouldFallbackToVueRuntime(err: unknown): boolean {
   return err instanceof Error && err.message.startsWith('POD_STUDIO_HMR_PREVIEW_FALLBACK:')
 }
 
+async function stageSfcComponentSwap(
+  mod: unknown,
+  nextPreviewProps: Record<string, unknown>,
+  sourcePreviewId: string | null,
+): Promise<void> {
+  const nextComp = markRaw(mod as any)
+
+  renderedPreviewProps.value = nextPreviewProps
+  Comp.value = nextComp
+  renderedMode.value = 'sfc'
+  renderedSfcArtifactId.value = sourcePreviewId
+  renderedSfcPodSlug.value = props.pod?.slug || null
+  const timingKey = `${props.pod?.slug || ''}:${sourcePreviewId || ''}`
+  if (sourcePreviewId && !committedSfcSwapTimingKeys.has(timingKey)) {
+    committedSfcSwapTimingKeys.add(timingKey)
+    recordPreviewTiming(sourcePreviewId, 'hmr_sfc_swap_committed')
+  }
+}
+
 async function loadVueRuntimePreview(): Promise<void> {
   if (!runtime.ensureRuntimeLoaded) {
     throw new Error('Vue runtime mode is not supported by this host.')
@@ -361,6 +390,8 @@ watch(
 
     if (!slug || !props.pod) {
       Comp.value = null
+      renderedSfcArtifactId.value = null
+      renderedSfcPodSlug.value = null
       vueScripts.value = []
       vueStylesheets.value = []
       vueRuntimeLoadKey.value = ''
@@ -377,8 +408,22 @@ watch(
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
         }
+        const previousWindow = previewIframeWindow()
+        if (Comp.value) {
+          await waitForPreviewContent(previousWindow)
+        }
+        const previousText = previewBodyText(previousWindow)
+        const sourcePreviewId = currentCanvasArtifactId()
+        if (
+          Comp.value &&
+          renderedMode.value === 'sfc' &&
+          renderedSfcArtifactId.value === sourcePreviewId &&
+          renderedSfcPodSlug.value === slug
+        ) {
+          return
+        }
+
         let mod: unknown
-        const previousText = previewBodyText(previewIframeWindow())
         try {
           mod = await runtime.loadSfcComponent(props.pod)
         } catch (err) {
@@ -389,6 +434,8 @@ watch(
           await loadVueRuntimePreview()
           renderedPreviewProps.value = props.previewProps || {}
           Comp.value = null
+          renderedSfcArtifactId.value = null
+          renderedSfcPodSlug.value = null
           renderedMode.value = 'vue'
           return
         }
@@ -397,10 +444,10 @@ watch(
         vueStylesheets.value = []
         vueRuntimeLoadKey.value = ''
         vueReady.value = false
+        await stageSfcComponentSwap(mod, props.previewProps || {}, sourcePreviewId)
+        await waitForPreviewDataReady()
         renderedPreviewProps.value = props.previewProps || {}
-        Comp.value = markRaw(mod as any)
-        renderedMode.value = 'sfc'
-        await emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId(), {
+        await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
           previousText,
         })
       } else if (mode === 'vue') {
@@ -408,6 +455,8 @@ watch(
         await loadVueRuntimePreview()
         renderedPreviewProps.value = props.previewProps || {}
         Comp.value = null
+        renderedSfcArtifactId.value = null
+        renderedSfcPodSlug.value = null
         renderedMode.value = 'vue'
       } else {
         throw new Error(`Unknown mode: ${mode}`)
@@ -491,6 +540,7 @@ watch(
       :ready="effectiveMode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
+      :canvas-artifact-id="renderedCanvasArtifactId"
       :debug-fill="debugFill"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"

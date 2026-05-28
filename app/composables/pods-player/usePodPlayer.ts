@@ -251,6 +251,23 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return changed
   }
 
+  function mergePreviewPayload(
+    base: Record<string, unknown>,
+    override: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = JSON.parse(JSON.stringify(base || {}))
+
+    for (const [key, value] of Object.entries(override || {})) {
+      if (isRecord(value) && isRecord(merged[key])) {
+        merged[key] = mergePreviewPayload(merged[key] as Record<string, unknown>, value)
+      } else {
+        merged[key] = value
+      }
+    }
+
+    return merged
+  }
+
   function extractResponsiveValue(value: unknown, vp: PodsPlayerViewport): unknown {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       const viewportMap = {
@@ -334,7 +351,9 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   const previewProps = computed(() => {
     if (formSchema.value.length === 0) return fixture.value || {}
     const payload = rebuildPayload(formSchema.value, flatForm)
-    return applyResponsiveToPayload(payload, formSchema.value, viewport.value)
+    const merged = fixture.value ? mergePreviewPayload(fixture.value, payload) : payload
+
+    return applyResponsiveToPayload(merged, formSchema.value, viewport.value)
   })
 
   const hasChanges = computed(() => {

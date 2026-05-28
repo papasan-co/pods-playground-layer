@@ -121,10 +121,26 @@ function mergePreviewProps(
     'bg',
   ]) {
     if (isRecord(base[key]) && isRecord(override[key])) {
-      merged[key] = {
-        ...base[key],
-        ...override[key],
-      }
+      merged[key] = mergePreviewProps(
+        base[key] as Record<string, unknown>,
+        override[key] as Record<string, unknown>,
+      )
+    }
+  }
+
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) {
+      merged[key] = base[key]
+      continue
+    }
+
+    if (
+      Array.isArray(base[key]) &&
+      Array.isArray(value) &&
+      base[key].length > 0 &&
+      value.length === 0
+    ) {
+      merged[key] = base[key]
     }
   }
 
