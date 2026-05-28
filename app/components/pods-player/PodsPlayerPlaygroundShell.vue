@@ -367,6 +367,7 @@ function targetDisplayValue(value: unknown): string {
           :preview-props="effectivePreviewProps"
           :selectable-targets="selectableCanvasTargets"
           :selected-target-key="selectedCanvasTargetKey"
+          :content-ready="!loading"
           @select-target="emit('selectCanvasTarget', $event)"
           @ready="emit('previewReady', $event)"
         />

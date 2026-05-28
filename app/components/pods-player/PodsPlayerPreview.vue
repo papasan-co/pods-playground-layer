@@ -23,6 +23,7 @@ const props = defineProps<{
   previewProps: Record<string, unknown>
   selectableTargets?: PodsPlayerCanvasTarget[]
   selectedTargetKey?: string | null
+  contentReady?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -192,6 +193,59 @@ function previewBodyText(win: Window | null): string {
   return (doc.body?.innerText || doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+function visibleTextCandidates(
+  value: unknown,
+  previousText = '',
+  candidates = new Set<string>(),
+): string[] {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/\s+/g, ' ').trim()
+    const lower = normalized.toLowerCase()
+    const looksLikeVisibleCopy =
+      normalized.length >= 8 &&
+      !normalized.startsWith('#') &&
+      !/^https?:\/\//i.test(normalized) &&
+      !/^[a-z0-9-]+$/i.test(normalized) &&
+      !['external url', 'primary', 'secondary'].includes(lower)
+
+    if (looksLikeVisibleCopy && !previousText.includes(normalized)) {
+      candidates.add(normalized)
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) {
+      visibleTextCandidates(item, previousText, candidates)
+    }
+  } else if (value && typeof value === 'object') {
+    for (const item of Object.values(value as Record<string, unknown>)) {
+      visibleTextCandidates(item, previousText, candidates)
+    }
+  }
+
+  return [...candidates]
+}
+
+async function waitForExpectedPreviewText(
+  win: Window | null,
+  expectedTexts: string[],
+): Promise<boolean> {
+  if (!import.meta.client || expectedTexts.length === 0) return false
+
+  const strongestExpectedText = [...expectedTexts].sort((a, b) => b.length - a.length)[0]
+  if (!strongestExpectedText) return false
+
+  const deadline = Date.now() + 4000
+  while (Date.now() < deadline) {
+    const nextText = previewBodyText(win)
+    if (nextText.includes(strongestExpectedText)) {
+      return true
+    }
+
+    await wait(50)
+  }
+
+  return false
+}
+
 async function waitForPreviewTextChange(
   win: Window | null,
   previousText: string | null | undefined,
@@ -230,15 +284,36 @@ async function waitForPreviewContent(win: Window | null): Promise<void> {
   }
 }
 
+async function waitForPreviewDataReady(): Promise<void> {
+  if (!import.meta.client) return
+
+  const deadline = Date.now() + 4000
+  while (Date.now() < deadline) {
+    if (props.contentReady !== false) {
+      return
+    }
+
+    await wait(50)
+  }
+}
+
 async function emitPreviewReadyAfterPaint(
   win: Window | null,
   sourcePreviewId: string | null,
-  options: { previousText?: string | null } = {},
+  options: {
+    previousText?: string | null
+    expectedTexts?: string[]
+    source?: string
+  } = {},
 ): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
   await waitForPreviewContent(win)
-  await waitForPreviewTextChange(win, options.previousText)
+  const expectedTexts = options.expectedTexts || []
+  const expectedTextVisible = await waitForExpectedPreviewText(win, expectedTexts)
+  if (!expectedTextVisible) {
+    await waitForPreviewTextChange(win, options.previousText)
+  }
   await waitForPreviewPaint(win)
   await wait(50)
   await waitForPreviewPaint(win)
@@ -251,7 +326,11 @@ async function emitPreviewReadyAfterPaint(
     return
   }
 
-  recordPreviewTiming(sourcePreviewId, 'canvas_painted_ready')
+  recordPreviewTiming(sourcePreviewId, 'canvas_painted_ready', {
+    source: options.source || 'unknown',
+    expectedTextCount: expectedTexts.length,
+    expectedTextVisible,
+  })
   emitPreviewReady(sourcePreviewId)
 }
 
@@ -293,7 +372,21 @@ if (import.meta.client && import.meta.hot) {
       return
     }
 
-    void emitPreviewReadyAfterPaint(window, sourcePreviewId)
+    void (async () => {
+      await waitForPreviewDataReady()
+      const previousText = previewBodyText(window)
+      const expectedTexts = visibleTextCandidates(props.previewProps || {}, previousText)
+
+      if (expectedTexts.length === 0) {
+        return
+      }
+
+      await emitPreviewReadyAfterPaint(window, sourcePreviewId, {
+        previousText,
+        expectedTexts,
+        source: 'vite-after-update',
+      })
+    })()
   }
 
   onMounted(() => {
@@ -325,13 +418,18 @@ async function renderVueRuntimeIntoIframe() {
 
   const sourcePreviewId = currentCanvasArtifactId()
   const previousText = previewBodyText(win)
+  const expectedTexts = visibleTextCandidates(renderedPreviewProps.value, previousText)
 
   api.renderPod({
     slug: props.pod.slug,
     mountSelector: '[data-pods-vue-mount="1"]',
     props: { ...(renderedPreviewProps.value || {}), ...injected },
   })
-  await emitPreviewReadyAfterPaint(win, sourcePreviewId, { previousText })
+  await emitPreviewReadyAfterPaint(win, sourcePreviewId, {
+    previousText,
+    expectedTexts,
+    source: 'vue-runtime-render',
+  })
 }
 
 function runtimeLoadKey(scripts: readonly string[], stylesheets: readonly string[]): string {
@@ -414,6 +512,7 @@ watch(
         }
         const previousText = previewBodyText(previousWindow)
         const sourcePreviewId = currentCanvasArtifactId()
+        const stagedPreviewProps = props.previewProps || {}
         if (
           Comp.value &&
           renderedMode.value === 'sfc' &&
@@ -444,11 +543,15 @@ watch(
         vueStylesheets.value = []
         vueRuntimeLoadKey.value = ''
         vueReady.value = false
-        await stageSfcComponentSwap(mod, props.previewProps || {}, sourcePreviewId)
+        await stageSfcComponentSwap(mod, stagedPreviewProps, sourcePreviewId)
         await waitForPreviewDataReady()
-        renderedPreviewProps.value = props.previewProps || {}
+        const nextPreviewProps = props.previewProps || {}
+        const expectedTexts = visibleTextCandidates(nextPreviewProps, previousText)
+        renderedPreviewProps.value = nextPreviewProps
         await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
           previousText,
+          expectedTexts,
+          source: 'sfc-load',
         })
       } else if (mode === 'vue') {
         vueFallbackActive.value = false
@@ -480,10 +583,13 @@ watch(
     if (loading.value && hasRenderablePreview.value) return
 
     const previousText = previewBodyText(previewIframeWindow())
+    const expectedTexts = visibleTextCandidates(nextPreviewProps || {}, previousText)
     renderedPreviewProps.value = nextPreviewProps || {}
     if (hasRenderablePreview.value) {
       void emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId(), {
         previousText,
+        expectedTexts,
+        source: 'preview-props',
       })
     }
   },
