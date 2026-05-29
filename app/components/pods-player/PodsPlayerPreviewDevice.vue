@@ -47,6 +47,11 @@ const props = defineProps<{
    */
   rootClasses?: string[]
   /**
+   * The source preview or draft artifact currently rendered inside the iframe.
+   * Parent readiness waits for this marker so it does not race the iframe mini-app render.
+   */
+  canvasArtifactId?: string | null
+  /**
    * Debug-only fill diagnostic that makes unused space obvious without changing the normal preview chrome.
    */
   debugFill?: boolean
@@ -438,7 +443,13 @@ watchEffect(() => {
   void props.cssVars
   void props.extraStylesheets
   void props.rootClasses
+  void props.canvasArtifactId
   void props.debugFill
+  if (props.ready === false && slotVNode.value) {
+    void nextTick().then(() => bootIframe())
+    return
+  }
+
   slotVNode.value =
     props.ready === false
       ? null
@@ -451,6 +462,7 @@ watchEffect(() => {
           {
             class: props.scrollable ? 'w-full min-h-full' : 'w-full h-full overflow-hidden',
             'data-pods-preview-root': '1',
+            'data-pods-canvas-artifact-id': props.canvasArtifactId || '',
             'data-pods-debug-fill': props.debugFill ? '1' : '0',
             style: props.debugFill
               ? {

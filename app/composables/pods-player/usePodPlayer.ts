@@ -11,7 +11,7 @@ import type { FormField } from '#pods-player/formMapper'
 import { flatFromFixture, rebuildPayload } from '#pods-player/formMapper'
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
-import { toValue, type MaybeRefOrGetter } from 'vue'
+import { nextTick, toValue, type MaybeRefOrGetter } from 'vue'
 
 type PodDetailsWithCompiledContract = PodDetails & {
   compiled_contract?: Record<string, unknown> | null
@@ -379,6 +379,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     const s = toValue(slug)
     const sourcePreviewId = requestedSourcePreviewFromRoute()
     loading.value = true
+    loadedSourcePreviewId.value = ''
     try {
       const preferredMode = preferredModeFromRoute()
       if (preferredMode !== mode.value) {
@@ -438,6 +439,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
       initialFormValues.value = nextInitialFormValues
       hydratedVariant.value = nextHydratedVariant
       pod.value = nextPod
+      await nextTick()
       loadedSourcePreviewId.value = sourcePreviewId
     } finally {
       loading.value = false
