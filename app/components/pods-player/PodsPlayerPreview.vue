@@ -224,43 +224,36 @@ function visibleTextCandidates(
   return [...candidates]
 }
 
-async function waitForExpectedPreviewText(
+async function waitForExpectedPreviewTextOrChange(
   win: Window | null,
   expectedTexts: string[],
-): Promise<boolean> {
-  if (!import.meta.client || expectedTexts.length === 0) return false
+  previousText: string | null | undefined,
+): Promise<{ expectedTextVisible: boolean; textChanged: boolean }> {
+  if (!import.meta.client) {
+    return { expectedTextVisible: false, textChanged: false }
+  }
 
-  const strongestExpectedText = [...expectedTexts].sort((a, b) => b.length - a.length)[0]
-  if (!strongestExpectedText) return false
+  const candidates = [...expectedTexts].sort((a, b) => b.length - a.length)
+  const hasPreviousText = Boolean(previousText)
 
   const deadline = Date.now() + 4000
   while (Date.now() < deadline) {
     const nextText = previewBodyText(win)
-    if (nextText.includes(strongestExpectedText)) {
-      return true
+    if (candidates.some((candidate) => nextText.includes(candidate))) {
+      return {
+        expectedTextVisible: true,
+        textChanged: hasPreviousText ? nextText !== previousText : false,
+      }
+    }
+
+    if (hasPreviousText && nextText && nextText !== previousText) {
+      return { expectedTextVisible: false, textChanged: true }
     }
 
     await wait(50)
   }
 
-  return false
-}
-
-async function waitForPreviewTextChange(
-  win: Window | null,
-  previousText: string | null | undefined,
-): Promise<void> {
-  if (!import.meta.client || !previousText) return
-
-  const deadline = Date.now() + 1200
-  while (Date.now() < deadline) {
-    const nextText = previewBodyText(win)
-    if (nextText && nextText !== previousText) {
-      return
-    }
-
-    await wait(50)
-  }
+  return { expectedTextVisible: false, textChanged: false }
 }
 
 async function waitForPreviewContent(win: Window | null): Promise<void> {
@@ -310,10 +303,11 @@ async function emitPreviewReadyAfterPaint(
   await nextTick()
   await waitForPreviewContent(win)
   const expectedTexts = options.expectedTexts || []
-  const expectedTextVisible = await waitForExpectedPreviewText(win, expectedTexts)
-  if (!expectedTextVisible) {
-    await waitForPreviewTextChange(win, options.previousText)
-  }
+  const previewWait = await waitForExpectedPreviewTextOrChange(
+    win,
+    expectedTexts,
+    options.previousText,
+  )
   await waitForPreviewPaint(win)
   await wait(50)
   await waitForPreviewPaint(win)
@@ -329,7 +323,8 @@ async function emitPreviewReadyAfterPaint(
   recordPreviewTiming(sourcePreviewId, 'canvas_painted_ready', {
     source: options.source || 'unknown',
     expectedTextCount: expectedTexts.length,
-    expectedTextVisible,
+    expectedTextVisible: previewWait.expectedTextVisible,
+    textChanged: previewWait.textChanged,
   })
   emitPreviewReady(sourcePreviewId)
 }
