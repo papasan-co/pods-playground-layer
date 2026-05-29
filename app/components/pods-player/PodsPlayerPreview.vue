@@ -24,6 +24,7 @@ const props = defineProps<{
   selectableTargets?: PodsPlayerCanvasTarget[]
   selectedTargetKey?: string | null
   contentReady?: boolean
+  contentSourcePreviewId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -76,6 +77,14 @@ const hasRenderablePreview = computed(() =>
   effectiveMode.value === 'sfc'
     ? Boolean(Comp.value)
     : Boolean(vueReady.value || vueScripts.value.length || vueStylesheets.value.length),
+)
+const hasMountedPreviewSurface = computed(() =>
+  Boolean(
+    renderedMode.value ||
+      renderedSfcArtifactId.value ||
+      vueRuntimeLoadKey.value ||
+      hasRenderablePreview.value,
+  ),
 )
 const targetableValues = computed(() =>
   [...(props.selectableTargets || [])]
@@ -277,12 +286,35 @@ async function waitForPreviewContent(win: Window | null): Promise<void> {
   }
 }
 
-async function waitForPreviewDataReady(): Promise<void> {
+async function waitForPreviewDataReady(sourcePreviewId: string | null = null): Promise<void> {
   if (!import.meta.client) return
 
   const deadline = Date.now() + 4000
   while (Date.now() < deadline) {
-    if (props.contentReady !== false) {
+    const dataReady =
+      props.contentReady !== false &&
+      (!sourcePreviewId || props.contentSourcePreviewId === sourcePreviewId)
+
+    if (dataReady) {
+      return
+    }
+
+    await wait(50)
+  }
+}
+
+async function waitForCanvasArtifact(
+  win: Window | null,
+  sourcePreviewId: string | null,
+): Promise<void> {
+  if (!import.meta.client || !sourcePreviewId) return
+
+  const deadline = Date.now() + 4000
+  const selector = `[data-pods-canvas-artifact-id="${CSS.escape(sourcePreviewId)}"]`
+
+  while (Date.now() < deadline) {
+    const doc = win?.document ?? previewIframeWindow()?.document ?? document
+    if (doc.querySelector(selector)) {
       return
     }
 
@@ -301,6 +333,9 @@ async function emitPreviewReadyAfterPaint(
 ): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
+  await waitForPreviewDataReady(sourcePreviewId)
+  await nextTick()
+  await waitForCanvasArtifact(win, sourcePreviewId)
   await waitForPreviewContent(win)
   const expectedTexts = options.expectedTexts || []
   const previewWait = await waitForExpectedPreviewTextOrChange(
@@ -544,9 +579,10 @@ watch(
         vueStylesheets.value = []
         vueRuntimeLoadKey.value = ''
         vueReady.value = false
-        await stageSfcComponentSwap(mod, stagedPreviewProps, sourcePreviewId)
-        await waitForPreviewDataReady()
+        await waitForPreviewDataReady(sourcePreviewId)
+        await nextTick()
         const nextPreviewProps = props.previewProps || {}
+        await stageSfcComponentSwap(mod, nextPreviewProps, sourcePreviewId)
         const expectedTexts = visibleTextCandidates(nextPreviewProps, previousText)
         renderedPreviewProps.value = nextPreviewProps
         await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
@@ -628,7 +664,7 @@ watch(
     style="background: var(--pg-canvas-bg, var(--pg-bg))"
   >
     <div
-      v-if="loading && !hasRenderablePreview"
+      v-if="loading && !hasRenderablePreview && !hasMountedPreviewSurface"
       class="w-full h-full flex items-center justify-center"
     >
       <div class="text-gray-500">Loading preview...</div>

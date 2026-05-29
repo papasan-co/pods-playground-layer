@@ -79,6 +79,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   const fixture = ref<Record<string, unknown> | null>(null)
   const schema = ref<unknown>(null)
   const loading = ref(true)
+  const loadedSourcePreviewId = ref('')
 
   const reloadKey = ref(0)
   const initialFormValues = ref<Record<string, unknown>>({})
@@ -376,6 +377,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
   async function loadPodData() {
     const s = toValue(slug)
+    const sourcePreviewId = requestedSourcePreviewFromRoute()
     loading.value = true
     try {
       const preferredMode = preferredModeFromRoute()
@@ -385,7 +387,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
       const nextPod = await runtime.getPod(s)
       if (!nextPod) {
-        if (requestedSourcePreviewFromRoute() && pod.value?.slug === s) {
+        if (sourcePreviewId && pod.value?.slug === s) {
           return
         }
 
@@ -396,6 +398,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
         Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
         initialFormValues.value = {}
         hydratedVariant.value = null
+        loadedSourcePreviewId.value = ''
         return
       }
 
@@ -435,6 +438,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
       initialFormValues.value = nextInitialFormValues
       hydratedVariant.value = nextHydratedVariant
       pod.value = nextPod
+      loadedSourcePreviewId.value = sourcePreviewId
     } finally {
       loading.value = false
     }
@@ -504,6 +508,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     flatForm,
     formSchema,
     previewProps,
+    loadedSourcePreviewId,
     hasChanges,
     reloadComponent,
     applyFormUpdate,

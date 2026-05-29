@@ -62,6 +62,7 @@ const {
   flatForm,
   formSchema,
   previewProps,
+  loadedSourcePreviewId,
   hasChanges,
   reloadComponent,
   applyFormUpdate,
@@ -368,6 +369,7 @@ function targetDisplayValue(value: unknown): string {
           :selectable-targets="selectableCanvasTargets"
           :selected-target-key="selectedCanvasTargetKey"
           :content-ready="!loading"
+          :content-source-preview-id="loadedSourcePreviewId"
           @select-target="emit('selectCanvasTarget', $event)"
           @ready="emit('previewReady', $event)"
         />

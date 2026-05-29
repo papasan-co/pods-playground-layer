@@ -133,6 +133,18 @@ export interface PodsPlayerRuntime {
   loadSfcComponent?(pod: PodDetails): Promise<unknown | null>
 
   /**
+   * Optional: warm a source-preview SFC module before the host activates it.
+   * This lets Pod Studio keep the last painted canvas visible while the next
+   * HMR module/session is fetched.
+   */
+  prepareSourcePreview?(input: {
+    packId: string
+    podSlug: string
+    sourcePreviewId: string
+    draftPackId?: string | null
+  }): Promise<{ prepared: boolean; transport?: string | null; fallbackReason?: string | null }>
+
+  /**
    * Vue runtime mode: provide the ESM runtime bundle URL(s) and/or perform any preloading.
    */
   ensureRuntimeLoaded?(pod: PodDetails): Promise<PodsPlayerEnsureResult>
