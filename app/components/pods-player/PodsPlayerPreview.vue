@@ -519,6 +519,12 @@ watch(
           renderedSfcArtifactId.value === sourcePreviewId &&
           renderedSfcPodSlug.value === slug
         ) {
+          renderedPreviewProps.value = stagedPreviewProps
+          await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
+            previousText,
+            expectedTexts: visibleTextCandidates(stagedPreviewProps, previousText),
+            source: 'sfc-existing-props',
+          })
           return
         }
 
