@@ -202,11 +202,17 @@ function previewBodyText(win: Window | null): string {
   return (doc.body?.innerText || doc.body?.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+function comparablePreviewText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
 function visibleTextCandidates(
   value: unknown,
   previousText = '',
   candidates = new Set<string>(),
 ): string[] {
+  const comparablePreviousText = comparablePreviewText(previousText)
+
   if (typeof value === 'string') {
     const normalized = value.replace(/\s+/g, ' ').trim()
     const lower = normalized.toLowerCase()
@@ -217,7 +223,10 @@ function visibleTextCandidates(
       !/^[a-z0-9-]+$/i.test(normalized) &&
       !['external url', 'primary', 'secondary'].includes(lower)
 
-    if (looksLikeVisibleCopy && !previousText.includes(normalized)) {
+    if (
+      looksLikeVisibleCopy &&
+      !comparablePreviousText.includes(comparablePreviewText(normalized))
+    ) {
       candidates.add(normalized)
     }
   } else if (Array.isArray(value)) {
@@ -248,7 +257,10 @@ async function waitForExpectedPreviewTextOrChange(
   const deadline = Date.now() + 4000
   while (Date.now() < deadline) {
     const nextText = previewBodyText(win)
-    if (candidates.some((candidate) => nextText.includes(candidate))) {
+    const comparableNextText = comparablePreviewText(nextText)
+    if (
+      candidates.some((candidate) => comparableNextText.includes(comparablePreviewText(candidate)))
+    ) {
       return {
         expectedTextVisible: true,
         textChanged: hasPreviousText ? nextText !== previousText : false,
