@@ -206,6 +206,26 @@ function comparablePreviewText(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+function sourcePreviewExpectedTexts(
+  sourcePreviewId: string | null,
+  previousText = '',
+): string[] {
+  if (!import.meta.client || !sourcePreviewId) return []
+
+  const win = window as Window & {
+    __POD_STUDIO_HMR_EXPECTED_TEXTS__?: Record<string, string[]>
+  }
+  const expectedTexts = win.__POD_STUDIO_HMR_EXPECTED_TEXTS__?.[sourcePreviewId] || []
+  const comparablePreviousText = comparablePreviewText(previousText)
+
+  return expectedTexts.filter(
+    (value) =>
+      typeof value === 'string' &&
+      value.trim().length > 0 &&
+      !comparablePreviousText.includes(comparablePreviewText(value)),
+  )
+}
+
 function visibleTextCandidates(
   value: unknown,
   previousText = '',
@@ -253,6 +273,7 @@ async function waitForExpectedPreviewTextOrChange(
 
   const candidates = [...expectedTexts].sort((a, b) => b.length - a.length)
   const hasPreviousText = Boolean(previousText)
+  const hasExpectedText = candidates.length > 0
 
   const deadline = Date.now() + 4000
   while (Date.now() < deadline) {
@@ -267,7 +288,7 @@ async function waitForExpectedPreviewTextOrChange(
       }
     }
 
-    if (hasPreviousText && nextText && nextText !== previousText) {
+    if (!hasExpectedText && hasPreviousText && nextText && nextText !== previousText) {
       return { expectedTextVisible: false, textChanged: true }
     }
 
@@ -349,7 +370,10 @@ async function emitPreviewReadyAfterPaint(
   await nextTick()
   await waitForCanvasArtifact(win, sourcePreviewId)
   await waitForPreviewContent(win)
-  const expectedTexts = options.expectedTexts || []
+  const expectedTexts = [
+    ...(options.expectedTexts || []),
+    ...sourcePreviewExpectedTexts(sourcePreviewId, options.previousText || ''),
+  ].filter((value, index, list) => list.indexOf(value) === index)
   const previewWait = await waitForExpectedPreviewTextOrChange(
     win,
     expectedTexts,
@@ -358,12 +382,20 @@ async function emitPreviewReadyAfterPaint(
   await waitForPreviewPaint(win)
   await wait(50)
   await waitForPreviewPaint(win)
+  if (previewWait.expectedTextVisible) {
+    await wait(125)
+    await waitForPreviewPaint(win)
+  }
 
   if (requestId !== previewReadyRequestId) {
     return
   }
 
   if (sourcePreviewId !== currentCanvasArtifactId()) {
+    return
+  }
+
+  if (sourcePreviewId && expectedTexts.length > 0 && !previewWait.expectedTextVisible) {
     return
   }
 
