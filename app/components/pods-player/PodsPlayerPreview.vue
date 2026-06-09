@@ -231,6 +231,15 @@ function sourcePreviewExpectedTexts(sourcePreviewId: string | null, previousText
   )
 }
 
+function isActiveHmrSourcePreview(sourcePreviewId: string | null): boolean {
+  if (!sourcePreviewId) return false
+  if (activeSourcePreviewId.value !== sourcePreviewId) return false
+  if (activeSourcePreviewPodSlug.value !== props.pod?.slug) return false
+  if (activeSourcePreviewDraftPackId.value !== currentDraftPackId()) return false
+
+  return true
+}
+
 function visibleTextCandidates(
   value: unknown,
   previousText = '',
@@ -385,11 +394,14 @@ async function emitPreviewReadyAfterPaint(
     options.previousText,
   )
   await waitForPreviewPaint(win)
-  await wait(50)
-  await waitForPreviewPaint(win)
-  if (previewWait.expectedTextVisible) {
-    await wait(125)
+  const useFastHmrReadyPath = isActiveHmrSourcePreview(sourcePreviewId)
+  if (!useFastHmrReadyPath) {
+    await wait(50)
     await waitForPreviewPaint(win)
+    if (previewWait.expectedTextVisible) {
+      await wait(125)
+      await waitForPreviewPaint(win)
+    }
   }
 
   if (requestId !== previewReadyRequestId) {
@@ -409,6 +421,7 @@ async function emitPreviewReadyAfterPaint(
     expectedTextCount: expectedTexts.length,
     expectedTextVisible: previewWait.expectedTextVisible,
     textChanged: previewWait.textChanged,
+    fastHmrReadyPath: useFastHmrReadyPath,
   })
   emitPreviewReady(sourcePreviewId)
 }
@@ -523,12 +536,7 @@ function shouldFallbackToVueRuntime(err: unknown): boolean {
 }
 
 function shouldSettleLayerSequencesForSourcePreview(sourcePreviewId: string | null): boolean {
-  if (!sourcePreviewId) return false
-  if (activeSourcePreviewId.value !== sourcePreviewId) return false
-  if (activeSourcePreviewPodSlug.value !== props.pod?.slug) return false
-  if (activeSourcePreviewDraftPackId.value !== currentDraftPackId()) return false
-
-  return true
+  return isActiveHmrSourcePreview(sourcePreviewId)
 }
 
 async function settleLayerSequencesForSourcePreview(
@@ -562,12 +570,12 @@ async function stageSfcComponentSwap(
   renderedMode.value = 'sfc'
   renderedSfcArtifactId.value = sourcePreviewId
   renderedSfcPodSlug.value = props.pod?.slug || null
-  await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-swap')
   const timingKey = `${props.pod?.slug || ''}:${sourcePreviewId || ''}`
   if (sourcePreviewId && !committedSfcSwapTimingKeys.has(timingKey)) {
     committedSfcSwapTimingKeys.add(timingKey)
     recordPreviewTiming(sourcePreviewId, 'hmr_sfc_swap_committed')
   }
+  await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-swap')
 }
 
 async function loadVueRuntimePreview(): Promise<void> {
@@ -636,10 +644,10 @@ watch(
           renderedSfcPodSlug.value === slug
         ) {
           renderedPreviewProps.value = stagedPreviewProps
-          await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-existing-props')
           recordPreviewTiming(sourcePreviewId, 'hmr_sfc_existing_props_committed', {
             podSlug: slug,
           })
+          await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-existing-props')
           await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
             previousText,
             expectedTexts: visibleTextCandidates(stagedPreviewProps, previousText),
