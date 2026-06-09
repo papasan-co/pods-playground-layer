@@ -71,18 +71,56 @@ const hostRef = ref<HTMLDivElement | null>(null)
 const hostSize = ref({ width: 0, height: 0 })
 
 let resizeObserver: ResizeObserver | null = null
+let iframeBootQueued = false
+let iframeBootRunning = false
+let iframeBootQueuedAfterCurrentRun = false
+
+function queueIframeBoot() {
+  if (iframeBootQueued) return
+
+  iframeBootQueued = true
+
+  // Coalesce iframe ref, load, prop, and slot changes into one document rewrite.
+  void nextTick(() => {
+    iframeBootQueued = false
+    void runIframeBoot()
+  })
+}
+
+async function runIframeBoot() {
+  if (iframeBootRunning) {
+    iframeBootQueuedAfterCurrentRun = true
+    return
+  }
+
+  iframeBootRunning = true
+
+  try {
+    await bootIframe()
+  } finally {
+    iframeBootRunning = false
+
+    if (iframeBootQueuedAfterCurrentRun) {
+      iframeBootQueuedAfterCurrentRun = false
+      queueIframeBoot()
+    }
+  }
+}
 
 onMounted(() => {
-  if (!hostRef.value || typeof ResizeObserver === 'undefined') return
-  resizeObserver = new ResizeObserver((entries) => {
-    const entry = entries[0]
-    if (!entry) return
-    hostSize.value = {
-      width: entry.contentRect.width,
-      height: entry.contentRect.height,
-    }
-  })
-  resizeObserver.observe(hostRef.value)
+  if (hostRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      hostSize.value = {
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      }
+    })
+    resizeObserver.observe(hostRef.value)
+  }
+
+  queueIframeBoot()
 })
 
 onBeforeUnmount(() => {
@@ -113,6 +151,14 @@ onBeforeUnmount(() => {
   obs?.disconnect()
   miniApp?.unmount()
 })
+
+watch(
+  iframeRef,
+  (iframe) => {
+    if (iframe) queueIframeBoot()
+  },
+  { flush: 'post' },
+)
 
 const STYLE_SELECTOR = 'style,link[rel="stylesheet"]'
 const SYNCED_HEAD_SELECTOR = '[data-pods-head-sync="1"]'
@@ -358,7 +404,7 @@ watchEffect(() => {
           },
           slots.default?.(),
         )
-  void bootIframe()
+  queueIframeBoot()
 })
 </script>
 
@@ -383,6 +429,7 @@ watchEffect(() => {
           class="w-full h-full border-none rounded-md"
           sandbox="allow-same-origin allow-scripts"
           title="Pod preview"
+          @load="queueIframeBoot"
         />
       </div>
     </div>
