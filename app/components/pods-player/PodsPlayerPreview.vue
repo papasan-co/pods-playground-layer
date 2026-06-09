@@ -53,10 +53,12 @@ const Comp = shallowRef<any>(null)
 const renderedPreviewProps = shallowRef<Record<string, unknown>>({})
 const renderedSfcArtifactId = ref<string | null>(null)
 const renderedSfcPodSlug = ref<string | null>(null)
+const settledLayerSequenceSourcePreviewId = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let previewReadyRequestId = 0
 const committedSfcSwapTimingKeys = new Set<string>()
+const settledLayerSequenceTimingKeys = new Set<string>()
 
 const vueScripts = ref<string[]>([])
 const vueStylesheets = ref<string[]>([])
@@ -72,6 +74,12 @@ const requestedEffectiveMode = computed(() =>
 const effectiveMode = computed(() => renderedMode.value || requestedEffectiveMode.value)
 const renderedCanvasArtifactId = computed(() =>
   effectiveMode.value === 'sfc' ? renderedSfcArtifactId.value : currentCanvasArtifactId(),
+)
+const settleLayerSequencesForPreview = computed(
+  () =>
+    effectiveMode.value === 'sfc' &&
+    Boolean(renderedCanvasArtifactId.value) &&
+    settledLayerSequenceSourcePreviewId.value === renderedCanvasArtifactId.value,
 )
 const hasRenderablePreview = computed(() =>
   effectiveMode.value === 'sfc'
@@ -206,10 +214,7 @@ function comparablePreviewText(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
-function sourcePreviewExpectedTexts(
-  sourcePreviewId: string | null,
-  previousText = '',
-): string[] {
+function sourcePreviewExpectedTexts(sourcePreviewId: string | null, previousText = ''): string[] {
   if (!import.meta.client || !sourcePreviewId) return []
 
   const win = window as Window & {
@@ -517,6 +522,34 @@ function shouldFallbackToVueRuntime(err: unknown): boolean {
   return err instanceof Error && err.message.startsWith('POD_STUDIO_HMR_PREVIEW_FALLBACK:')
 }
 
+function shouldSettleLayerSequencesForSourcePreview(sourcePreviewId: string | null): boolean {
+  if (!sourcePreviewId) return false
+  if (activeSourcePreviewId.value !== sourcePreviewId) return false
+  if (activeSourcePreviewPodSlug.value !== props.pod?.slug) return false
+  if (activeSourcePreviewDraftPackId.value !== currentDraftPackId()) return false
+
+  return true
+}
+
+async function settleLayerSequencesForSourcePreview(
+  sourcePreviewId: string | null,
+  source: string,
+): Promise<void> {
+  if (!shouldSettleLayerSequencesForSourcePreview(sourcePreviewId)) return
+
+  settledLayerSequenceSourcePreviewId.value = sourcePreviewId
+  const timingKey = `${props.pod?.slug || ''}:${sourcePreviewId || ''}`
+  if (sourcePreviewId && !settledLayerSequenceTimingKeys.has(timingKey)) {
+    settledLayerSequenceTimingKeys.add(timingKey)
+    recordPreviewTiming(sourcePreviewId, 'hmr_layer_sequences_settled_for_preview', {
+      source,
+      podSlug: props.pod?.slug || null,
+    })
+  }
+  await nextTick()
+  await wait(0)
+}
+
 async function stageSfcComponentSwap(
   mod: unknown,
   nextPreviewProps: Record<string, unknown>,
@@ -529,6 +562,7 @@ async function stageSfcComponentSwap(
   renderedMode.value = 'sfc'
   renderedSfcArtifactId.value = sourcePreviewId
   renderedSfcPodSlug.value = props.pod?.slug || null
+  await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-swap')
   const timingKey = `${props.pod?.slug || ''}:${sourcePreviewId || ''}`
   if (sourcePreviewId && !committedSfcSwapTimingKeys.has(timingKey)) {
     committedSfcSwapTimingKeys.add(timingKey)
@@ -564,6 +598,7 @@ watch(
       Comp.value = null
       renderedSfcArtifactId.value = null
       renderedSfcPodSlug.value = null
+      settledLayerSequenceSourcePreviewId.value = null
       vueScripts.value = []
       vueStylesheets.value = []
       vueRuntimeLoadKey.value = ''
@@ -575,6 +610,13 @@ watch(
 
     loading.value = true
     try {
+      const requestedSourcePreviewId = currentCanvasArtifactId()
+      if (
+        settledLayerSequenceSourcePreviewId.value &&
+        settledLayerSequenceSourcePreviewId.value !== requestedSourcePreviewId
+      ) {
+        settledLayerSequenceSourcePreviewId.value = null
+      }
       previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) {
@@ -594,6 +636,10 @@ watch(
           renderedSfcPodSlug.value === slug
         ) {
           renderedPreviewProps.value = stagedPreviewProps
+          await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-existing-props')
+          recordPreviewTiming(sourcePreviewId, 'hmr_sfc_existing_props_committed', {
+            podSlug: slug,
+          })
           await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
             previousText,
             expectedTexts: visibleTextCandidates(stagedPreviewProps, previousText),
@@ -729,6 +775,7 @@ watch(
       :root-classes="['autumn-runtime']"
       :canvas-artifact-id="renderedCanvasArtifactId"
       :debug-fill="debugFill"
+      :settle-layer-sequences="settleLayerSequencesForPreview"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >

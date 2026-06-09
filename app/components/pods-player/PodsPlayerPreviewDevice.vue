@@ -55,6 +55,11 @@ const props = defineProps<{
    * Debug-only fill diagnostic that makes unused space obvious without changing the normal preview chrome.
    */
   debugFill?: boolean
+  /**
+   * Preview-only override for source-preview activation. When enabled, existing
+   * pod layer sequence attributes render their final visible state immediately.
+   */
+  settleLayerSequences?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -445,6 +450,7 @@ watchEffect(() => {
   void props.rootClasses
   void props.canvasArtifactId
   void props.debugFill
+  void props.settleLayerSequences
   if (props.ready === false && slotVNode.value) {
     void nextTick().then(() => bootIframe())
     return
@@ -464,6 +470,7 @@ watchEffect(() => {
             'data-pods-preview-root': '1',
             'data-pods-canvas-artifact-id': props.canvasArtifactId || '',
             'data-pods-debug-fill': props.debugFill ? '1' : '0',
+            'data-pods-preview-settle-layer-sequences': props.settleLayerSequences ? '1' : '0',
             style: props.debugFill
               ? {
                   backgroundImage:
