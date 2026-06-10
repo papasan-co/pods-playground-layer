@@ -349,8 +349,8 @@ async function waitForPreviewContent(win: Window | null): Promise<void> {
   }
 }
 
-async function waitForPreviewDataReady(sourcePreviewId: string | null = null): Promise<void> {
-  if (!import.meta.client) return
+async function waitForPreviewDataReady(sourcePreviewId: string | null = null): Promise<boolean> {
+  if (!import.meta.client) return true
 
   const deadline = Date.now() + 4000
   while (Date.now() < deadline) {
@@ -359,11 +359,13 @@ async function waitForPreviewDataReady(sourcePreviewId: string | null = null): P
       (!sourcePreviewId || props.contentSourcePreviewId === sourcePreviewId)
 
     if (dataReady) {
-      return
+      return true
     }
 
     await wait(50)
   }
+
+  return false
 }
 
 async function waitForCanvasArtifact(
@@ -396,7 +398,15 @@ async function emitPreviewReadyAfterPaint(
 ): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
-  await waitForPreviewDataReady(sourcePreviewId)
+  const dataReady = await waitForPreviewDataReady(sourcePreviewId)
+  if (!dataReady) {
+    recordPreviewTiming(sourcePreviewId, 'canvas_ready_deferred_until_matching_source_preview_data', {
+      source: options.source || 'unknown',
+      contentSourcePreviewId: props.contentSourcePreviewId || null,
+      contentReady: props.contentReady !== false,
+    })
+    return
+  }
   await nextTick()
   await waitForCanvasArtifact(win, sourcePreviewId)
   await waitForPreviewContent(win)
@@ -760,7 +770,19 @@ watch(
           return
         }
         vueFallbackActive.value = false
-        await waitForPreviewDataReady(sourcePreviewId)
+        const dataReady = await waitForPreviewDataReady(sourcePreviewId)
+        if (!dataReady) {
+          recordPreviewTiming(
+            sourcePreviewId,
+            'hmr_sfc_swap_deferred_until_matching_source_preview_data',
+            {
+              podSlug: slug,
+              contentSourcePreviewId: props.contentSourcePreviewId || null,
+              contentReady: props.contentReady !== false,
+            },
+          )
+          return
+        }
         await nextTick()
         const nextPreviewProps = props.previewProps || {}
         await stageSfcComponentSwap(mod, nextPreviewProps, sourcePreviewId)
@@ -771,7 +793,13 @@ watch(
           source: 'sfc-load',
         })
       } else if (mode === 'vue') {
-        vueFallbackActive.value = false
+        const sourcePreviewId = currentCanvasArtifactId()
+        const isFallbackMode =
+          vueFallbackActive.value &&
+          (props.mode === 'sfc' || isActiveHmrSourcePreview(sourcePreviewId))
+        if (!isFallbackMode) {
+          vueFallbackActive.value = false
+        }
         await loadVueRuntimePreview()
         commitRenderedPreviewProps(props.previewProps || {})
         Comp.value = null
@@ -802,14 +830,15 @@ watch(
     const previousText = previewBodyText(previewIframeWindow())
     const expectedTexts = visibleTextCandidates(nextPreviewProps || {}, previousText)
     commitRenderedPreviewProps(nextPreviewProps || {})
-    recordPreviewTiming(currentCanvasArtifactId(), 'hmr_preview_props_received', {
+    const sourcePreviewId = currentCanvasArtifactId()
+    recordPreviewTiming(sourcePreviewId, 'hmr_preview_props_received', {
       source: 'preview-props-watch',
       contentSourcePreviewId: props.contentSourcePreviewId || null,
       contentReady: props.contentReady !== false,
       visibleTextSample: visibleTextCandidates(nextPreviewProps || {}).slice(0, 16),
     })
-    if (hasRenderablePreview.value) {
-      void emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId(), {
+    if (hasRenderablePreview.value && !isActiveHmrSourcePreview(sourcePreviewId)) {
+      void emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
         previousText,
         expectedTexts,
         source: 'preview-props',
