@@ -60,6 +60,16 @@ const props = defineProps<{
    * pod layer sequence attributes render their final visible state immediately.
    */
   settleLayerSequences?: boolean
+  /**
+   * Bumped by the parent after HMR props commits so layer final-state overrides
+   * reapply after the pod component updates its own sequence attributes/styles.
+   */
+  settleLayerSequencesRevision?: number
+  /**
+   * Bumped when the parent slot mode or props change. The iframe mini-app is
+   * intentionally stable, so it needs an explicit signal to refresh slot vnodes.
+   */
+  slotRevision?: number | string | null
 }>()
 
 const emit = defineEmits<{
@@ -215,6 +225,81 @@ function applyScrollMode(doc: Document, scrollable: boolean) {
 
   body.style.margin = '0'
   body.style.padding = '0'
+}
+
+function clearLayerSequenceSettleOverrides(doc: Document) {
+  doc
+    .querySelectorAll<HTMLElement>('[data-pods-preview-sequence-root-settled="1"]')
+    .forEach((sequenceRoot) => {
+      if (sequenceRoot.dataset.podsPreviewHadSequenceSettled !== '1') {
+        sequenceRoot.classList.remove('sequence-settled')
+      }
+
+      const previousState = sequenceRoot.dataset.podsPreviewPreviousSequenceState
+      if (sequenceRoot.dataset.podsPreviewHadSequenceState === '1') {
+        sequenceRoot.dataset.sequenceState = previousState
+      } else {
+        sequenceRoot.removeAttribute('data-sequence-state')
+      }
+
+      sequenceRoot.removeAttribute('data-pods-preview-had-sequence-settled')
+      sequenceRoot.removeAttribute('data-pods-preview-had-sequence-state')
+      sequenceRoot.removeAttribute('data-pods-preview-previous-sequence-state')
+      sequenceRoot.removeAttribute('data-pods-preview-sequence-root-settled')
+    })
+  doc
+    .querySelectorAll<HTMLElement>('[data-pods-preview-layer-settled-inline="1"]')
+    .forEach((element) => {
+      element.style.removeProperty('animation')
+      element.style.removeProperty('opacity')
+      element.style.removeProperty('pointer-events')
+      element.style.removeProperty('transform')
+      element.style.removeProperty('visibility')
+      element.removeAttribute('data-pods-preview-layer-settled-inline')
+    })
+}
+
+function applyLayerSequenceSettleOverrides(doc: Document, enabled: boolean) {
+  clearLayerSequenceSettleOverrides(doc)
+  if (!enabled) return
+
+  doc.querySelectorAll<HTMLElement>('[data-pod-layer-sequence="1"]').forEach((sequenceRoot) => {
+    sequenceRoot.dataset.podsPreviewHadSequenceSettled = sequenceRoot.classList.contains(
+      'sequence-settled',
+    )
+      ? '1'
+      : '0'
+    sequenceRoot.dataset.podsPreviewHadSequenceState = sequenceRoot.hasAttribute(
+      'data-sequence-state',
+    )
+      ? '1'
+      : '0'
+    sequenceRoot.dataset.podsPreviewPreviousSequenceState = sequenceRoot.dataset.sequenceState || ''
+    sequenceRoot.dataset.podsPreviewSequenceRootSettled = '1'
+    sequenceRoot.classList.add('sequence-settled')
+    sequenceRoot.dataset.sequenceState = 'settled'
+  })
+
+  doc
+    .querySelectorAll<HTMLElement>('[data-pod-layer-sequence="1"] [data-layer]')
+    .forEach((layer) => {
+      const finalVisible = layer.dataset.layerFinalVisible === '1'
+      layer.dataset.layerCurrentVisible = finalVisible ? '1' : '0'
+      layer.setAttribute('aria-hidden', finalVisible ? 'false' : 'true')
+      layer.setAttribute('data-pods-preview-layer-settled-inline', '1')
+      layer.style.setProperty('animation', 'none', 'important')
+      layer.style.setProperty('transform', 'none', 'important')
+
+      if (finalVisible) {
+        layer.style.setProperty('opacity', '1', 'important')
+        layer.style.setProperty('visibility', 'visible', 'important')
+        layer.style.setProperty('pointer-events', 'auto', 'important')
+      } else {
+        layer.style.setProperty('opacity', '0', 'important')
+        layer.style.setProperty('visibility', 'hidden', 'important')
+        layer.style.setProperty('pointer-events', 'none', 'important')
+      }
+    })
 }
 
 async function ensureScripts(doc: Document, urls: string[]) {
@@ -436,6 +521,9 @@ async function bootIframeNow() {
       emit('scriptsLoaded', { moduleScripts: [], scripts, extraStylesheets })
     }
   }
+
+  await nextTick()
+  applyLayerSequenceSettleOverrides(doc, props.settleLayerSequences === true)
 }
 
 watchEffect(() => {
@@ -451,6 +539,8 @@ watchEffect(() => {
   void props.canvasArtifactId
   void props.debugFill
   void props.settleLayerSequences
+  void props.settleLayerSequencesRevision
+  void props.slotRevision
   if (props.ready === false && slotVNode.value) {
     void nextTick().then(() => bootIframe())
     return

@@ -54,11 +54,14 @@ const renderedPreviewProps = shallowRef<Record<string, unknown>>({})
 const renderedSfcArtifactId = ref<string | null>(null)
 const renderedSfcPodSlug = ref<string | null>(null)
 const settledLayerSequenceSourcePreviewId = ref<string | null>(null)
+const layerSequenceSettleRevision = ref(0)
+const previewSlotRevision = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let previewReadyRequestId = 0
 const committedSfcSwapTimingKeys = new Set<string>()
 const settledLayerSequenceTimingKeys = new Set<string>()
+const resolvedRenderModeTimingKeys = new Set<string>()
 
 const vueScripts = ref<string[]>([])
 const vueStylesheets = ref<string[]>([])
@@ -68,9 +71,16 @@ const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
 const renderedMode = ref<PodsPlayerMode | null>(null)
-const requestedEffectiveMode = computed(() =>
-  props.mode === 'sfc' && vueFallbackActive.value ? 'vue' : props.mode,
-)
+const requestedEffectiveMode = computed(() => {
+  const sourcePreviewId = currentCanvasArtifactId()
+  const shouldUseHmrSfc = isActiveHmrSourcePreview(sourcePreviewId)
+
+  if ((props.mode === 'sfc' || shouldUseHmrSfc) && vueFallbackActive.value) {
+    return 'vue'
+  }
+
+  return shouldUseHmrSfc ? 'sfc' : props.mode
+})
 const effectiveMode = computed(() => renderedMode.value || requestedEffectiveMode.value)
 const renderedCanvasArtifactId = computed(() =>
   effectiveMode.value === 'sfc' ? renderedSfcArtifactId.value : currentCanvasArtifactId(),
@@ -94,6 +104,12 @@ const hasMountedPreviewSurface = computed(() =>
       hasRenderablePreview.value,
   ),
 )
+
+function commitRenderedPreviewProps(nextPreviewProps: Record<string, unknown>) {
+  renderedPreviewProps.value = nextPreviewProps
+  previewSlotRevision.value += 1
+}
+
 const targetableValues = computed(() =>
   [...(props.selectableTargets || [])]
     .filter((target) => target.displayValue.trim().length > 0)
@@ -384,15 +400,15 @@ async function emitPreviewReadyAfterPaint(
   await nextTick()
   await waitForCanvasArtifact(win, sourcePreviewId)
   await waitForPreviewContent(win)
+  const explicitPreviousText = options.previousText || ''
+  const previousText = explicitPreviousText || previewBodyText(win)
+  const registeredExpectedTexts = sourcePreviewExpectedTexts(sourcePreviewId, explicitPreviousText)
   const expectedTexts = [
-    ...(options.expectedTexts || []),
-    ...sourcePreviewExpectedTexts(sourcePreviewId, options.previousText || ''),
+    ...(sourcePreviewId && registeredExpectedTexts.length > 0
+      ? registeredExpectedTexts
+      : options.expectedTexts || []),
   ].filter((value, index, list) => list.indexOf(value) === index)
-  const previewWait = await waitForExpectedPreviewTextOrChange(
-    win,
-    expectedTexts,
-    options.previousText,
-  )
+  const previewWait = await waitForExpectedPreviewTextOrChange(win, expectedTexts, previousText)
   await waitForPreviewPaint(win)
   const useFastHmrReadyPath = isActiveHmrSourcePreview(sourcePreviewId)
   if (!useFastHmrReadyPath) {
@@ -430,9 +446,10 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-async function vueRuntimeApi(
-  win: Window | null,
-): Promise<{ renderPod: (args: unknown) => void } | null> {
+async function vueRuntimeApi(win: Window | null): Promise<{
+  renderPod: (args: unknown) => void
+  unmount?: (args: unknown) => void
+} | null> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const api = (win as any)?.__AUTUMN_PODS_VUE__
 
@@ -444,6 +461,26 @@ async function vueRuntimeApi(
   }
 
   return null
+}
+
+function unmountVueRuntimePreview(sourcePreviewId: string | null): boolean {
+  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
+  const api = (frame?.contentWindow as any)?.__AUTUMN_PODS_VUE__
+  if (!api || typeof api.unmount !== 'function') return false
+
+  try {
+    api.unmount({ mountSelector: '[data-pods-vue-mount="1"]' })
+    recordPreviewTiming(sourcePreviewId, 'vue_runtime_preview_unmounted_for_sfc', {
+      podSlug: props.pod?.slug || null,
+    })
+    return true
+  } catch (exception) {
+    recordPreviewTiming(sourcePreviewId, 'vue_runtime_preview_unmount_skipped', {
+      podSlug: props.pod?.slug || null,
+      message: exception instanceof Error ? exception.message : String(exception),
+    })
+    return false
+  }
 }
 
 if (import.meta.client && import.meta.hot) {
@@ -546,6 +583,7 @@ async function settleLayerSequencesForSourcePreview(
   if (!shouldSettleLayerSequencesForSourcePreview(sourcePreviewId)) return
 
   settledLayerSequenceSourcePreviewId.value = sourcePreviewId
+  layerSequenceSettleRevision.value += 1
   const timingKey = `${props.pod?.slug || ''}:${sourcePreviewId || ''}`
   if (sourcePreviewId && !settledLayerSequenceTimingKeys.has(timingKey)) {
     settledLayerSequenceTimingKeys.add(timingKey)
@@ -565,11 +603,24 @@ async function stageSfcComponentSwap(
 ): Promise<void> {
   const nextComp = markRaw(mod as any)
 
-  renderedPreviewProps.value = nextPreviewProps
+  recordPreviewTiming(sourcePreviewId, 'hmr_sfc_props_staged', {
+    podSlug: props.pod?.slug || null,
+    visibleTextSample: visibleTextCandidates(nextPreviewProps).slice(0, 16),
+  })
   Comp.value = nextComp
   renderedMode.value = 'sfc'
   renderedSfcArtifactId.value = sourcePreviewId
   renderedSfcPodSlug.value = props.pod?.slug || null
+  vueScripts.value = []
+  vueStylesheets.value = []
+  vueRuntimeLoadKey.value = ''
+  vueReady.value = false
+  commitRenderedPreviewProps(nextPreviewProps)
+  await nextTick()
+  if (unmountVueRuntimePreview(sourcePreviewId)) {
+    previewSlotRevision.value += 1
+    await nextTick()
+  }
   const timingKey = `${props.pod?.slug || ''}:${sourcePreviewId || ''}`
   if (sourcePreviewId && !committedSfcSwapTimingKeys.has(timingKey)) {
     committedSfcSwapTimingKeys.add(timingKey)
@@ -595,8 +646,10 @@ watch(
   () =>
     [
       props.pod?.slug,
-      props.mode,
+      requestedEffectiveMode.value,
       currentCanvasArtifactId(),
+      props.contentSourcePreviewId,
+      props.contentReady,
       activeSourcePreviewRevision.value,
     ] as const,
   async ([slug, mode]) => {
@@ -619,6 +672,40 @@ watch(
     loading.value = true
     try {
       const requestedSourcePreviewId = currentCanvasArtifactId()
+      if (requestedSourcePreviewId || activeSourcePreviewId.value) {
+        const timingKey = [
+          slug,
+          requestedSourcePreviewId || 'none',
+          mode,
+          props.mode,
+          activeSourcePreviewRevision.value,
+          props.contentSourcePreviewId || 'none',
+          props.contentReady === false ? 'not-ready' : 'ready',
+        ].join(':')
+        if (!resolvedRenderModeTimingKeys.has(timingKey)) {
+          resolvedRenderModeTimingKeys.add(timingKey)
+          recordPreviewTiming(
+            requestedSourcePreviewId || activeSourcePreviewId.value || null,
+            'hmr_preview_render_mode_resolved',
+            {
+              podSlug: slug,
+              routeMode: props.mode,
+              requestedMode: mode,
+              renderedMode: renderedMode.value,
+              requestedSourcePreviewId,
+              activeSourcePreviewId: activeSourcePreviewId.value || null,
+              activeSourcePreviewPodSlug: activeSourcePreviewPodSlug.value || null,
+              activeSourcePreviewDraftPackId: activeSourcePreviewDraftPackId.value || null,
+              currentDraftPackId: currentDraftPackId() || null,
+              activeSourcePreviewRevision: activeSourcePreviewRevision.value,
+              contentSourcePreviewId: props.contentSourcePreviewId || null,
+              contentReady: props.contentReady !== false,
+              isActiveHmrSourcePreview: isActiveHmrSourcePreview(requestedSourcePreviewId),
+              hasRenderablePreview: hasRenderablePreview.value,
+            },
+          )
+        }
+      }
       if (
         settledLayerSequenceSourcePreviewId.value &&
         settledLayerSequenceSourcePreviewId.value !== requestedSourcePreviewId
@@ -643,7 +730,7 @@ watch(
           renderedSfcArtifactId.value === sourcePreviewId &&
           renderedSfcPodSlug.value === slug
         ) {
-          renderedPreviewProps.value = stagedPreviewProps
+          commitRenderedPreviewProps(stagedPreviewProps)
           recordPreviewTiming(sourcePreviewId, 'hmr_sfc_existing_props_committed', {
             podSlug: slug,
           })
@@ -665,7 +752,7 @@ watch(
           }
           vueFallbackActive.value = true
           await loadVueRuntimePreview()
-          renderedPreviewProps.value = props.previewProps || {}
+          commitRenderedPreviewProps(props.previewProps || {})
           Comp.value = null
           renderedSfcArtifactId.value = null
           renderedSfcPodSlug.value = null
@@ -673,16 +760,11 @@ watch(
           return
         }
         vueFallbackActive.value = false
-        vueScripts.value = []
-        vueStylesheets.value = []
-        vueRuntimeLoadKey.value = ''
-        vueReady.value = false
         await waitForPreviewDataReady(sourcePreviewId)
         await nextTick()
         const nextPreviewProps = props.previewProps || {}
         await stageSfcComponentSwap(mod, nextPreviewProps, sourcePreviewId)
         const expectedTexts = visibleTextCandidates(nextPreviewProps, previousText)
-        renderedPreviewProps.value = nextPreviewProps
         await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
           previousText,
           expectedTexts,
@@ -691,7 +773,7 @@ watch(
       } else if (mode === 'vue') {
         vueFallbackActive.value = false
         await loadVueRuntimePreview()
-        renderedPreviewProps.value = props.previewProps || {}
+        commitRenderedPreviewProps(props.previewProps || {})
         Comp.value = null
         renderedSfcArtifactId.value = null
         renderedSfcPodSlug.value = null
@@ -719,7 +801,13 @@ watch(
 
     const previousText = previewBodyText(previewIframeWindow())
     const expectedTexts = visibleTextCandidates(nextPreviewProps || {}, previousText)
-    renderedPreviewProps.value = nextPreviewProps || {}
+    commitRenderedPreviewProps(nextPreviewProps || {})
+    recordPreviewTiming(currentCanvasArtifactId(), 'hmr_preview_props_received', {
+      source: 'preview-props-watch',
+      contentSourcePreviewId: props.contentSourcePreviewId || null,
+      contentReady: props.contentReady !== false,
+      visibleTextSample: visibleTextCandidates(nextPreviewProps || {}).slice(0, 16),
+    })
     if (hasRenderablePreview.value) {
       void emitPreviewReadyAfterPaint(previewIframeWindow(), currentCanvasArtifactId(), {
         previousText,
@@ -784,6 +872,8 @@ watch(
       :canvas-artifact-id="renderedCanvasArtifactId"
       :debug-fill="debugFill"
       :settle-layer-sequences="settleLayerSequencesForPreview"
+      :settle-layer-sequences-revision="layerSequenceSettleRevision"
+      :slot-revision="previewSlotRevision"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
     >
