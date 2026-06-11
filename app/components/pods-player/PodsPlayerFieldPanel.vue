@@ -21,6 +21,8 @@ const props = defineProps<{
   readOnly?: boolean
   /** Optional host-controlled active tab. */
   activeTab?: PanelTab | null
+  /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
+  fieldNotes?: Array<{ fieldPath: string; message: string }>
 }>()
 
 const emit = defineEmits<{
@@ -288,6 +290,7 @@ watchEffect(() => {
             :model-value="modelValue"
             :viewport="viewport || 'laptop'"
             :read-only="readOnly"
+            :field-notes="fieldNotes"
             @update:model-value="(payload) => !readOnly && emit('update:modelValue', payload)"
             @update:viewport="(val) => emit('update:viewport', val)"
           />

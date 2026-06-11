@@ -32,7 +32,38 @@ const props = defineProps<{
   libraryMediaItems?: Array<Record<string, unknown>>
   mediaSourceMode?: 'cms' | 'playground'
   readOnly?: boolean
+  /**
+   * Field-anchored notes (e.g. accessibility auto-adjustments) rendered under
+   * the matching control, keyed by the YAML field dot-path.
+   */
+  fieldNotes?: Array<{ fieldPath: string; message: string }>
 }>()
+
+/**
+ * Resolve the note for a field by exact or prefix dot-path match.
+ *
+ * Role: Surfaces "adjusted to meet accessibility standards"-style notes next
+ * to the responsible control so auto-corrections are visible, never silent.
+ */
+function noteFor(field: FormField): string | null {
+  const notes = props.fieldNotes
+
+  if (!notes?.length) {
+    return null
+  }
+
+  const key = String((field as { path?: unknown }).path || field.name || '').trim()
+
+  if (!key) {
+    return null
+  }
+
+  const match = notes.find(
+    (note) => note.fieldPath === key || note.fieldPath.startsWith(`${key}.`),
+  )
+
+  return match?.message || null
+}
 
 interface UpdatePayload {
   field: string
@@ -591,6 +622,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
+                :field-notes="fieldNotes"
                 @update:model-value="
                   ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
                 "
@@ -612,6 +644,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
+          :field-notes="fieldNotes"
           :media-items="mediaItems || []"
           :story-media-items="storyMediaItems || []"
           :library-media-items="libraryMediaItems || []"
@@ -750,6 +783,15 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string]"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
+            <p
+              v-if="noteFor(child)"
+              class="mt-1 flex items-start gap-1 text-xs"
+              style="color: var(--pg-fg-meta, #6b7280)"
+              data-testid="field-a11y-note"
+            >
+              <span aria-hidden="true">ⓘ</span>
+              <span>{{ noteFor(child) }}</span>
+            </p>
           </UFormField>
         </div>
       </template>
@@ -1017,6 +1059,15 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           Maximum {{ repeaterMax(field) }} {{ field.label || 'items' }} reached.
         </p>
       </div>
+      <p
+        v-if="noteFor(field)"
+        class="mt-1 flex items-start gap-1 text-xs"
+        style="color: var(--pg-fg-meta, #6b7280)"
+        data-testid="field-a11y-note"
+      >
+        <span aria-hidden="true">ⓘ</span>
+        <span>{{ noteFor(field) }}</span>
+      </p>
     </UFormField>
   </template>
 </template>

@@ -37,6 +37,8 @@ const props = defineProps<{
   previewPropsOverride?: Record<string, unknown> | null
   selectedCanvasTargetKey?: string | null
   fieldPanelActiveTab?: FieldPanelTab | null
+  /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
+  fieldNotes?: Array<{ fieldPath: string; message: string }>
 }>()
 
 const emit = defineEmits<{
@@ -388,6 +390,7 @@ function targetDisplayValue(value: unknown): string {
       :show-yaml-tab="showYamlTab"
       :read-only="readOnly"
       :active-tab="fieldPanelActiveTab"
+      :field-notes="fieldNotes"
       @update:model-value="(payload) => !readOnly && applyFormUpdate(payload)"
       @update:viewport="setViewport"
       @update:active-tab="emit('update:fieldPanelActiveTab', $event)"
