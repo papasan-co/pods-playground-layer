@@ -308,7 +308,7 @@ function targetDisplayValue(value: unknown): string {
       @expand="togglePodList()"
     />
 
-    <div class="flex min-w-0 flex-1 flex-col overflow-hidden pr-3.5 pt-3.5">
+    <div class="relative flex min-w-0 flex-1 flex-col overflow-hidden pr-3.5 pt-3.5">
       <PodsPlayerCanvasToolbar
         :pack-label="packLabel"
         :pod-label="podLabel"
@@ -333,7 +333,12 @@ function targetDisplayValue(value: unknown): string {
         @update:show-yaml-tab="setShowYamlTab"
       />
 
-      <slot name="canvas-status" />
+      <div
+        v-if="$slots['canvas-status']"
+        class="pointer-events-none absolute left-1/2 top-16 z-20 -translate-x-1/2"
+      >
+        <slot name="canvas-status" />
+      </div>
 
       <PodsPlayerCanvasCard
         :artifact-ready="artifactReady !== false"
