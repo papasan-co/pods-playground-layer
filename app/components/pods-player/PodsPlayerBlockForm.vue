@@ -682,7 +682,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               </div>
             </template>
             <UInput
-              v-if="child.type === 'input'"
+              v-if="child.type === 'input' || child.type === 'text'"
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
@@ -830,7 +830,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         @update="(val) => updatePositionGrid(field, val)"
       />
       <UInput
-        v-else-if="field.type === 'input'"
+        v-else-if="field.type === 'input' || field.type === 'text'"
         class="w-full"
         size="sm"
         :disabled="isReadOnly(field)"
