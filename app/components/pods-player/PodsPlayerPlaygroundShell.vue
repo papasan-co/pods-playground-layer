@@ -333,6 +333,8 @@ function targetDisplayValue(value: unknown): string {
         @update:show-yaml-tab="setShowYamlTab"
       />
 
+      <slot name="canvas-status" />
+
       <PodsPlayerCanvasCard
         :artifact-ready="artifactReady !== false"
         :viewport="viewport"
