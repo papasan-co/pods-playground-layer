@@ -199,6 +199,18 @@ function applyScrollMode(doc: Document, scrollable: boolean) {
   body.style.padding = '0'
 }
 
+function notifyFrameResize() {
+  const win = iframeRef.value?.contentWindow
+  if (!win) return
+
+  win.dispatchEvent(new Event('resize'))
+}
+
+function scheduleFrameResizeNotifications() {
+  requestAnimationFrame(notifyFrameResize)
+  ;[100, 350, 700].forEach((delay) => window.setTimeout(notifyFrameResize, delay))
+}
+
 function syncBodyDataset(doc: Document) {
   const body = doc.body
   if (!body) return
@@ -317,6 +329,7 @@ async function bootIframe() {
     obs.observe(document.head, { childList: true })
 
     applyScrollMode(doc, !!props.scrollable)
+    scheduleFrameResizeNotifications()
 
     miniApp = createApp({ render: () => slotVNode.value || null })
     miniApp.mount(doc.body)
@@ -330,6 +343,7 @@ async function bootIframe() {
   syncBodyDataset(doc)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
+  scheduleFrameResizeNotifications()
 
   if (props.moduleScripts?.length) {
     await ensureModuleScripts(doc, props.moduleScripts)
@@ -380,6 +394,12 @@ watchEffect(() => {
         )
   void bootIframe()
 })
+
+watch(
+  () => [props.device, scaledSize.value.width, scaledSize.value.height, props.scrollable] as const,
+  () => scheduleFrameResizeNotifications(),
+  { flush: 'post' },
+)
 </script>
 
 <template>

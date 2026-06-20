@@ -49,7 +49,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string | { src: string; url: string; alt?: string }): void
+  (e: 'update:modelValue', value: string | { src: string; url: string; mediaId?: string; s3Key?: string; alt?: string }): void
 }>()
 
 const isOpen = ref(false)
@@ -82,11 +82,20 @@ function isVideoEntry(entry: MediaCatalogEntry | PickerEntry | null | undefined)
 }
 
 function toEmittedValue(entryOrUrl: string | PickerEntry, alt?: string) {
-  const value = typeof entryOrUrl === 'string' ? entryOrUrl : (entryOrUrl.s3Key || entryOrUrl.url)
-  const label = typeof entryOrUrl === 'string' ? alt : (entryOrUrl.alt || entryOrUrl.title)
+  const isStringValue = typeof entryOrUrl === 'string'
+  const value = isStringValue ? entryOrUrl : (entryOrUrl.s3Key || entryOrUrl.url)
+  const label = isStringValue ? alt : (entryOrUrl.alt || entryOrUrl.title)
+
   if (props.emitObject) {
-    return { src: value, url: value, ...(label ? { alt: label } : {}) }
+    return {
+      src: value,
+      url: value,
+      ...(!isStringValue && entryOrUrl.id ? { mediaId: entryOrUrl.id } : {}),
+      ...(!isStringValue && entryOrUrl.s3Key ? { s3Key: entryOrUrl.s3Key } : {}),
+      ...(label ? { alt: label } : {}),
+    }
   }
+
   return value
 }
 
@@ -460,4 +469,3 @@ function choose(it: PickerEntry) {
     </div>
   </div>
 </template>
-

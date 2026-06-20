@@ -236,11 +236,27 @@ function makeKey() {
 
 type RepeaterItem = Record<string, unknown> & { _key?: string; _removing?: boolean }
 
-function normaliseRepeater(value: unknown): RepeaterItem[] {
-  return (Array.isArray(value) ? value : []).map((v) => ({
-    _key: (v as any)?._key ?? makeKey(),
-    ...(v as Record<string, unknown>),
-  }))
+function firstEditableRepeaterFieldName(field?: FormField): string {
+  const child = field?.fields?.find((candidate) => candidate.name && !isHidden(candidate))
+  return typeof child?.name === 'string' ? child.name : 'value'
+}
+
+function normaliseRepeater(value: unknown, field?: FormField): RepeaterItem[] {
+  const primitiveField = firstEditableRepeaterFieldName(field)
+
+  return (Array.isArray(value) ? value : []).map((v) => {
+    if (isObjectLike(v)) {
+      return {
+        _key: (v as RepeaterItem)._key ?? makeKey(),
+        ...(v as Record<string, unknown>),
+      }
+    }
+
+    return {
+      _key: makeKey(),
+      [primitiveField]: v,
+    }
+  })
 }
 
 const repeaterOpen = reactive<Record<string, Record<string, boolean>>>({})
@@ -259,6 +275,15 @@ function toggleItemOpen(block: string, key: string) {
 }
 
 function summarizeRepeaterItem(item: RepeaterItem, idx: number): string {
+  const summary = item.summary ?? item.text ?? item.title ?? item.name ?? item.caption ?? item.alt
+  if (typeof summary === 'string' && summary.trim() !== '') return summary.trim()
+
+  const image = item.image
+  if (isObjectLike(image)) {
+    const filename = image.filename ?? image.name ?? image.downloadFilename ?? image.alt
+    if (typeof filename === 'string' && filename.trim() !== '') return filename.trim()
+  }
+
   const label = typeof item.label === 'string' ? item.label : ''
   const prefix = typeof item.prefix === 'string' ? item.prefix : ''
   const suffix = typeof item.suffix === 'string' ? item.suffix : ''
@@ -275,8 +300,8 @@ function summarizeRepeaterItem(item: RepeaterItem, idx: number): string {
 }
 
 const lists = new Map<string, ReturnType<typeof shallowRef<RepeaterItem[]>>>()
-function listFor(block: string) {
-  if (!lists.has(block)) lists.set(block, shallowRef(normaliseRepeater(props.modelValue[block])))
+function listFor(block: string, field?: FormField) {
+  if (!lists.has(block)) lists.set(block, shallowRef(normaliseRepeater(props.modelValue[block], field)))
   return lists.get(block)!
 }
 
@@ -327,14 +352,14 @@ function initializeRepeater(field: FormField) {
   const modelValue = props.modelValue[field.name]
 
   if (modelValue && Array.isArray(modelValue) && modelValue.length > 0) {
-    listFor(field.name).value = normaliseRepeater(modelValue)
+    listFor(field.name, field).value = normaliseRepeater(modelValue, field)
     localStorage.removeItem(`PodsPlayerBlockForm:${field.name}`)
   } else {
     const cached = localStorage.getItem(`PodsPlayerBlockForm:${field.name}`)
     if (cached) {
       try {
         const parsed = JSON.parse(cached)
-        listFor(field.name).value = normaliseRepeater(parsed)
+        listFor(field.name, field).value = normaliseRepeater(parsed, field)
         emit('update:modelValue', { field: field.name, value: parsed })
       } catch {
         // ignore
@@ -356,13 +381,22 @@ watch(
       if (field.type === 'repeater') {
         const mv = newValue[field.name]
         if (mv && Array.isArray(mv) && mv.length > 0) {
-          listFor(field.name).value = normaliseRepeater(mv)
+          listFor(field.name, field).value = normaliseRepeater(mv, field)
           localStorage.removeItem(`PodsPlayerBlockForm:${field.name}`)
         }
       }
     }
   },
   { deep: true, immediate: false },
+)
+
+watch(
+  () => props.fields,
+  () => {
+    hoistUiOnlyGroupValues()
+    for (const field of props.fields) initializeRepeater(field)
+  },
+  { deep: true },
 )
 
 function updateRepeaterItem(block: string, idx: number, child: string, value: unknown) {
@@ -501,6 +535,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
+                :media-items="mediaItems || []"
+                :story-media-items="storyMediaItems || []"
+                :library-media-items="libraryMediaItems || []"
+                :media-source-mode="mediaSourceMode || 'playground'"
                 @update:model-value="
                   ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
                 "
@@ -827,7 +865,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :ref="(el) => el && initSortable(el as HTMLElement, field.name)"
         >
           <div
-            v-for="(item, idx) in listFor(field.name).value"
+            v-for="(item, idx) in listFor(field.name, field).value"
             :key="(item as any)._key || idx"
             class="repeater-card rounded-md border border-gray-200 dark:border-gray-700 p-3 transition-opacity"
             :class="{ 'opacity-30': (item as any)._removing }"
