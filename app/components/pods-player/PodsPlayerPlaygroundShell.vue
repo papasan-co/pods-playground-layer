@@ -48,6 +48,9 @@ const emit = defineEmits<{
   selectCanvasTarget: [target: PodsPlayerCanvasTarget]
   previewReady: [payload: { sourcePreviewId: string | null }]
   'update:fieldPanelActiveTab': [value: FieldPanelTab]
+  // Fired after a user edit in the field panel with the panel's full current
+  // values — the host app persists them (playground autosave).
+  formValuesChanged: [values: Record<string, unknown>]
 }>()
 
 const slugRef = toRef(props, 'slug')
@@ -398,7 +401,13 @@ function targetDisplayValue(value: unknown): string {
       :read-only="readOnly"
       :active-tab="fieldPanelActiveTab"
       :field-notes="fieldNotes"
-      @update:model-value="(payload) => !readOnly && applyFormUpdate(payload)"
+      @update:model-value="
+        (payload) => {
+          if (readOnly) return
+          applyFormUpdate(payload)
+          emit('formValuesChanged', { ...flatForm })
+        }
+      "
       @update:viewport="setViewport"
       @update:active-tab="emit('update:fieldPanelActiveTab', $event)"
       @toggle-advanced="toggleAdvanced"
