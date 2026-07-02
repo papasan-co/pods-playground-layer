@@ -6,6 +6,7 @@
  */
 
 import { usePodPlayer } from '../../composables/pods-player/usePodPlayer'
+import { flatFromFixture } from '../../pods-player/formMapper'
 import { usePlaygroundLayout } from '../../composables/pods-player/usePlaygroundLayout'
 import type { PodsPlayerCanvasTarget, PodListItem } from '#pods-player/types'
 import PodsPlayerWorkspaceRail from './PodsPlayerWorkspaceRail.vue'
@@ -155,6 +156,29 @@ function mergePreviewProps(
 
 const effectivePreviewProps = computed(() =>
   mergePreviewProps(previewProps.value, props.previewPropsOverride),
+)
+
+// The canvas honors the host's saved/effective values via
+// previewPropsOverride, but the FIELD PANEL hydrated only from the pod
+// fixture — a reloaded page showed defaults in the controls even though the
+// draft carried saved values. Overlay the override onto the form whenever it
+// changes so panel and canvas agree.
+watch(
+  [() => props.previewPropsOverride, formSchema, loading],
+  ([override, schemaFields, isLoading]) => {
+    // loadPodData wholesale-resets flatForm when the pod loads, so the
+    // overlay must (re)apply after loading settles — not only when the
+    // override itself changes.
+    if (isLoading) return
+    if (!override || !Array.isArray(schemaFields) || schemaFields.length === 0) return
+
+    const overrideFlat = flatFromFixture(schemaFields, override as Record<string, unknown>)
+
+    for (const [key, value] of Object.entries(overrideFlat)) {
+      if (value !== undefined) flatForm[key] = value
+    }
+  },
+  { immediate: true },
 )
 const selectableCanvasTargets = computed<PodsPlayerCanvasTarget[]>(() =>
   canvasTargetsFromFields(formSchema.value, effectivePreviewProps.value),
