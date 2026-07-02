@@ -74,7 +74,9 @@ const {
   hasChanges,
   reloadComponent,
   applyFormUpdate,
-} = usePodPlayer(slugRef)
+} = usePodPlayer(slugRef, {
+  savedValuesOverlay: () => props.savedFieldValues ?? null,
+})
 
 function stepPod(delta: number) {
   const idx = props.pods.findIndex((p) => p.slug === props.slug)
@@ -160,27 +162,23 @@ const effectivePreviewProps = computed(() =>
   mergePreviewProps(previewProps.value, props.previewPropsOverride),
 )
 
-// The field panel hydrates only from the pod fixture, so a reloaded page
-// showed defaults even though the draft carried the user's saved values.
-// Overlay the draft's saved edit_state (flatForm-shaped — it IS a saved
-// flatForm) verbatim. NEVER derive this from the compiled contract: mapping
-// the contract through the fixture mapper produces empty schema defaults
-// that clobber real fixture values and blank the canvas (live regression,
-// July 2).
+// Saved edit_state is applied INSIDE usePodPlayer's form resets (the
+// savedValuesOverlay option) so no watcher ordering can shadow it. This
+// watch covers only LATE ARRIVAL: the draft fetch resolving after the pod
+// already loaded. NEVER derive saved values from the compiled contract:
+// mapping the contract through the fixture mapper produces empty schema
+// defaults that clobber real fixture values and blank the canvas (live
+// regression, July 2).
 watch(
-  [() => props.savedFieldValues, formSchema, loading],
-  ([saved, , isLoading]) => {
-    // loadPodData wholesale-resets flatForm when the pod loads; formSchema
-    // repopulates after that reset, so it must stay a trigger — otherwise
-    // this can fire once before the reset and the saved values are lost.
-    if (isLoading) return
+  () => props.savedFieldValues,
+  (saved) => {
+    if (loading.value) return
     if (!saved || typeof saved !== 'object') return
 
     for (const [key, value] of Object.entries(saved)) {
       if (value !== undefined) flatForm[key] = value
     }
   },
-  { immediate: true },
 )
 const selectableCanvasTargets = computed<PodsPlayerCanvasTarget[]>(() =>
   canvasTargetsFromFields(formSchema.value, effectivePreviewProps.value),

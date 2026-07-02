@@ -17,7 +17,20 @@ type PodDetailsWithCompiledContract = PodDetails & {
   compiled_contract?: Record<string, unknown> | null
 }
 
-export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
+export function usePodPlayer(
+  slug: MaybeRefOrGetter<string>,
+  options?: {
+    /**
+     * Host-provided saved field values (a draft's edit_state, flatForm-shaped)
+     * applied INSIDE every form reset. Applying them from an external watcher
+     * instead is a race: loadPodData and the variant-fixture merge both write
+     * fixture defaults into flatForm, and whichever watcher flushes last wins
+     * (live flake: a reloaded page showed the staged default instead of the
+     * user's saved value roughly 1 run in 3).
+     */
+    savedValuesOverlay?: MaybeRefOrGetter<Record<string, unknown> | null | undefined>
+  },
+) {
   const runtime = usePodsPlayerRuntime()
   const route = useRoute()
   const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
@@ -87,6 +100,15 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
   const flatForm = reactive<Record<string, unknown>>({})
   const formSchema = ref<FormField[]>([])
+
+  function applySavedValuesOverlay(target: Record<string, unknown>): void {
+    const saved = toValue(options?.savedValuesOverlay)
+    if (!saved || typeof saved !== 'object') return
+
+    for (const [key, value] of Object.entries(saved)) {
+      if (value !== undefined) target[key] = value
+    }
+  }
 
   function isRecord(v: unknown): v is Record<string, unknown> {
     return !!v && typeof v === 'object' && !Array.isArray(v)
@@ -425,6 +447,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
         const flat = flatFromFixture(nextFormSchema, nextFixture || {})
         Object.assign(nextFlatForm, flat)
         ensureVisibleFieldDefaults(nextFormSchema, nextFlatForm)
+        // Saved values join the reset atomically AND become the clean
+        // baseline: a reloaded draft is not "dirty" for showing what the
+        // user saved.
+        applySavedValuesOverlay(nextFlatForm)
         nextInitialFormValues = JSON.parse(JSON.stringify(nextFlatForm))
         nextHydratedVariant = typeof nextFlatForm.type === 'string' ? nextFlatForm.type : null
       }
@@ -490,6 +516,8 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
       const variantFlat = flatFromFixture(formSchema.value, variantFixture)
       mergeMissingValues(flatForm, variantFlat)
       ensureVisibleFieldDefaults(formSchema.value, flatForm)
+      // The variant fixture must never shadow the user's saved values.
+      applySavedValuesOverlay(flatForm)
       hydratedVariant.value = nextVariant
     },
   )
