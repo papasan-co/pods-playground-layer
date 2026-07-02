@@ -6,7 +6,6 @@
  */
 
 import { usePodPlayer } from '../../composables/pods-player/usePodPlayer'
-import { flatFromFixture } from '../../pods-player/formMapper'
 import { usePlaygroundLayout } from '../../composables/pods-player/usePlaygroundLayout'
 import type { PodsPlayerCanvasTarget, PodListItem } from '#pods-player/types'
 import PodsPlayerWorkspaceRail from './PodsPlayerWorkspaceRail.vue'
@@ -36,6 +35,9 @@ const props = defineProps<{
   readOnly?: boolean
   /** Optional host-provided props, such as CMS scene data, for preview-only context. */
   previewPropsOverride?: Record<string, unknown> | null
+  // The draft's saved field values (edit_state) — flatForm-shaped, applied
+  // verbatim so a reloaded page shows what the user saved.
+  savedFieldValues?: Record<string, unknown> | null
   selectedCanvasTargetKey?: string | null
   fieldPanelActiveTab?: FieldPanelTab | null
   /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
@@ -158,23 +160,23 @@ const effectivePreviewProps = computed(() =>
   mergePreviewProps(previewProps.value, props.previewPropsOverride),
 )
 
-// The canvas honors the host's saved/effective values via
-// previewPropsOverride, but the FIELD PANEL hydrated only from the pod
-// fixture — a reloaded page showed defaults in the controls even though the
-// draft carried saved values. Overlay the override onto the form whenever it
-// changes so panel and canvas agree.
+// The field panel hydrates only from the pod fixture, so a reloaded page
+// showed defaults even though the draft carried the user's saved values.
+// Overlay the draft's saved edit_state (flatForm-shaped — it IS a saved
+// flatForm) verbatim. NEVER derive this from the compiled contract: mapping
+// the contract through the fixture mapper produces empty schema defaults
+// that clobber real fixture values and blank the canvas (live regression,
+// July 2).
 watch(
-  [() => props.previewPropsOverride, formSchema, loading],
-  ([override, schemaFields, isLoading]) => {
-    // loadPodData wholesale-resets flatForm when the pod loads, so the
-    // overlay must (re)apply after loading settles — not only when the
-    // override itself changes.
+  [() => props.savedFieldValues, formSchema, loading],
+  ([saved, , isLoading]) => {
+    // loadPodData wholesale-resets flatForm when the pod loads; formSchema
+    // repopulates after that reset, so it must stay a trigger — otherwise
+    // this can fire once before the reset and the saved values are lost.
     if (isLoading) return
-    if (!override || !Array.isArray(schemaFields) || schemaFields.length === 0) return
+    if (!saved || typeof saved !== 'object') return
 
-    const overrideFlat = flatFromFixture(schemaFields, override as Record<string, unknown>)
-
-    for (const [key, value] of Object.entries(overrideFlat)) {
+    for (const [key, value] of Object.entries(saved)) {
       if (value !== undefined) flatForm[key] = value
     }
   },
