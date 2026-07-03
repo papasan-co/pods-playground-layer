@@ -106,8 +106,32 @@ export function usePodPlayer(
     if (!saved || typeof saved !== 'object') return
 
     for (const [key, value] of Object.entries(saved)) {
-      if (value !== undefined) target[key] = value
+      if (value === undefined) continue
+      const existing = target[key]
+      // Deep-merge nested records instead of replacing them: edit_state was
+      // shaped by the contract the user LAST edited under, so replacing a
+      // whole group object hides fields a later wire-up added to that group
+      // (live: a wired repeater's fixture items never painted because a
+      // pre-wire-up content object clobbered content.secondaryActions).
+      // Saved values still win per leaf; arrays are leaves (a user's edited
+      // item list replaces the fixture's wholesale).
+      target[key] = isRecord(value) && isRecord(existing) ? overlaidRecord(existing, value) : value
     }
+  }
+
+  function overlaidRecord(
+    base: Record<string, unknown>,
+    saved: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...base }
+
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) continue
+      const existing = merged[key]
+      merged[key] = isRecord(value) && isRecord(existing) ? overlaidRecord(existing, value) : value
+    }
+
+    return merged
   }
 
   function isRecord(v: unknown): v is Record<string, unknown> {
