@@ -7,12 +7,15 @@ defineProps<{
   pods: PodListItem[]
   activeSlug: string
   collapsed: boolean
+  /** Show the "New pod" affordance (editable draft packs only). */
+  canCreatePod?: boolean
 }>()
 
 const emit = defineEmits<{
   selectPod: [slug: string]
   back: []
   expand: []
+  newPod: []
 }>()
 </script>
 
@@ -74,6 +77,18 @@ const emit = defineEmits<{
             {{ p.sourceLabel }}
           </span>
         </span>
+      </button>
+
+      <button
+        v-if="canCreatePod"
+        type="button"
+        data-testid="playground-new-pod"
+        class="mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors duration-[var(--pg-duration-quick)] hover:bg-[var(--pg-hover-surface)]"
+        style="color: var(--pg-accent)"
+        @click="emit('newPod')"
+      >
+        <UIcon name="i-lucide-plus" class="h-3.5 w-3.5 shrink-0" />
+        New pod
       </button>
     </div>
   </div>

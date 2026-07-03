@@ -38,6 +38,8 @@ const props = defineProps<{
   // The draft's saved field values (edit_state) — flatForm-shaped, applied
   // verbatim so a reloaded page shows what the user saved.
   savedFieldValues?: Record<string, unknown> | null
+  /** Show the "New pod" affordance in the pod list (editable draft packs). */
+  canCreatePod?: boolean
   selectedCanvasTargetKey?: string | null
   fieldPanelActiveTab?: FieldPanelTab | null
   /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
@@ -54,6 +56,8 @@ const emit = defineEmits<{
   // Fired after a user edit in the field panel with the panel's full current
   // values — the host app persists them (playground autosave).
   formValuesChanged: [values: Record<string, unknown>]
+  // "New pod" clicked in the pod list (Track 5 scaffolding entry point).
+  newPod: []
 }>()
 
 const slugRef = toRef(props, 'slug')
@@ -330,9 +334,11 @@ function targetDisplayValue(value: unknown): string {
       :pods="pods"
       :active-slug="slug"
       :collapsed="podListCollapsed"
+      :can-create-pod="canCreatePod"
       @select-pod="emit('selectPod', $event)"
       @back="emit('backToPacks')"
       @expand="togglePodList()"
+      @new-pod="emit('newPod')"
     />
 
     <div class="relative flex min-w-0 flex-1 flex-col overflow-hidden pr-3.5 pt-3.5">
