@@ -59,6 +59,19 @@ const previewSlotRevision = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let previewReadyRequestId = 0
+/**
+ * An SFC swap whose matching source-preview data had not landed when the
+ * module finished loading. The resume watcher completes it as soon as
+ * contentSourcePreviewId catches up — without this, the swap is dropped and
+ * the canvas deadlocks on the previous artifact (the in-session activation
+ * stall after stacked source turns).
+ */
+let deferredSfcSwap: {
+  mod: unknown
+  sourcePreviewId: string | null
+  podSlug: string
+  previousText: string
+} | null = null
 const committedSfcSwapTimingKeys = new Set<string>()
 const settledLayerSequenceTimingKeys = new Set<string>()
 const resolvedRenderModeTimingKeys = new Set<string>()
@@ -772,6 +785,14 @@ watch(
         vueFallbackActive.value = false
         const dataReady = await waitForPreviewDataReady(sourcePreviewId)
         if (!dataReady) {
+          // Deferring with no retry deadlocked the canvas on stacked source
+          // turns: contentSourcePreviewId only updates after the shell's pod
+          // data load completes, and when that outlasts the 4s window the
+          // swap was dropped forever — the canvas stayed on the previous
+          // artifact while chat announced success (live: the in-session
+          // activation stall). Stash the loaded module; the resume watcher
+          // below completes the swap the moment matching data arrives.
+          deferredSfcSwap = { mod, sourcePreviewId, podSlug: slug, previousText }
           recordPreviewTiming(
             sourcePreviewId,
             'hmr_sfc_swap_deferred_until_matching_source_preview_data',
@@ -783,6 +804,7 @@ watch(
           )
           return
         }
+        deferredSfcSwap = null
         await nextTick()
         const nextPreviewProps = props.previewProps || {}
         await stageSfcComponentSwap(mod, nextPreviewProps, sourcePreviewId)
@@ -817,6 +839,55 @@ watch(
   },
   { immediate: true },
 )
+
+// Resume a deferred SFC swap the moment its matching source-preview data
+// lands. The main mode watcher also lists contentSourcePreviewId in its deps,
+// but its re-fire is not guaranteed to survive the async interleaving of a
+// stacked-turn activation (live: four consecutive compiled-and-passed turns
+// never painted) — this is the deterministic completion path.
+async function resumeDeferredSfcSwap(): Promise<void> {
+  const pending = deferredSfcSwap
+  if (!pending) return
+  if (loading.value) return // a live mode-watcher pass owns the swap
+  if (props.contentReady === false) return
+  if (pending.podSlug !== props.pod?.slug) {
+    deferredSfcSwap = null
+    return
+  }
+  const requestedId = currentCanvasArtifactId()
+  if (pending.sourcePreviewId && requestedId !== pending.sourcePreviewId) {
+    deferredSfcSwap = null // superseded by a newer artifact
+    return
+  }
+  if (pending.sourcePreviewId && props.contentSourcePreviewId !== pending.sourcePreviewId) return
+
+  deferredSfcSwap = null
+  await nextTick()
+  const nextPreviewProps = props.previewProps || {}
+  await stageSfcComponentSwap(pending.mod, nextPreviewProps, pending.sourcePreviewId)
+  recordPreviewTiming(pending.sourcePreviewId, 'hmr_sfc_swap_resumed_after_source_preview_data', {
+    podSlug: pending.podSlug,
+  })
+  await emitPreviewReadyAfterPaint(previewIframeWindow(), pending.sourcePreviewId, {
+    previousText: pending.previousText,
+    expectedTexts: visibleTextCandidates(nextPreviewProps, pending.previousText),
+    source: 'sfc-load-resumed',
+  })
+}
+
+watch(
+  () => [props.contentSourcePreviewId, props.contentReady] as const,
+  () => {
+    void resumeDeferredSfcSwap()
+  },
+)
+
+// Data can land while a mode-watcher pass is mid-flight and still miss its
+// 4s poll: that pass re-defers, and no prop change follows to retry. The
+// loading edge covers the gap.
+watch(loading, (isLoading) => {
+  if (!isLoading) void resumeDeferredSfcSwap()
+})
 
 watch(brandPreviewRevision, async () => {
   previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
