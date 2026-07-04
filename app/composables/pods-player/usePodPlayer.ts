@@ -399,8 +399,18 @@ export function usePodPlayer(
     if (formSchema.value.length === 0) return fixture.value || {}
     const payload = rebuildPayload(formSchema.value, flatForm)
     const merged = fixture.value ? mergePreviewPayload(fixture.value, payload) : payload
+    const result = applyResponsiveToPayload(merged, formSchema.value, viewport.value)
 
-    return applyResponsiveToPayload(merged, formSchema.value, viewport.value)
+    if (import.meta.dev && import.meta.client) {
+      // Debug visibility for value-pipeline investigations (dev only).
+      ;(window as unknown as Record<string, unknown>).__POD_PREVIEW_DEBUG__ = {
+        fixture: fixture.value,
+        rebuilt: payload,
+        result,
+      }
+    }
+
+    return result
   })
 
   const hasChanges = computed(() => {
