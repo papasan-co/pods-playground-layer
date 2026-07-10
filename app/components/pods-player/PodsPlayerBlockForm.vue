@@ -31,7 +31,39 @@ const props = defineProps<{
   storyMediaItems?: Array<Record<string, unknown>>
   libraryMediaItems?: Array<Record<string, unknown>>
   mediaSourceMode?: 'cms' | 'playground'
+  readOnly?: boolean
+  /**
+   * Field-anchored notes (e.g. accessibility auto-adjustments) rendered under
+   * the matching control, keyed by the YAML field dot-path.
+   */
+  fieldNotes?: Array<{ fieldPath: string; message: string }>
 }>()
+
+/**
+ * Resolve the note for a field by exact or prefix dot-path match.
+ *
+ * Role: Surfaces "adjusted to meet accessibility standards"-style notes next
+ * to the responsible control so auto-corrections are visible, never silent.
+ */
+function noteFor(field: FormField): string | null {
+  const notes = props.fieldNotes
+
+  if (!notes?.length) {
+    return null
+  }
+
+  const key = String((field as { path?: unknown }).path || field.name || '').trim()
+
+  if (!key) {
+    return null
+  }
+
+  const match = notes.find(
+    (note) => note.fieldPath === key || note.fieldPath.startsWith(`${key}.`),
+  )
+
+  return match?.message || null
+}
 
 interface UpdatePayload {
   field: string
@@ -44,6 +76,8 @@ const emit = defineEmits<{
 }>()
 
 function updateField(name: string, value: unknown, type: string) {
+  if (props.readOnly) return
+
   const v = type === 'number' ? Number(value) : value
   emit('update:modelValue', { field: name, value: v })
 }
@@ -82,6 +116,8 @@ function isHidden(field: FormField): boolean {
 }
 
 function isReadOnly(field: FormField): boolean {
+  if (props.readOnly) return true
+
   const ui = (field as any)?.['x-ui']
   return Boolean(ui && typeof ui === 'object' && ui.readonly === true)
 }
@@ -243,6 +279,70 @@ function normaliseRepeater(value: unknown): RepeaterItem[] {
   }))
 }
 
+function cloneFormValue(value: unknown): unknown {
+  if (value === undefined || value === null) return value
+  if (typeof value !== 'object') return value
+
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return value
+  }
+}
+
+function firstSelectValue(field: FormField): string | undefined {
+  const options = (field as FormField & { options?: Record<string, string> | string[] }).options
+  if (Array.isArray(options)) return options[0]
+  if (options && typeof options === 'object') return Object.keys(options)[0]
+  return undefined
+}
+
+function defaultValueForRepeaterField(field: FormField): unknown {
+  const fixture = (field as { fixture?: unknown }).fixture
+  if (fixture !== undefined) return cloneFormValue(fixture)
+
+  const configuredDefault = (field as { default?: unknown }).default
+  if (configuredDefault !== undefined) return cloneFormValue(configuredDefault)
+
+  if (field.type === 'toggle') return false
+  if (field.type === 'select') return firstSelectValue(field)
+  if (field.type === 'number') return 0
+  if (field.type === 'group' && Array.isArray(field.fields)) {
+    return field.fields.reduce<Record<string, unknown>>((next, child) => {
+      if (!child.name) return next
+      const childValue = defaultValueForRepeaterField(child)
+      if (childValue !== undefined) next[child.name] = childValue
+      return next
+    }, {})
+  }
+
+  return ''
+}
+
+function repeaterBlueprint(field: FormField): Record<string, unknown> {
+  const explicitBlueprint = (field as { blueprint?: unknown }).blueprint
+  if (isObjectLike(explicitBlueprint)) return explicitBlueprint
+  if (field.type !== 'repeater' || !Array.isArray(field.fields)) return {}
+
+  return field.fields.reduce<Record<string, unknown>>((next, child) => {
+    if (!child.name) return next
+    const value = defaultValueForRepeaterField(child)
+    if (value !== undefined) next[child.name] = value
+    return next
+  }, {})
+}
+
+function repeaterMax(field: FormField): number | null {
+  const max = Number((field as { max?: unknown }).max)
+  return Number.isFinite(max) && max >= 0 ? max : null
+}
+
+function canAddRepeaterItem(field: FormField): boolean {
+  if (!field.name || props.readOnly) return false
+  const max = repeaterMax(field)
+  return max === null || listFor(field.name).value.length < max
+}
+
 const repeaterOpen = reactive<Record<string, Record<string, boolean>>>({})
 function itemKey(item: RepeaterItem, idx: number): string {
   return String((item as any)?._key ?? idx)
@@ -285,6 +385,15 @@ function saveLocal(block: string) {
   localStorage.setItem(`PodsPlayerBlockForm:${block}`, data)
 }
 
+function commitRepeaterValue(block: string, value: RepeaterItem[]) {
+  if (isObjectLike(props.modelValue)) {
+    props.modelValue[block] = value
+  }
+
+  emit('update:modelValue', { field: block, value })
+  saveLocal(block)
+}
+
 function initSortable(el: HTMLElement, name: string) {
   if ((el as any)._podsPlayerSortable) return
   ;(el as any)._podsPlayerSortable = true
@@ -298,13 +407,13 @@ function initSortable(el: HTMLElement, name: string) {
     filter: 'input, textarea, select, button, [contenteditable]',
     preventOnFilter: false,
     onEnd(evt) {
+      if (props.readOnly) return
       if (evt.oldIndex == null || evt.newIndex == null) return
       const arr = [...list.value]
       const [moved] = arr.splice(evt.oldIndex, 1)
       arr.splice(evt.newIndex, 0, moved)
       list.value = arr
-      emit('update:modelValue', { field: name, value: arr })
-      saveLocal(name)
+      commitRepeaterValue(name, arr)
     },
   })
 }
@@ -324,6 +433,8 @@ function hoistUiOnlyGroupValues() {
 
 function initializeRepeater(field: FormField) {
   if (field.type !== 'repeater') return
+  if (props.readOnly) return
+
   const modelValue = props.modelValue[field.name]
 
   if (modelValue && Array.isArray(modelValue) && modelValue.length > 0) {
@@ -366,31 +477,38 @@ watch(
 )
 
 function updateRepeaterItem(block: string, idx: number, child: string, value: unknown) {
+  if (props.readOnly) return
+
   const list = listFor(block)
   list.value = list.value.map((it, i) => {
     if (i !== idx) return it
     if (isUiOnlyMergeField(child) && isObjectLike(value)) return { ...it, ...value }
     return { ...it, [child]: value }
   })
-  emit('update:modelValue', { field: block, value: list.value })
-  saveLocal(block)
+  commitRepeaterValue(block, list.value)
 }
 
-function addRepeaterItem(block: string, blueprint = {}) {
+function addRepeaterItem(block: string, blueprint: Record<string, unknown> = {}, max?: number | null) {
+  if (props.readOnly) return
+
   const list = listFor(block)
-  const newItem = { _key: makeKey(), ...(blueprint as any) }
+  if (max !== null && max !== undefined && list.value.length >= max) return
+
+  const key = makeKey()
+  const newItem = { _key: key, ...blueprint }
   list.value = [...list.value, newItem]
-  emit('update:modelValue', { field: block, value: list.value })
-  saveLocal(block)
+  setItemOpen(block, key, true)
+  commitRepeaterValue(block, list.value)
 }
 
 function removeRepeaterItem(block: string, idx: number) {
+  if (props.readOnly) return
+
   const list = listFor(block)
   list.value = list.value.map((it, i) => (i === idx ? { ...it, _removing: true } : it))
   setTimeout(() => {
     list.value = list.value.filter((_, i) => i !== idx)
-    emit('update:modelValue', { field: block, value: list.value })
-    saveLocal(block)
+    commitRepeaterValue(block, list.value)
   }, 300)
 }
 
@@ -409,6 +527,8 @@ function groupModelValue(groupName: string | undefined): Record<string, unknown>
 }
 
 function emitUiOnlyRootUpdate(child: string, value: unknown) {
+  if (props.readOnly) return
+
   if (isUiOnlyMergeField(child) && isObjectLike(value)) {
     for (const [key, nestedValue] of Object.entries(value)) {
       emit('update:modelValue', { field: key, value: nestedValue })
@@ -429,6 +549,8 @@ function handleGroupUpdate(groupName: string | undefined, child: string, value: 
 }
 
 function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+  if (props.readOnly) return
+
   const config = getPositionGridConfig(field)
   if (!config) return
   emit('update:modelValue', {
@@ -501,6 +623,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
+                :field-notes="fieldNotes"
                 @update:model-value="
                   ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
                 "
@@ -522,6 +645,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
+          :field-notes="fieldNotes"
           :media-items="mediaItems || []"
           :story-media-items="storyMediaItems || []"
           :library-media-items="libraryMediaItems || []"
@@ -559,7 +683,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               </div>
             </template>
             <UInput
-              v-if="child.type === 'input'"
+              v-if="child.type === 'input' || child.type === 'text'"
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
@@ -660,6 +784,15 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string]"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
+            <p
+              v-if="noteFor(child)"
+              class="mt-1 flex items-start gap-1 text-xs"
+              style="color: var(--pg-fg-meta, #6b7280)"
+              data-testid="field-a11y-note"
+            >
+              <span aria-hidden="true">ⓘ</span>
+              <span>{{ noteFor(child) }}</span>
+            </p>
           </UFormField>
         </div>
       </template>
@@ -698,7 +831,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         @update="(val) => updatePositionGrid(field, val)"
       />
       <UInput
-        v-else-if="field.type === 'input'"
+        v-else-if="field.type === 'input' || field.type === 'text'"
         class="w-full"
         size="sm"
         :disabled="isReadOnly(field)"
@@ -918,11 +1051,24 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           size="sm"
           variant="outline"
           icon="i-lucide-plus"
-          @click="addRepeaterItem(field.name, (field.blueprint as any) || {})"
+          :disabled="!canAddRepeaterItem(field)"
+          @click="addRepeaterItem(field.name, repeaterBlueprint(field), repeaterMax(field))"
         >
           Add {{ field.label }}
         </UButton>
+        <p v-if="!canAddRepeaterItem(field)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Maximum {{ repeaterMax(field) }} {{ field.label || 'items' }} reached.
+        </p>
       </div>
+      <p
+        v-if="noteFor(field)"
+        class="mt-1 flex items-start gap-1 text-xs"
+        style="color: var(--pg-fg-meta, #6b7280)"
+        data-testid="field-a11y-note"
+      >
+        <span aria-hidden="true">ⓘ</span>
+        <span>{{ noteFor(field) }}</span>
+      </p>
     </UFormField>
   </template>
 </template>
