@@ -20,6 +20,12 @@ export interface PodListItem {
   version?: string
   category?: string
   /**
+   * Optional release layer provenance for artifact-based hosts.
+   * Lets shared browse UI distinguish org-authored pods from core templates.
+   */
+  sourceLayer?: 'org' | 'core'
+  sourceLabel?: string
+  /**
    * Optional preview thumbnail URL for browse/list views.
    * Hosts can compute this from `pods.json` preview metadata (preferred).
    */
@@ -31,7 +37,6 @@ export interface PodListItem {
    * from a slug-to-PascalCase transform (e.g., digits / acronyms).
    */
   folderName?: string
-
 }
 
 export interface PodDetails extends PodListItem {
@@ -54,12 +59,27 @@ export interface PodDetails extends PodListItem {
   compiledContract?: Record<string, unknown> | null
 }
 
+export interface PodsPlayerCanvasTarget {
+  key: string
+  path: string
+  label: string
+  value: unknown
+  displayValue: string
+}
+
 export interface PodsPlayerEnsureResult {
   /**
    * Vue ESM runtime bundle URL(s) required for vue runtime mode.
    * These should be loaded as module scripts inside the preview iframe.
    */
   vueBundleUrls?: string[]
+
+  /**
+   * Stylesheet URL(s) that must be loaded inside the preview iframe before
+   * rendering a Vue runtime pod. Used by source previews to avoid briefly
+   * showing unstyled or partially styled layouts while artifact CSS loads.
+   */
+  stylesheetUrls?: string[]
 
   /**
    * Whether it is safe to mount the preview element.
@@ -113,8 +133,19 @@ export interface PodsPlayerRuntime {
   loadSfcComponent?(pod: PodDetails): Promise<unknown | null>
 
   /**
+   * Optional: warm a source-preview SFC module before the host activates it.
+   * This lets Pod Studio keep the last painted canvas visible while the next
+   * HMR module/session is fetched.
+   */
+  prepareSourcePreview?(input: {
+    packId: string
+    podSlug: string
+    sourcePreviewId: string
+    draftPackId?: string | null
+  }): Promise<{ prepared: boolean; transport?: string | null; fallbackReason?: string | null }>
+
+  /**
    * Vue runtime mode: provide the ESM runtime bundle URL(s) and/or perform any preloading.
    */
   ensureRuntimeLoaded?(pod: PodDetails): Promise<PodsPlayerEnsureResult>
 }
-

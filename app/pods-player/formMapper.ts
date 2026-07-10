@@ -10,10 +10,11 @@
 export interface FormField {
   /**
    * Leaf fields must have a name. Layout primitives (group/row) may omit it.
-   */
+  */
   name?: string
   path?: string
   type: string
+  aliases?: string[]
   children?: FormField[]
   fields?: FormField[]
   fixture?: Record<string, unknown>
@@ -72,6 +73,49 @@ function joinPath(prefix: string, next: string): string {
   return `${prefix}.${next}`
 }
 
+function fieldAliases(field: FormField): string[] {
+  const directAliases = Array.isArray(field.aliases) ? field.aliases : []
+  const compat = isRecord(field['x-compat']) ? field['x-compat'] : {}
+  const compatAliases = Array.isArray(compat.aliases) ? compat.aliases : []
+
+  return [...directAliases, ...compatAliases]
+    .filter((alias): alias is string => typeof alias === 'string' && alias.trim() !== '')
+    .map((alias) => alias.trim())
+}
+
+function fieldValue(
+  field: FormField,
+  fixture: Record<string, unknown>,
+  rootFixture: Record<string, unknown>,
+  path: string,
+  explicitPathsAreAbsolute: boolean,
+): unknown {
+  const source = field.path && explicitPathsAreAbsolute ? rootFixture : fixture
+  const value = dotGet(source, path)
+
+  if (value !== undefined) {
+    return value
+  }
+
+  for (const alias of fieldAliases(field)) {
+    const aliasValue = dotGet(rootFixture, alias)
+
+    if (aliasValue !== undefined) {
+      return aliasValue
+    }
+
+    if (!explicitPathsAreAbsolute) {
+      const localAliasValue = dotGet(fixture, alias)
+
+      if (localAliasValue !== undefined) {
+        return localAliasValue
+      }
+    }
+  }
+
+  return undefined
+}
+
 function hasFixtureValue(
   field: FormField,
   fixture: Record<string, unknown>,
@@ -113,10 +157,7 @@ function hasFixtureValue(
 
   if (!field.name) return false
   const path = field.path || joinPath(pathPrefix, field.name)
-  const value = dotGet(
-    field.path && explicitPathsAreAbsolute ? rootFixture : fixture,
-    path,
-  )
+  const value = fieldValue(field, fixture, rootFixture, path, explicitPathsAreAbsolute)
   return value !== undefined
 }
 
@@ -200,10 +241,7 @@ export function flatFromFixture(
 
     if (field.responsive) {
       const path = field.path || joinPath(pathPrefix, fieldKey)
-      const value = dotGet(
-        field.path && explicitPathsAreAbsolute ? rootFixture : fixture,
-        path,
-      )
+      const value = fieldValue(field, fixture, rootFixture, path, explicitPathsAreAbsolute)
       if (value !== undefined && isRecord(value)) {
         flat[field.name] = value
       } else if (field.value) {
@@ -219,10 +257,7 @@ export function flatFromFixture(
     }
 
     const path = field.path || joinPath(pathPrefix, fieldKey)
-    const value = dotGet(
-      field.path && explicitPathsAreAbsolute ? rootFixture : fixture,
-      path,
-    )
+    const value = fieldValue(field, fixture, rootFixture, path, explicitPathsAreAbsolute)
 
     if (value !== undefined) {
       flat[field.name] = field.type === 'number' ? Number(value) : value
@@ -312,4 +347,3 @@ function rebuildIntoPayload(
     }
   }
 }
-
