@@ -47,20 +47,50 @@ const props = defineProps<{
    */
   rootClasses?: string[]
   /**
+   * The source preview or draft artifact currently rendered inside the iframe.
+   * Parent readiness waits for this marker so it does not race the iframe mini-app render.
+   */
+  canvasArtifactId?: string | null
+  /**
    * Debug-only fill diagnostic that makes unused space obvious without changing the normal preview chrome.
    */
   debugFill?: boolean
+  /**
+   * Preview-only override for source-preview activation. When enabled, existing
+   * pod layer sequence attributes render their final visible state immediately.
+   */
+  settleLayerSequences?: boolean
+  /**
+   * Bumped by the parent after HMR props commits so layer final-state overrides
+   * reapply after the pod component updates its own sequence attributes/styles.
+   */
+  settleLayerSequencesRevision?: number
+  /**
+   * Bumped when the parent slot mode or props change. The iframe mini-app is
+   * intentionally stable, so it needs an explicit signal to refresh slot vnodes.
+   */
+  slotRevision?: number | string | null
 }>()
 
 const emit = defineEmits<{
-  (e: 'scriptsLoaded'): void
+  (
+    e: 'scriptsLoaded',
+    payload: {
+      moduleScripts: string[]
+      scripts: string[]
+      extraStylesheets: string[]
+    },
+  ): void
 }>()
 
-const frameSize = computed(() => ({
-  laptop: { width: 1662, height: 1066 },
-  tablet: { width: 900, height: 1200 },
-  phone: { width: 440, height: 860 },
-})[props.device])
+const frameSize = computed(
+  () =>
+    ({
+      laptop: { width: 1662, height: 1066 },
+      tablet: { width: 900, height: 1200 },
+      phone: { width: 440, height: 860 },
+    })[props.device],
+)
 
 const frameStyle = computed(() => ({
   width: `${frameSize.value.width}px`,
@@ -108,6 +138,8 @@ const slots = useSlots()
 
 let obs: MutationObserver | null = null
 let miniApp: ReturnType<typeof createApp> | null = null
+let booting = false
+let bootAgain = false
 
 onBeforeUnmount(() => {
   obs?.disconnect()
@@ -122,6 +154,12 @@ function syncHead(from: Document, to: Document) {
   from.head.querySelectorAll(STYLE_SELECTOR).forEach((node) => {
     const cloned = node.cloneNode(true) as HTMLElement
     cloned.dataset.podsHeadSync = '1'
+    // PodPack links may be carried inert (media="not all") in the host so
+    // pack utilities never cascade into the app — inside the preview frame
+    // they are the pod's real styles, so reactivate them.
+    if ((cloned as HTMLLinkElement).dataset?.podsStyle === '1') {
+      cloned.removeAttribute('media')
+    }
     to.head.appendChild(cloned)
   })
 }
@@ -195,13 +233,88 @@ function applyScrollMode(doc: Document, scrollable: boolean) {
   body.style.padding = '0'
 }
 
+function clearLayerSequenceSettleOverrides(doc: Document) {
+  doc
+    .querySelectorAll<HTMLElement>('[data-pods-preview-sequence-root-settled="1"]')
+    .forEach((sequenceRoot) => {
+      if (sequenceRoot.dataset.podsPreviewHadSequenceSettled !== '1') {
+        sequenceRoot.classList.remove('sequence-settled')
+      }
+
+      const previousState = sequenceRoot.dataset.podsPreviewPreviousSequenceState
+      if (sequenceRoot.dataset.podsPreviewHadSequenceState === '1') {
+        sequenceRoot.dataset.sequenceState = previousState
+      } else {
+        sequenceRoot.removeAttribute('data-sequence-state')
+      }
+
+      sequenceRoot.removeAttribute('data-pods-preview-had-sequence-settled')
+      sequenceRoot.removeAttribute('data-pods-preview-had-sequence-state')
+      sequenceRoot.removeAttribute('data-pods-preview-previous-sequence-state')
+      sequenceRoot.removeAttribute('data-pods-preview-sequence-root-settled')
+    })
+  doc
+    .querySelectorAll<HTMLElement>('[data-pods-preview-layer-settled-inline="1"]')
+    .forEach((element) => {
+      element.style.removeProperty('animation')
+      element.style.removeProperty('opacity')
+      element.style.removeProperty('pointer-events')
+      element.style.removeProperty('transform')
+      element.style.removeProperty('visibility')
+      element.removeAttribute('data-pods-preview-layer-settled-inline')
+    })
+}
+
+function applyLayerSequenceSettleOverrides(doc: Document, enabled: boolean) {
+  clearLayerSequenceSettleOverrides(doc)
+  if (!enabled) return
+
+  doc.querySelectorAll<HTMLElement>('[data-pod-layer-sequence="1"]').forEach((sequenceRoot) => {
+    sequenceRoot.dataset.podsPreviewHadSequenceSettled = sequenceRoot.classList.contains(
+      'sequence-settled',
+    )
+      ? '1'
+      : '0'
+    sequenceRoot.dataset.podsPreviewHadSequenceState = sequenceRoot.hasAttribute(
+      'data-sequence-state',
+    )
+      ? '1'
+      : '0'
+    sequenceRoot.dataset.podsPreviewPreviousSequenceState = sequenceRoot.dataset.sequenceState || ''
+    sequenceRoot.dataset.podsPreviewSequenceRootSettled = '1'
+    sequenceRoot.classList.add('sequence-settled')
+    sequenceRoot.dataset.sequenceState = 'settled'
+  })
+
+  doc
+    .querySelectorAll<HTMLElement>('[data-pod-layer-sequence="1"] [data-layer]')
+    .forEach((layer) => {
+      const finalVisible = layer.dataset.layerFinalVisible === '1'
+      layer.dataset.layerCurrentVisible = finalVisible ? '1' : '0'
+      layer.setAttribute('aria-hidden', finalVisible ? 'false' : 'true')
+      layer.setAttribute('data-pods-preview-layer-settled-inline', '1')
+      layer.style.setProperty('animation', 'none', 'important')
+      layer.style.setProperty('transform', 'none', 'important')
+
+      if (finalVisible) {
+        layer.style.setProperty('opacity', '1', 'important')
+        layer.style.setProperty('visibility', 'visible', 'important')
+        layer.style.setProperty('pointer-events', 'auto', 'important')
+      } else {
+        layer.style.setProperty('opacity', '0', 'important')
+        layer.style.setProperty('visibility', 'hidden', 'important')
+        layer.style.setProperty('pointer-events', 'none', 'important')
+      }
+    })
+}
+
 async function ensureScripts(doc: Document, urls: string[]) {
   const unique = [...new Set(urls)].filter(Boolean)
   if (unique.length === 0) return
 
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-script="1"]')).map((s) =>
-      (s as HTMLScriptElement).src,
+    Array.from(doc.querySelectorAll('script[data-pods-player-script="1"]')).map(
+      (s) => (s as HTMLScriptElement).src,
     ),
   )
 
@@ -225,7 +338,9 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
   if (unique.length === 0) return
 
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map((s) => (s as HTMLScriptElement).src),
+    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map(
+      (s) => (s as HTMLScriptElement).src,
+    ),
   )
 
   for (const url of unique) {
@@ -243,12 +358,65 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
   }
 }
 
-function syncExtraStylesheets(doc: Document, urls: string[]) {
+function stylesheetLoaded(link: HTMLLinkElement): boolean {
+  if (link.dataset.podsExtraStyleLoaded === '1') return true
+
+  try {
+    return Boolean(link.sheet)
+  } catch {
+    return false
+  }
+}
+
+function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
+  if (stylesheetLoaded(link)) {
+    link.dataset.podsExtraStyleLoaded = '1'
+
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      cleanup()
+      if (stylesheetLoaded(link)) {
+        link.dataset.podsExtraStyleLoaded = '1'
+      }
+      resolve()
+    }, 5000)
+    const cleanup = () => {
+      window.clearTimeout(timeout)
+      link.removeEventListener('load', handleLoad)
+      link.removeEventListener('error', handleError)
+    }
+    const handleLoad = () => {
+      cleanup()
+      link.dataset.podsExtraStyleLoaded = '1'
+      resolve()
+    }
+    const handleError = () => {
+      cleanup()
+      resolve()
+    }
+
+    link.addEventListener('load', handleLoad, { once: true })
+    link.addEventListener('error', handleError, { once: true })
+  })
+}
+
+function sameStringList(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false
+
+  return left.every((value, index) => value === right[index])
+}
+
+async function syncExtraStylesheets(doc: Document, urls: string[]) {
   const wanted = [...new Set(urls)]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .map((value) => value.trim())
+    .map((value) => new URL(value.trim(), window.location.origin).href)
 
-  const existingNodes = Array.from(doc.querySelectorAll('link[data-pods-extra-style="1"]')) as HTMLLinkElement[]
+  const existingNodes = Array.from(
+    doc.querySelectorAll('link[data-pods-extra-style="1"]'),
+  ) as HTMLLinkElement[]
   const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
 
   for (const node of existingNodes) {
@@ -265,12 +433,40 @@ function syncExtraStylesheets(doc: Document, urls: string[]) {
     link.dataset.podsExtraStyle = '1'
     doc.head.appendChild(link)
   }
+
+  const activeLinks = Array.from(
+    doc.querySelectorAll('link[data-pods-extra-style="1"]'),
+  ) as HTMLLinkElement[]
+  await Promise.all(
+    activeLinks.filter((node) => wanted.includes(node.href)).map((node) => waitForStylesheet(node)),
+  )
 }
 
 async function bootIframe() {
+  if (booting) {
+    bootAgain = true
+    return
+  }
+
+  booting = true
+  try {
+    await bootIframeNow()
+  } finally {
+    booting = false
+    if (bootAgain) {
+      bootAgain = false
+      void bootIframe()
+    }
+  }
+}
+
+async function bootIframeNow() {
   const iframe = iframeRef.value
   if (!iframe) return
 
+  const moduleScripts = [...(props.moduleScripts ?? [])]
+  const scripts = [...(props.scripts ?? [])]
+  const extraStylesheets = [...(props.extraStylesheets ?? [])]
   const doc = iframe.contentDocument
   if (!doc) return
   const win = iframe.contentWindow
@@ -292,7 +488,7 @@ async function bootIframe() {
 
     syncHead(document, doc)
     syncCSSVars(doc)
-    syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+    await syncExtraStylesheets(doc, extraStylesheets)
     if (win) syncRuntime(window, win)
 
     obs = new MutationObserver(() => syncHead(document, doc))
@@ -308,19 +504,32 @@ async function bootIframe() {
   // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
   // non-scroll previews (many pods rely on `h-full`).
   syncCSSVars(doc)
-  syncExtraStylesheets(doc, props.extraStylesheets ?? [])
+  await syncExtraStylesheets(doc, extraStylesheets)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
-  if (props.moduleScripts?.length) {
-    await ensureModuleScripts(doc, props.moduleScripts)
-    emit('scriptsLoaded')
+  if (moduleScripts.length) {
+    await ensureModuleScripts(doc, moduleScripts)
+    if (
+      sameStringList(moduleScripts, props.moduleScripts ?? []) &&
+      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
+    ) {
+      emit('scriptsLoaded', { moduleScripts, scripts: [], extraStylesheets })
+    }
   }
 
-  if (props.scripts?.length) {
-    await ensureScripts(doc, props.scripts)
-    emit('scriptsLoaded')
+  if (scripts.length) {
+    await ensureScripts(doc, scripts)
+    if (
+      sameStringList(scripts, props.scripts ?? []) &&
+      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
+    ) {
+      emit('scriptsLoaded', { moduleScripts: [], scripts, extraStylesheets })
+    }
   }
+
+  await nextTick()
+  applyLayerSequenceSettleOverrides(doc, props.settleLayerSequences === true)
 }
 
 watchEffect(() => {
@@ -333,7 +542,16 @@ watchEffect(() => {
   void props.cssVars
   void props.extraStylesheets
   void props.rootClasses
+  void props.canvasArtifactId
   void props.debugFill
+  void props.settleLayerSequences
+  void props.settleLayerSequencesRevision
+  void props.slotRevision
+  if (props.ready === false && slotVNode.value) {
+    void nextTick().then(() => bootIframe())
+    return
+  }
+
   slotVNode.value =
     props.ready === false
       ? null
@@ -346,7 +564,9 @@ watchEffect(() => {
           {
             class: props.scrollable ? 'w-full min-h-full' : 'w-full h-full overflow-hidden',
             'data-pods-preview-root': '1',
+            'data-pods-canvas-artifact-id': props.canvasArtifactId || '',
             'data-pods-debug-fill': props.debugFill ? '1' : '0',
+            'data-pods-preview-settle-layer-sequences': props.settleLayerSequences ? '1' : '0',
             style: props.debugFill
               ? {
                   backgroundImage:
@@ -358,13 +578,19 @@ watchEffect(() => {
           },
           slots.default?.(),
         )
-  void bootIframe()
+  void nextTick().then(() => bootIframe())
 })
 </script>
 
 <template>
   <div ref="hostRef" class="preview-device-host w-full h-full flex items-start justify-center">
-    <div class="preview-device-slot" :style="{ width: `${scaledSize.width}px`, height: `${scaledSize.height}px` }">
+    <div
+      class="preview-device-slot"
+      :style="{
+        width: `${scaledSize.width}px`,
+        height: `${scaledSize.height}px`,
+      }"
+    >
       <div
         class="preview-device transition-all duration-300 ease-in-out rounded-md shadow-lg"
         :style="[
