@@ -62,6 +62,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="hostRef"
+    data-testid="pods-canvas-card"
     class="relative flex min-h-0 flex-1 flex-col items-center justify-center px-1 pb-1 pt-1"
   >
     <div

@@ -11,29 +11,88 @@ import type { FormField } from '#pods-player/formMapper'
 import { flatFromFixture, rebuildPayload } from '#pods-player/formMapper'
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
-import { toValue, type MaybeRefOrGetter } from 'vue'
+import { nextTick, toValue, type MaybeRefOrGetter } from 'vue'
 
 type PodDetailsWithCompiledContract = PodDetails & {
   compiled_contract?: Record<string, unknown> | null
 }
 
-export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
+export function usePodPlayer(
+  slug: MaybeRefOrGetter<string>,
+  options?: {
+    /**
+     * Host-provided saved field values (a draft's edit_state, flatForm-shaped)
+     * applied INSIDE every form reset. Applying them from an external watcher
+     * instead is a race: loadPodData and the variant-fixture merge both write
+     * fixture defaults into flatForm, and whichever watcher flushes last wins
+     * (live flake: a reloaded page showed the staged default instead of the
+     * user's saved value roughly 1 run in 3).
+     */
+    savedValuesOverlay?: MaybeRefOrGetter<Record<string, unknown> | null | undefined>
+  },
+) {
   const runtime = usePodsPlayerRuntime()
   const route = useRoute()
+  const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
+  const activeSourcePreviewPodSlug = useState<string>(
+    'pod-studio.activeSourcePreviewPodSlug',
+    () => '',
+  )
+  const activeSourcePreviewDraftPackId = useState<string>(
+    'pod-studio.activeSourcePreviewDraftPackId',
+    () => '',
+  )
+  const activeSourcePreviewRevision = useState<number>(
+    'pod-studio.activeSourcePreviewRevision',
+    () => 0,
+  )
 
   function requestedModeFromRoute(): PodsPlayerMode | null {
     const requested = route.query.mode
     if (typeof requested !== 'string') return null
-    return runtime.supportedModes.includes(requested as PodsPlayerMode) ? (requested as PodsPlayerMode) : null
+    return runtime.supportedModes.includes(requested as PodsPlayerMode)
+      ? (requested as PodsPlayerMode)
+      : null
+  }
+
+  function requestedSourcePreviewFromRoute(): string {
+    if (
+      activeSourcePreviewId.value &&
+      activeSourcePreviewPodSlug.value === toValue(slug) &&
+      activeSourcePreviewDraftPackId.value === requestedDraftPackFromRoute()
+    ) {
+      return activeSourcePreviewId.value
+    }
+
+    if (typeof route.query.sourcePreview === 'string') return route.query.sourcePreview
+    if (typeof route.query.sourcePreviewId === 'string') return route.query.sourcePreviewId
+
+    return ''
+  }
+
+  function requestedDraftPackFromRoute(): string {
+    return typeof route.query.draftPack === 'string' ? route.query.draftPack : ''
+  }
+
+  function preferredModeFromRoute(): PodsPlayerMode {
+    const requested = requestedModeFromRoute()
+    if (requested) return requested
+
+    if (requestedSourcePreviewFromRoute()) {
+      return (runtime.supportedModes?.[0] ?? 'vue') as PodsPlayerMode
+    }
+
+    return (runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode
   }
 
   const pod = ref<PodDetails | null>(null)
-  const mode = ref<PodsPlayerMode>((requestedModeFromRoute() ?? runtime.supportedModes?.[0] ?? 'sfc') as PodsPlayerMode)
+  const mode = ref<PodsPlayerMode>(preferredModeFromRoute())
   const viewport = ref<PodsPlayerViewport>('laptop')
 
   const fixture = ref<Record<string, unknown> | null>(null)
   const schema = ref<unknown>(null)
   const loading = ref(true)
+  const loadedSourcePreviewId = ref('')
 
   const reloadKey = ref(0)
   const initialFormValues = ref<Record<string, unknown>>({})
@@ -41,6 +100,39 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
   const flatForm = reactive<Record<string, unknown>>({})
   const formSchema = ref<FormField[]>([])
+
+  function applySavedValuesOverlay(target: Record<string, unknown>): void {
+    const saved = toValue(options?.savedValuesOverlay)
+    if (!saved || typeof saved !== 'object') return
+
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) continue
+      const existing = target[key]
+      // Deep-merge nested records instead of replacing them: edit_state was
+      // shaped by the contract the user LAST edited under, so replacing a
+      // whole group object hides fields a later wire-up added to that group
+      // (live: a wired repeater's fixture items never painted because a
+      // pre-wire-up content object clobbered content.secondaryActions).
+      // Saved values still win per leaf; arrays are leaves (a user's edited
+      // item list replaces the fixture's wholesale).
+      target[key] = isRecord(value) && isRecord(existing) ? overlaidRecord(existing, value) : value
+    }
+  }
+
+  function overlaidRecord(
+    base: Record<string, unknown>,
+    saved: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...base }
+
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) continue
+      const existing = merged[key]
+      merged[key] = isRecord(value) && isRecord(existing) ? overlaidRecord(existing, value) : value
+    }
+
+    return merged
+  }
 
   function isRecord(v: unknown): v is Record<string, unknown> {
     return !!v && typeof v === 'object' && !Array.isArray(v)
@@ -77,26 +169,25 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     if (direct) return direct as FormField[]
 
     const podWithContract = p as PodDetailsWithCompiledContract
-    const compiledContract = podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
-    const contract = compiledContract as { fields?: unknown; ui?: { fields?: unknown } } | null
+    const compiledContract =
+      podWithContract.compiledContract ?? podWithContract.compiled_contract ?? null
+    const contract = compiledContract as {
+      fields?: unknown
+      ui?: { fields?: unknown }
+    } | null
 
-    const fromContract = contract && Array.isArray(contract.fields)
-      ? (contract.fields as FormField[])
-      : null
+    const fromContract =
+      contract && Array.isArray(contract.fields) ? (contract.fields as FormField[]) : null
     if (fromContract) return fromContract
 
-    const uiFields = contract && Array.isArray(contract.ui?.fields)
-      ? (contract.ui.fields as FormField[])
-      : null
+    const uiFields =
+      contract && Array.isArray(contract.ui?.fields) ? (contract.ui.fields as FormField[]) : null
     if (uiFields) return uiFields
 
     return []
   }
 
-  function matchesWhen(
-    when: FormField['when'],
-    model: Record<string, unknown>,
-  ): boolean {
+  function matchesWhen(when: FormField['when'], model: Record<string, unknown>): boolean {
     if (!when) return true
     const conditions = Array.isArray(when) ? when : [when]
     return conditions.every((condition) => dotGet(model, condition.field) === condition.equals)
@@ -132,7 +223,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return undefined
   }
 
-  function ensureVisibleFieldDefaults(fields: FormField[], model: Record<string, unknown>): boolean {
+  function ensureVisibleFieldDefaults(
+    fields: FormField[],
+    model: Record<string, unknown>,
+  ): boolean {
     let changed = false
 
     const visit = (fs: FormField[], scope: Record<string, unknown>) => {
@@ -182,7 +276,10 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return changed
   }
 
-  function mergeMissingValues(target: Record<string, unknown>, source: Record<string, unknown>): boolean {
+  function mergeMissingValues(
+    target: Record<string, unknown>,
+    source: Record<string, unknown>,
+  ): boolean {
     let changed = false
 
     for (const [key, sourceValue] of Object.entries(source)) {
@@ -201,9 +298,30 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     return changed
   }
 
+  function mergePreviewPayload(
+    base: Record<string, unknown>,
+    override: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = JSON.parse(JSON.stringify(base || {}))
+
+    for (const [key, value] of Object.entries(override || {})) {
+      if (isRecord(value) && isRecord(merged[key])) {
+        merged[key] = mergePreviewPayload(merged[key] as Record<string, unknown>, value)
+      } else {
+        merged[key] = value
+      }
+    }
+
+    return merged
+  }
+
   function extractResponsiveValue(value: unknown, vp: PodsPlayerViewport): unknown {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const viewportMap = { laptop: 'desktop', tablet: 'tablet', phone: 'phone' } as const
+      const viewportMap = {
+        laptop: 'desktop',
+        tablet: 'tablet',
+        phone: 'phone',
+      } as const
       const key = viewportMap[vp]
       if (key in (value as Record<string, unknown>)) return (value as Record<string, unknown>)[key]
     }
@@ -240,8 +358,14 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
               const copy = JSON.parse(JSON.stringify(item))
               const applyInItem = (itemFields: FormField[]) => {
                 for (const rf of itemFields) {
-                  if (rf.type === 'group' && rf.children) { applyInItem(rf.children); continue }
-                  if (rf.type === 'row' && rf.fields) { applyInItem(rf.fields); continue }
+                  if (rf.type === 'group' && rf.children) {
+                    applyInItem(rf.children)
+                    continue
+                  }
+                  if (rf.type === 'row' && rf.fields) {
+                    applyInItem(rf.fields)
+                    continue
+                  }
                   if (rf.responsive && rf.name) {
                     const p = rf.path || rf.name
                     const v = dotGet(copy, p)
@@ -274,7 +398,19 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   const previewProps = computed(() => {
     if (formSchema.value.length === 0) return fixture.value || {}
     const payload = rebuildPayload(formSchema.value, flatForm)
-    return applyResponsiveToPayload(payload, formSchema.value, viewport.value)
+    const merged = fixture.value ? mergePreviewPayload(fixture.value, payload) : payload
+    const result = applyResponsiveToPayload(merged, formSchema.value, viewport.value)
+
+    if (import.meta.dev && import.meta.client) {
+      // Debug visibility for value-pipeline investigations (dev only).
+      ;(window as unknown as Record<string, unknown>).__POD_PREVIEW_DEBUG__ = {
+        fixture: fixture.value,
+        rebuilt: payload,
+        result,
+      }
+    }
+
+    return result
   })
 
   const hasChanges = computed(() => {
@@ -297,48 +433,89 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
 
   async function loadPodData() {
     const s = toValue(slug)
+    const sourcePreviewId = requestedSourcePreviewFromRoute()
     loading.value = true
+    loadedSourcePreviewId.value = ''
     try {
-      pod.value = await runtime.getPod(s)
-      if (!pod.value) return
+      const preferredMode = preferredModeFromRoute()
+      if (preferredMode !== mode.value) {
+        mode.value = preferredMode
+      }
+
+      const nextPod = await runtime.getPod(s)
+      if (!nextPod) {
+        if (sourcePreviewId && pod.value?.slug === s) {
+          return
+        }
+
+        pod.value = null
+        fixture.value = null
+        schema.value = null
+        formSchema.value = []
+        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+        initialFormValues.value = {}
+        hydratedVariant.value = null
+        loadedSourcePreviewId.value = ''
+        return
+      }
 
       if (!runtime.supportedModes.includes(mode.value)) {
         mode.value = runtime.supportedModes[0] ?? 'sfc'
       }
 
-      fixture.value =
-        pod.value.fixture ??
-        (runtime.getFixture ? await runtime.getFixture(s) : null) ??
-        null
-      schema.value =
-        pod.value.schema ??
-        (runtime.getSchema ? await runtime.getSchema(s) : null) ??
-        null
+      const nextFixture =
+        nextPod.fixture ?? (runtime.getFixture ? await runtime.getFixture(s) : null) ?? null
+      const nextSchema =
+        nextPod.schema ?? (runtime.getSchema ? await runtime.getSchema(s) : null) ?? null
+      let nextFormSchema = fieldsFromPod(nextPod)
 
-      formSchema.value = fieldsFromPod(pod.value)
-
-      if (formSchema.value.length === 0 && schema.value) {
-        formSchema.value = schemaToFields(schema.value)
+      if (nextFormSchema.length === 0 && nextSchema) {
+        nextFormSchema = schemaToFields(nextSchema)
       }
 
-      if (formSchema.value.length > 0) {
-        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
-        const flat = flatFromFixture(formSchema.value, fixture.value || {})
-        Object.assign(flatForm, flat)
-        ensureVisibleFieldDefaults(formSchema.value, flatForm)
-        initialFormValues.value = JSON.parse(JSON.stringify(flatForm))
-        hydratedVariant.value = typeof flatForm.type === 'string' ? flatForm.type : null
-      } else {
-        initialFormValues.value = {}
-        hydratedVariant.value = null
+      const nextFlatForm: Record<string, unknown> = {}
+      let nextInitialFormValues: Record<string, unknown> = {}
+      let nextHydratedVariant: string | null = null
+
+      if (nextFormSchema.length > 0) {
+        const flat = flatFromFixture(nextFormSchema, nextFixture || {})
+        Object.assign(nextFlatForm, flat)
+        ensureVisibleFieldDefaults(nextFormSchema, nextFlatForm)
+        // Saved values join the reset atomically AND become the clean
+        // baseline: a reloaded draft is not "dirty" for showing what the
+        // user saved.
+        applySavedValuesOverlay(nextFlatForm)
+        nextInitialFormValues = JSON.parse(JSON.stringify(nextFlatForm))
+        nextHydratedVariant = typeof nextFlatForm.type === 'string' ? nextFlatForm.type : null
       }
+
+      fixture.value = nextFixture
+      schema.value = nextSchema
+      formSchema.value = nextFormSchema
+      Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+      if (nextFormSchema.length > 0) {
+        Object.assign(flatForm, nextFlatForm)
+      }
+      initialFormValues.value = nextInitialFormValues
+      hydratedVariant.value = nextHydratedVariant
+      pod.value = nextPod
+      await nextTick()
+      loadedSourcePreviewId.value = sourcePreviewId
     } finally {
       loading.value = false
     }
   }
 
   watch(
-    () => toValue(slug),
+    () =>
+      [
+        toValue(slug),
+        requestedSourcePreviewFromRoute(),
+        route.query.draftPack,
+        route.query.draftArtifact,
+        activeSourcePreviewRevision.value,
+        route.query.fixtureVariant,
+      ] as const,
     async () => {
       await loadPodData()
     },
@@ -348,8 +525,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
   watch(
     () => route.query.mode,
     () => {
-      const requestedMode = requestedModeFromRoute()
-      if (requestedMode) mode.value = requestedMode
+      mode.value = preferredModeFromRoute()
     },
   )
 
@@ -374,6 +550,8 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
       const variantFlat = flatFromFixture(formSchema.value, variantFixture)
       mergeMissingValues(flatForm, variantFlat)
       ensureVisibleFieldDefaults(formSchema.value, flatForm)
+      // The variant fixture must never shadow the user's saved values.
+      applySavedValuesOverlay(flatForm)
       hydratedVariant.value = nextVariant
     },
   )
@@ -394,6 +572,7 @@ export function usePodPlayer(slug: MaybeRefOrGetter<string>) {
     flatForm,
     formSchema,
     previewProps,
+    loadedSourcePreviewId,
     hasChanges,
     reloadComponent,
     applyFormUpdate,

@@ -4,6 +4,8 @@
  * Layout chrome: collapsible panels, scroll mode, overflow toggles, keyboard shortcuts.
  */
 
+const LS_POD_LIST = 'playground.podListCollapsed'
+const LS_FIELD_PANEL = 'playground.fieldPanelCollapsed'
 const LS_SCROLL_MODE = 'playground.scrollMode'
 
 function readLs(key: string, fallback: boolean): boolean {
@@ -29,8 +31,8 @@ export function usePlaygroundLayout(options?: {
   onArrowLeft?: () => void
   onArrowRight?: () => void
 }) {
-  const podListCollapsed = ref(false)
-  const fieldPanelCollapsed = ref(false)
+  const podListCollapsed = ref(readLs(LS_POD_LIST, false))
+  const fieldPanelCollapsed = ref(readLs(LS_FIELD_PANEL, false))
   const scrollMode = ref(readLs(LS_SCROLL_MODE, false))
 
   const advancedFieldsOpen = ref(false)
@@ -38,6 +40,8 @@ export function usePlaygroundLayout(options?: {
   const showPropsTab = ref(false)
   const showYamlTab = ref(false)
 
+  watch(podListCollapsed, (v) => writeLs(LS_POD_LIST, v))
+  watch(fieldPanelCollapsed, (v) => writeLs(LS_FIELD_PANEL, v))
   watch(scrollMode, (v) => writeLs(LS_SCROLL_MODE, v))
 
   function togglePodList() {
