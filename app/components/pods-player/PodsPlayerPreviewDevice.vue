@@ -122,6 +122,12 @@ function syncHead(from: Document, to: Document) {
   from.head.querySelectorAll(STYLE_SELECTOR).forEach((node) => {
     const cloned = node.cloneNode(true) as HTMLElement
     cloned.dataset.podsHeadSync = '1'
+    // PodPack links may be carried inert (media="not all") in the host so
+    // pack utilities never cascade into the app — inside the preview frame
+    // they are the pod's real styles, so reactivate them.
+    if ((cloned as HTMLLinkElement).dataset?.podsStyle === '1') {
+      cloned.removeAttribute('media')
+    }
     to.head.appendChild(cloned)
   })
 }

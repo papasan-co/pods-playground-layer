@@ -114,7 +114,11 @@ export interface PodsPlayerRuntime {
 
   /**
    * Vue runtime mode: provide the ESM runtime bundle URL(s) and/or perform any preloading.
+   *
+   * `parentStylesInert` marks pack stylesheets inert in the host document —
+   * for hosts that render pods inside an iframe preview (which clones head
+   * styles) so pack utilities never cascade into the host app.
    */
-  ensureRuntimeLoaded?(pod: PodDetails): Promise<PodsPlayerEnsureResult>
+  ensureRuntimeLoaded?(pod: PodDetails, options?: { parentStylesInert?: boolean }): Promise<PodsPlayerEnsureResult>
 }
 
