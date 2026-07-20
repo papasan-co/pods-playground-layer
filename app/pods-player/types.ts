@@ -10,6 +10,14 @@
  * Host apps provide the implementation via `usePodsPlayerRuntime()`.
  */
 
+import type {
+  PodRuntimeIdentity,
+  PodRuntimeSession,
+  RuntimeAssetSet,
+} from './runtime/isolation'
+
+export type { PodRuntimeIdentity, PodRuntimeSession, RuntimeAssetSet } from './runtime/isolation'
+
 export type PodsPlayerMode = 'sfc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
 
@@ -86,6 +94,18 @@ export interface PodsPlayerEnsureResult {
    * (Prevents setting props before the element definition exists.)
    */
   ready: boolean
+
+  /** Immutable semantic identity used for registry lookup and asset ownership. */
+  runtimeIdentity?: Readonly<PodRuntimeIdentity>
+  runtimeArtifactKey?: string
+  runtimeBoundaryKey?: string
+  runtimeAssets?: RuntimeAssetSet
+  legacyRuntime?: boolean
+}
+
+export interface PodsPlayerRuntimeRequest {
+  session?: PodRuntimeSession
+  signal?: AbortSignal
 }
 
 export interface PodsPlayerRuntime {
@@ -99,27 +119,27 @@ export interface PodsPlayerRuntime {
   /**
    * Host-provided list for browse views (cards/grids).
    */
-  listPods(): Promise<PodListItem[]>
+  listPods(options?: PodsPlayerRuntimeRequest): Promise<PodListItem[]>
 
   /**
    * Host-provided pod lookup (metadata, plus optionally schema/yaml/fixture).
    */
-  getPod(slug: string): Promise<PodDetails | null>
+  getPod(slug: string, options?: PodsPlayerRuntimeRequest): Promise<PodDetails | null>
 
   /**
    * Optional: load the raw JSON schema for the pod.
    */
-  getSchema?(slug: string): Promise<unknown | null>
+  getSchema?(slug: string, options?: PodsPlayerRuntimeRequest): Promise<unknown | null>
 
   /**
    * Optional: load the YAML definition (used to build the Form tab).
    */
-  getYaml?(slug: string): Promise<string | null>
+  getYaml?(slug: string, options?: PodsPlayerRuntimeRequest): Promise<string | null>
 
   /**
    * Optional: load a default fixture for initial preview.
    */
-  getFixture?(slug: string): Promise<Record<string, unknown> | null>
+  getFixture?(slug: string, options?: PodsPlayerRuntimeRequest): Promise<Record<string, unknown> | null>
 
   /**
    * Optional: CSS custom properties applied to preview roots/iframes.
@@ -151,5 +171,8 @@ export interface PodsPlayerRuntime {
    * for hosts that render pods inside an iframe preview (which clones head
    * styles) so pack utilities never cascade into the host app.
    */
-  ensureRuntimeLoaded?(pod: PodDetails, options?: { parentStylesInert?: boolean }): Promise<PodsPlayerEnsureResult>
+  ensureRuntimeLoaded?(
+    pod: PodDetails,
+    options?: PodsPlayerRuntimeRequest & { parentStylesInert?: boolean },
+  ): Promise<PodsPlayerEnsureResult>
 }
