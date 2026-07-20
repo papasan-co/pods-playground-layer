@@ -13,12 +13,14 @@ import {
   createPreviewReadinessController,
   createRuntimeSnapshot,
   normalizeRuntimeFailure,
+  runtimeAssetLoadKey,
   runtimeArtifactKey as buildRuntimeArtifactKey,
   runtimeBoundaryKey as buildRuntimeBoundaryKey,
   type PodRuntimeApi,
   type PodRuntimeIdentity,
   type PreviewState,
   type PreviewReadinessController,
+  type RuntimeAssetLoadIdentity,
 } from '#pods-player/runtime/isolation'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
@@ -115,6 +117,7 @@ const renderedMode = ref<PodsPlayerMode | null>(null)
 const previewState = shallowRef<PreviewState>({ status: 'idle' })
 let frameGeneration = 0
 let renderGeneration = 0
+const PREVIEW_READINESS_TIMEOUT_MS = 10_000
 let vueMountOwner: { api: PodRuntimeApi; win: Window; artifactKey: string } | null = null
 let readiness: PreviewReadinessController | null = null
 const requestedEffectiveMode = computed(() => {
@@ -525,13 +528,22 @@ async function renderVueRuntimeIntoIframe() {
     renderToken,
   }
   readiness?.dispose()
-  readiness = createPreviewReadinessController({
+  const activeReadiness = createPreviewReadinessController({
     allowedOrigins: [window.location.origin],
     source: win,
     sessionKey,
     frameGeneration,
     renderToken,
+    timeoutMs: PREVIEW_READINESS_TIMEOUT_MS,
+    onTimeout: (failure) => {
+      if (readiness !== activeReadiness || !renderRequest.isCurrent()) return
+      previewState.value = activeReadiness.state()
+      error.value = failure.message
+      vueReady.value = false
+      publishRuntimeSnapshot()
+    },
   })
+  readiness = activeReadiness
   previewState.value = readiness.state()
 
   api.renderPod({
@@ -601,13 +613,6 @@ onBeforeUnmount(() => {
   readiness?.dispose()
   unmountVueRuntimePreview(currentCanvasArtifactId())
 })
-
-function runtimeLoadKey(scripts: readonly string[], stylesheets: readonly string[]): string {
-  return JSON.stringify({
-    scripts,
-    stylesheets,
-  })
-}
 
 function shouldFallbackToVueRuntime(err: unknown): boolean {
   return err instanceof Error && err.message.startsWith('POD_STUDIO_HMR_PREVIEW_FALLBACK:')
@@ -706,7 +711,10 @@ async function loadVueRuntimePreview(): Promise<boolean> {
   if (!request.isCurrent()) return false
   const nextScripts = ensured.vueBundleUrls ?? []
   const nextStylesheets = ensured.stylesheetUrls ?? []
-  const nextArtifactKey = ensured.runtimeArtifactKey || runtimeLoadKey(nextScripts, [])
+  const nextArtifactKey = ensured.runtimeArtifactKey || runtimeAssetLoadKey({
+    moduleScripts: nextScripts,
+    extraStylesheets: nextStylesheets,
+  })
   const nextBoundaryKey = ensured.runtimeBoundaryKey || nextArtifactKey
   if (vueRuntimeBoundaryKey.value !== nextBoundaryKey) {
     unmountVueRuntimePreview(currentCanvasArtifactId())
@@ -714,7 +722,12 @@ async function loadVueRuntimePreview(): Promise<boolean> {
     frameGeneration += 1
     vueReady.value = false
   }
-  vueRuntimeLoadKey.value = runtimeLoadKey(nextScripts, nextStylesheets)
+  vueRuntimeLoadKey.value = runtimeAssetLoadKey({
+    runtimeOwner: nextArtifactKey,
+    moduleScripts: nextScripts,
+    scripts: [],
+    extraStylesheets: nextStylesheets,
+  })
   vueRuntimeArtifactKey.value = nextArtifactKey
   vueRuntimeBoundaryKey.value = nextBoundaryKey
   vueRuntimeIdentity.value = ensured.runtimeIdentity || null
@@ -998,10 +1011,9 @@ watch(
   { deep: true, immediate: true },
 )
 
-function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheets: string[] }) {
+function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
   if (effectiveMode.value !== 'vue') return
-  if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value)
-    return
+  if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
 
   vueReady.value = true
   const state = previewState.value
@@ -1012,7 +1024,23 @@ function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheet
   }
 }
 
+function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknown }): void {
+  if (effectiveMode.value !== 'vue') return
+  if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
+  failPreview(new PodRuntimeFailure(
+    'asset-failed',
+    payload.error instanceof Error ? payload.error.message : 'The pod runtime assets failed to load.',
+    {
+      runtimeArtifactKey: vueRuntimeArtifactKey.value,
+      podSlug: props.pod?.slug,
+      cause: payload.error,
+    },
+  ))
+}
+
 function failPreview(failure: unknown): void {
+  readiness?.dispose()
+  readiness = null
   const normalized = normalizeRuntimeFailure(failure)
   const state = previewState.value
   previewState.value = {
@@ -1084,7 +1112,7 @@ watch(
       :slot-revision="previewSlotRevision"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
-      @scriptsFailed="failPreview"
+      @scriptsFailed="handleScriptsFailed"
     >
       <template v-if="effectiveMode === 'sfc' && Comp">
         <div

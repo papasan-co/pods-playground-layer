@@ -561,6 +561,8 @@ export interface PreviewReadinessExpectation {
   sessionKey: string
   frameGeneration: number
   renderToken: string
+  timeoutMs?: number
+  onTimeout?: (failure: PreviewFailure) => void
 }
 
 export interface PreviewReadinessController {
@@ -599,16 +601,41 @@ export function createPreviewReadinessController(
     sessionKey: expectation.sessionKey,
     renderToken: expectation.renderToken,
   }
+  let watchdog: ReturnType<typeof setTimeout> | null = null
+
+  const clearWatchdog = () => {
+    if (watchdog === null) return
+    clearTimeout(watchdog)
+    watchdog = null
+  }
+
+  if (expectation.timeoutMs && expectation.timeoutMs > 0) {
+    watchdog = setTimeout(() => {
+      watchdog = null
+      if (current.status !== 'mounting') return
+      const failure: PreviewFailure = {
+        code: 'render-failed',
+        message: 'The pod runtime did not acknowledge that rendering completed.',
+      }
+      current = {
+        status: 'failed',
+        sessionKey: expectation.sessionKey,
+        failure,
+      }
+      expectation.onTimeout?.(failure)
+    }, expectation.timeoutMs)
+  }
 
   return {
     accept(event) {
-      if (current.status === 'disposed' || current.status === 'failed') return false
+      if (current.status !== 'mounting') return false
       if (event.source !== expectation.source) return false
       if (!expectation.allowedOrigins.includes(event.origin)) return false
       if (!isReadyMessage(event.data)) return false
       if (event.data.sessionKey !== expectation.sessionKey) return false
       if (event.data.frameGeneration !== expectation.frameGeneration) return false
       if (event.data.renderToken !== expectation.renderToken) return false
+      clearWatchdog()
       current = {
         status: 'ready',
         sessionKey: expectation.sessionKey,
@@ -619,6 +646,7 @@ export function createPreviewReadinessController(
     state: () => current,
     fail(error) {
       if (current.status === 'disposed') return
+      clearWatchdog()
       current = {
         status: 'failed',
         sessionKey: expectation.sessionKey,
@@ -626,9 +654,57 @@ export function createPreviewReadinessController(
       }
     },
     dispose() {
+      clearWatchdog()
       current = { status: 'disposed', sessionKey: expectation.sessionKey }
     },
   }
+}
+
+export interface RuntimeAssetLoadIdentity {
+  runtimeOwner?: string | null
+  moduleScripts?: readonly string[]
+  scripts?: readonly string[]
+  extraStylesheets?: readonly string[]
+}
+
+/** Build the exact asset identity used to reject stale iframe completion events. */
+export function runtimeAssetLoadKey(identity: RuntimeAssetLoadIdentity): string {
+  return JSON.stringify({
+    runtimeOwner: identity.runtimeOwner || null,
+    moduleScripts: [...(identity.moduleScripts ?? [])],
+    scripts: [...(identity.scripts ?? [])],
+    extraStylesheets: [...(identity.extraStylesheets ?? [])],
+  })
+}
+
+/** Report whether an asset load can execute a runtime rather than styles alone. */
+export function hasRuntimeAssetScripts(identity: RuntimeAssetLoadIdentity): boolean {
+  return (identity.moduleScripts?.length ?? 0) > 0 || (identity.scripts?.length ?? 0) > 0
+}
+
+const PREVIEW_SHELL_STYLE = `
+html, body {
+  box-sizing: border-box;
+  margin: 0;
+  min-height: 100%;
+  width: 100%;
+}
+*, *::before, *::after {
+  box-sizing: inherit;
+}
+[data-pods-preview-root="1"] {
+  min-height: 100%;
+  width: 100%;
+}
+`
+
+/** Install the minimal deterministic shell owned by every iframe preview document. */
+export function installPreviewShellStyles(doc: Document): void {
+  if (doc.head.querySelector('[data-pods-shell-style="base"]')) return
+  const style = doc.createElement('style')
+  style.dataset.podsShellStyle = 'base'
+  style.textContent = PREVIEW_SHELL_STYLE
+  doc.head.appendChild(style)
 }
 
 export interface RuntimeSnapshot {

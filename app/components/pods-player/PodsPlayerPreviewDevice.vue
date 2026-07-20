@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { createApp, h } from 'vue'
 import type { PodsPlayerViewport } from '#pods-player/types'
+import {
+  hasRuntimeAssetScripts,
+  installPreviewShellStyles,
+  type RuntimeAssetLoadIdentity,
+} from '#pods-player/runtime/isolation'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerPreviewDevice
@@ -77,15 +82,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (
-    e: 'scriptsLoaded',
-    payload: {
-      moduleScripts: string[]
-      scripts: string[]
-      extraStylesheets: string[]
-    },
-  ): void
-  (e: 'scriptsFailed', error: unknown): void
+  (e: 'scriptsLoaded', payload: RuntimeAssetLoadIdentity): void
+  (e: 'scriptsFailed', payload: RuntimeAssetLoadIdentity & { error: unknown }): void
 }>()
 
 const frameSize = computed(
@@ -483,10 +481,16 @@ async function bootIframe() {
   }
 
   booting = true
+  const assetLoad: RuntimeAssetLoadIdentity = {
+    runtimeOwner: props.runtimeOwner || null,
+    moduleScripts: [...(props.moduleScripts ?? [])],
+    scripts: [...(props.scripts ?? [])],
+    extraStylesheets: [...(props.extraStylesheets ?? [])],
+  }
   try {
-    await bootIframeNow()
+    await bootIframeNow(assetLoad)
   } catch (error) {
-    emit('scriptsFailed', error)
+    emit('scriptsFailed', { ...assetLoad, error })
   } finally {
     booting = false
     if (bootAgain) {
@@ -496,13 +500,13 @@ async function bootIframe() {
   }
 }
 
-async function bootIframeNow() {
+async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
   const iframe = iframeRef.value
   if (!iframe) return
 
-  const moduleScripts = [...(props.moduleScripts ?? [])]
-  const scripts = [...(props.scripts ?? [])]
-  const extraStylesheets = [...(props.extraStylesheets ?? [])]
+  const moduleScripts = [...(assetLoad.moduleScripts ?? [])]
+  const scripts = [...(assetLoad.scripts ?? [])]
+  const extraStylesheets = [...(assetLoad.extraStylesheets ?? [])]
   const doc = iframe.contentDocument
   if (!doc) return
   const win = iframe.contentWindow
@@ -522,6 +526,7 @@ async function bootIframeNow() {
     doc.close()
     await nextTick()
 
+    installPreviewShellStyles(doc)
     syncShellStyles(document, doc)
     syncCSSVars(doc)
     syncBodyDataset(doc)
@@ -545,22 +550,20 @@ async function bootIframeNow() {
 
   if (moduleScripts.length) {
     await ensureModuleScripts(doc, moduleScripts)
-    if (
-      sameStringList(moduleScripts, props.moduleScripts ?? []) &&
-      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
-    ) {
-      emit('scriptsLoaded', { moduleScripts, scripts: [], extraStylesheets })
-    }
   }
 
   if (scripts.length) {
     await ensureScripts(doc, scripts)
-    if (
-      sameStringList(scripts, props.scripts ?? []) &&
-      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
-    ) {
-      emit('scriptsLoaded', { moduleScripts: [], scripts, extraStylesheets })
-    }
+  }
+
+  if (
+    hasRuntimeAssetScripts(assetLoad) &&
+    sameStringList(moduleScripts, props.moduleScripts ?? []) &&
+    sameStringList(scripts, props.scripts ?? []) &&
+    sameStringList(extraStylesheets, props.extraStylesheets ?? []) &&
+    (assetLoad.runtimeOwner || null) === (props.runtimeOwner || null)
+  ) {
+    emit('scriptsLoaded', assetLoad)
   }
 
   await nextTick()
@@ -604,14 +607,20 @@ watchEffect(() => {
             'data-pods-canvas-artifact-id': props.canvasArtifactId || '',
             'data-pods-debug-fill': props.debugFill ? '1' : '0',
             'data-pods-preview-settle-layer-sequences': props.settleLayerSequences ? '1' : '0',
-            style: props.debugFill
-              ? {
-                  backgroundImage:
-                    'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 18px, rgba(248,113,113,0.16) 18px 36px)',
-                  outline: '2px solid rgba(220,38,38,0.7)',
-                  outlineOffset: '-2px',
-                }
-              : undefined,
+            style: {
+              width: '100%',
+              ...(props.scrollable
+                ? { minHeight: '100%' }
+                : { height: '100%', overflow: 'hidden' }),
+              ...(props.debugFill
+                ? {
+                    backgroundImage:
+                      'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 18px, rgba(248,113,113,0.16) 18px 36px)',
+                    outline: '2px solid rgba(220,38,38,0.7)',
+                    outlineOffset: '-2px',
+                  }
+                : {}),
+            },
           },
           slots.default?.(),
         )
