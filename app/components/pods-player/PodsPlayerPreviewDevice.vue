@@ -2,6 +2,7 @@
 import { createApp, h } from 'vue'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import {
+  createPreviewStylesheetPlan,
   hasRuntimeAssetScripts,
   installPreviewShellStyles,
   type RuntimeAssetLoadIdentity,
@@ -45,8 +46,16 @@ const props = defineProps<{
   cssVars?: Record<string, string> | null
   /**
    * Additional stylesheet URLs injected directly into iframe head.
+   * These are required runtime or pack styles and participate in readiness.
    */
   extraStylesheets?: string[]
+  /** Structural stylesheets explicitly owned by this preview iframe. */
+  shellStylesheets?: readonly string[]
+  /**
+   * Theme and font stylesheet URLs injected into the iframe without delaying
+   * runtime readiness. A slow optional font must never hold the canvas blank.
+   */
+  optionalStylesheets?: string[]
   /** Immutable owner attached to every managed stylesheet/module node. */
   runtimeOwner?: string | null
   /**
@@ -474,6 +483,34 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
   )
 }
 
+function syncOptionalStylesheets(doc: Document, urls: string[]) {
+  const wanted = [...new Set(urls)]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => new URL(value.trim(), window.location.origin).href)
+
+  const existingNodes = Array.from(
+    doc.querySelectorAll('link[data-pods-optional-style="1"]'),
+  ) as HTMLLinkElement[]
+  const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
+
+  for (const node of existingNodes) {
+    if (!wanted.includes(node.href)) node.remove()
+  }
+
+  for (const href of wanted) {
+    if (existingMap.has(href)) continue
+    const link = doc.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = href
+    link.dataset.podsOptionalStyle = '1'
+    link.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+    link.addEventListener('error', () => {
+      link.dataset.podsOptionalStyleFailed = '1'
+    }, { once: true })
+    doc.head.appendChild(link)
+  }
+}
+
 async function bootIframe() {
   if (booting) {
     bootAgain = true
@@ -485,6 +522,7 @@ async function bootIframe() {
     runtimeOwner: props.runtimeOwner || null,
     moduleScripts: [...(props.moduleScripts ?? [])],
     scripts: [...(props.scripts ?? [])],
+    shellStylesheets: [...(props.shellStylesheets ?? [])],
     extraStylesheets: [...(props.extraStylesheets ?? [])],
   }
   try {
@@ -506,7 +544,13 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
 
   const moduleScripts = [...(assetLoad.moduleScripts ?? [])]
   const scripts = [...(assetLoad.scripts ?? [])]
+  const shellStylesheets = [...(assetLoad.shellStylesheets ?? [])]
   const extraStylesheets = [...(assetLoad.extraStylesheets ?? [])]
+  const stylesheetPlan = createPreviewStylesheetPlan({
+    shellStylesheets,
+    extraStylesheets,
+    optionalStylesheets: props.optionalStylesheets ?? [],
+  })
   const doc = iframe.contentDocument
   if (!doc) return
   const win = iframe.contentWindow
@@ -530,7 +574,8 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
     syncShellStyles(document, doc)
     syncCSSVars(doc)
     syncBodyDataset(doc)
-    await syncExtraStylesheets(doc, extraStylesheets)
+    syncOptionalStylesheets(doc, stylesheetPlan.optional)
+    await syncExtraStylesheets(doc, stylesheetPlan.required)
     if (win) syncRuntime(window, win)
 
     applyScrollMode(doc, !!props.scrollable)
@@ -542,9 +587,11 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
   // IMPORTANT: `syncCSSVars()` overwrites `documentElement.style.cssText`, so it must run
   // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
   // non-scroll previews (many pods rely on `h-full`).
+  installPreviewShellStyles(doc)
   syncCSSVars(doc)
   syncBodyDataset(doc)
-  await syncExtraStylesheets(doc, extraStylesheets)
+  syncOptionalStylesheets(doc, stylesheetPlan.optional)
+  await syncExtraStylesheets(doc, stylesheetPlan.required)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
@@ -560,6 +607,7 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
     hasRuntimeAssetScripts(assetLoad) &&
     sameStringList(moduleScripts, props.moduleScripts ?? []) &&
     sameStringList(scripts, props.scripts ?? []) &&
+    sameStringList(shellStylesheets, props.shellStylesheets ?? []) &&
     sameStringList(extraStylesheets, props.extraStylesheets ?? []) &&
     (assetLoad.runtimeOwner || null) === (props.runtimeOwner || null)
   ) {
@@ -578,7 +626,9 @@ watchEffect(() => {
   void props.ready
   void props.scrollable
   void props.cssVars
+  void props.shellStylesheets
   void props.extraStylesheets
+  void props.optionalStylesheets
   void props.runtimeOwner
   void props.rootClasses
   void props.bodyDataset
