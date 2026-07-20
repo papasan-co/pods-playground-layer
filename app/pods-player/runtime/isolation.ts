@@ -664,7 +664,37 @@ export interface RuntimeAssetLoadIdentity {
   runtimeOwner?: string | null
   moduleScripts?: readonly string[]
   scripts?: readonly string[]
+  shellStylesheets?: readonly string[]
   extraStylesheets?: readonly string[]
+  /** Optional theme/font CSS does not participate in readiness completion. */
+  optionalStylesheets?: readonly string[]
+}
+
+export interface PreviewStylesheetPlan {
+  required: string[]
+  optional: string[]
+}
+
+/**
+ * Keep render-critical shell and pack CSS on the readiness path while letting
+ * brand and font decoration arrive independently.
+ */
+export function createPreviewStylesheetPlan(
+  identity: Pick<RuntimeAssetLoadIdentity, 'shellStylesheets' | 'extraStylesheets' | 'optionalStylesheets'>,
+): PreviewStylesheetPlan {
+  const normalize = (stylesheets: readonly string[] = []) => [
+    ...new Set(
+      stylesheets
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ]
+
+  return {
+    required: normalize([...(identity.shellStylesheets ?? []), ...(identity.extraStylesheets ?? [])]),
+    optional: normalize(identity.optionalStylesheets),
+  }
 }
 
 /** Build the exact asset identity used to reject stale iframe completion events. */
@@ -673,6 +703,7 @@ export function runtimeAssetLoadKey(identity: RuntimeAssetLoadIdentity): string 
     runtimeOwner: identity.runtimeOwner || null,
     moduleScripts: [...(identity.moduleScripts ?? [])],
     scripts: [...(identity.scripts ?? [])],
+    shellStylesheets: [...(identity.shellStylesheets ?? [])],
     extraStylesheets: [...(identity.extraStylesheets ?? [])],
   })
 }
