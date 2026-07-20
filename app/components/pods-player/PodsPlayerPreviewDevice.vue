@@ -42,10 +42,14 @@ const props = defineProps<{
    * Additional stylesheet URLs injected directly into iframe head.
    */
   extraStylesheets?: string[]
+  /** Immutable owner attached to every managed stylesheet/module node. */
+  runtimeOwner?: string | null
   /**
    * Extra classes applied to iframe document root.
    */
   rootClasses?: string[]
+  /** Dataset values applied explicitly to the iframe body. */
+  bodyDataset?: Record<string, string> | null
   /**
    * The source preview or draft artifact currently rendered inside the iframe.
    * Parent readiness waits for this marker so it does not race the iframe mini-app render.
@@ -81,6 +85,7 @@ const emit = defineEmits<{
       extraStylesheets: string[]
     },
   ): void
+  (e: 'scriptsFailed', error: unknown): void
 }>()
 
 const frameSize = computed(
@@ -136,36 +141,41 @@ const iframeRef = ref<HTMLIFrameElement>()
 const slotVNode = shallowRef()
 const slots = useSlots()
 
-let obs: MutationObserver | null = null
 let miniApp: ReturnType<typeof createApp> | null = null
 let booting = false
 let bootAgain = false
 
 onBeforeUnmount(() => {
-  obs?.disconnect()
   miniApp?.unmount()
 })
 
-const STYLE_SELECTOR = 'style,link[rel="stylesheet"]'
-const SYNCED_HEAD_SELECTOR = '[data-pods-head-sync="1"]'
+// Vite represents explicitly imported shell CSS and scoped component CSS as
+// style nodes in development. Copy only the known preview-shell sources; the
+// previous catch-all copied every host style (including unrelated CMS chrome)
+// into every preview frame.
+const SHELL_STYLE_SELECTOR = [
+  'style[data-vite-dev-id*="/assets/css/"]',
+  'style[data-vite-dev-id*="/.nuxt/ui.css"]',
+  'style[data-vite-dev-id*="/.nuxt/nuxt-fonts-global.css"]',
+  'style[data-vite-dev-id*="/pods-playground-layer/app/components/pods-player/"]',
+  'style[data-vite-dev-id*="/cms-story-pods/src/pods/"]',
+  'style[data-vite-dev-id*="/cms-story-pods/.pod-studio/"]',
+  'style[data-vite-dev-id*="/scroll-runtime-layer/"]',
+  'style[data-vite-dev-id*="/story-scroll-layer/"]',
+].join(',')
+const SYNCED_HEAD_SELECTOR = '[data-pods-shell-style="1"]'
 
-function syncHead(from: Document, to: Document) {
+function syncShellStyles(from: Document, to: Document) {
   to.head.querySelectorAll(SYNCED_HEAD_SELECTOR).forEach((n) => n.remove())
-  from.head.querySelectorAll(STYLE_SELECTOR).forEach((node) => {
+  from.head.querySelectorAll(SHELL_STYLE_SELECTOR).forEach((node) => {
     const cloned = node.cloneNode(true) as HTMLElement
-    cloned.dataset.podsHeadSync = '1'
-    // PodPack links may be carried inert (media="not all") in the host so
-    // pack utilities never cascade into the app — inside the preview frame
-    // they are the pod's real styles, so reactivate them.
-    if ((cloned as HTMLLinkElement).dataset?.podsStyle === '1') {
-      cloned.removeAttribute('media')
-    }
+    cloned.dataset.podsShellStyle = '1'
     to.head.appendChild(cloned)
   })
 }
 
 function syncCSSVars(to: Document) {
-  to.documentElement.style.cssText = document.documentElement.style.cssText
+  to.documentElement.style.cssText = ''
 
   const vars = props.cssVars
   if (vars && typeof vars === 'object') {
@@ -176,13 +186,7 @@ function syncCSSVars(to: Document) {
     }
   }
 
-  // Keep host classes in sync so dark mode works, then append caller-provided runtime classes.
-  const classSet = new Set(
-    document.documentElement.className
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter(Boolean),
-  )
+  const classSet = new Set<string>()
 
   for (const className of props.rootClasses ?? []) {
     if (typeof className !== 'string') continue
@@ -192,6 +196,21 @@ function syncCSSVars(to: Document) {
   }
 
   to.documentElement.className = Array.from(classSet).join(' ')
+}
+
+const appliedBodyDatasetKeys = new Set<string>()
+
+function syncBodyDataset(to: Document) {
+  for (const key of appliedBodyDatasetKeys) {
+    delete to.body.dataset[key]
+  }
+  appliedBodyDatasetKeys.clear()
+
+  for (const [key, value] of Object.entries(props.bodyDataset ?? {})) {
+    if (!key || typeof value !== 'string') continue
+    to.body.dataset[key] = value
+    appliedBodyDatasetKeys.add(key)
+  }
 }
 
 function syncRuntime(fromWin: Window, toWin: Window) {
@@ -309,7 +328,9 @@ function applyLayerSequenceSettleOverrides(doc: Document, enabled: boolean) {
 }
 
 async function ensureScripts(doc: Document, urls: string[]) {
-  const unique = [...new Set(urls)].filter(Boolean)
+  const unique = [...new Set(urls)]
+    .filter(Boolean)
+    .map((url) => new URL(url, window.location.origin).href)
   if (unique.length === 0) return
 
   const existing = new Set(
@@ -326,15 +347,21 @@ async function ensureScripts(doc: Document, urls: string[]) {
       s.src = url
       s.async = false
       s.dataset.podsPlayerScript = '1'
+      s.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
       s.onload = () => resolve()
-      s.onerror = () => reject(new Error(`Failed to load script: ${url}`))
+      s.onerror = () => {
+        s.remove()
+        reject(new Error(`Failed to load script: ${url}`))
+      }
       doc.head.appendChild(s)
     })
   }
 }
 
 async function ensureModuleScripts(doc: Document, urls: string[]) {
-  const unique = [...new Set(urls)].filter(Boolean)
+  const unique = [...new Set(urls)]
+    .filter(Boolean)
+    .map((url) => new URL(url, window.location.origin).href)
   if (unique.length === 0) return
 
   const existing = new Set(
@@ -351,8 +378,12 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
       s.src = url
       s.async = false
       s.dataset.podsPlayerModule = '1'
+      s.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
       s.onload = () => resolve()
-      s.onerror = () => reject(new Error(`Failed to load module script: ${url}`))
+      s.onerror = () => {
+        s.remove()
+        reject(new Error(`Failed to load module script: ${url}`))
+      }
       doc.head.appendChild(s)
     })
   }
@@ -375,7 +406,7 @@ function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
     return Promise.resolve()
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup()
       if (stylesheetLoaded(link)) {
@@ -395,7 +426,9 @@ function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
     }
     const handleError = () => {
       cleanup()
-      resolve()
+      const url = link.href
+      link.remove()
+      reject(new Error(`Failed to load stylesheet: ${url}`))
     }
 
     link.addEventListener('load', handleLoad, { once: true })
@@ -431,6 +464,7 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
     link.rel = 'stylesheet'
     link.href = href
     link.dataset.podsExtraStyle = '1'
+    link.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
     doc.head.appendChild(link)
   }
 
@@ -451,6 +485,8 @@ async function bootIframe() {
   booting = true
   try {
     await bootIframeNow()
+  } catch (error) {
+    emit('scriptsFailed', error)
   } finally {
     booting = false
     if (bootAgain) {
@@ -486,13 +522,11 @@ async function bootIframeNow() {
     doc.close()
     await nextTick()
 
-    syncHead(document, doc)
+    syncShellStyles(document, doc)
     syncCSSVars(doc)
+    syncBodyDataset(doc)
     await syncExtraStylesheets(doc, extraStylesheets)
     if (win) syncRuntime(window, win)
-
-    obs = new MutationObserver(() => syncHead(document, doc))
-    obs.observe(document.head, { childList: true })
 
     applyScrollMode(doc, !!props.scrollable)
 
@@ -504,6 +538,7 @@ async function bootIframeNow() {
   // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
   // non-scroll previews (many pods rely on `h-full`).
   syncCSSVars(doc)
+  syncBodyDataset(doc)
   await syncExtraStylesheets(doc, extraStylesheets)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
@@ -541,7 +576,9 @@ watchEffect(() => {
   void props.scrollable
   void props.cssVars
   void props.extraStylesheets
+  void props.runtimeOwner
   void props.rootClasses
+  void props.bodyDataset
   void props.canvasArtifactId
   void props.debugFill
   void props.settleLayerSequences
@@ -579,6 +616,11 @@ watchEffect(() => {
           slots.default?.(),
         )
   void nextTick().then(() => bootIframe())
+})
+
+defineExpose({
+  iframeElement: () => iframeRef.value ?? null,
+  iframeWindow: () => iframeRef.value?.contentWindow ?? null,
 })
 </script>
 
