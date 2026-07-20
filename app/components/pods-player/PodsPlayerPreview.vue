@@ -6,6 +6,22 @@ import type {
   PodsPlayerViewport,
 } from '#pods-player/types'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
+import {
+  PodRuntimeFailure,
+  captureLegacyRuntime,
+  createLatestRequestController,
+  createPreviewReadinessController,
+  createRuntimeSnapshot,
+  normalizeRuntimeFailure,
+  runtimeAssetLoadKey,
+  runtimeArtifactKey as buildRuntimeArtifactKey,
+  runtimeBoundaryKey as buildRuntimeBoundaryKey,
+  type PodRuntimeApi,
+  type PodRuntimeIdentity,
+  type PreviewState,
+  type PreviewReadinessController,
+  type RuntimeAssetLoadIdentity,
+} from '#pods-player/runtime/isolation'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
 /**
@@ -48,6 +64,17 @@ const activeSourcePreviewRevision = useState<number>(
   () => 0,
 )
 const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 0)
+const config = useRuntimeConfig()
+
+type PreviewDeviceHandle = {
+  iframeElement: () => HTMLIFrameElement | null
+  iframeWindow: () => Window | null
+}
+
+const previewDeviceRef = ref<PreviewDeviceHandle | null>(null)
+const previewRequests = createLatestRequestController()
+const runtimeLoadRequests = createLatestRequestController()
+const previewModeRequests = createLatestRequestController()
 
 const Comp = shallowRef<any>(null)
 const renderedPreviewProps = shallowRef<Record<string, unknown>>({})
@@ -79,11 +106,20 @@ const resolvedRenderModeTimingKeys = new Set<string>()
 const vueScripts = ref<string[]>([])
 const vueStylesheets = ref<string[]>([])
 const vueRuntimeLoadKey = ref('')
+const vueRuntimeArtifactKey = ref('')
+const vueRuntimeBoundaryKey = ref('')
+const vueRuntimeIdentity = shallowRef<Readonly<PodRuntimeIdentity> | null>(null)
 const vueReady = ref(false)
 const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
 const renderedMode = ref<PodsPlayerMode | null>(null)
+const previewState = shallowRef<PreviewState>({ status: 'idle' })
+let frameGeneration = 0
+let renderGeneration = 0
+const PREVIEW_READINESS_TIMEOUT_MS = 10_000
+let vueMountOwner: { api: PodRuntimeApi; win: Window; artifactKey: string } | null = null
+let readiness: PreviewReadinessController | null = null
 const requestedEffectiveMode = computed(() => {
   const sourcePreviewId = currentCanvasArtifactId()
   const shouldUseHmrSfc = isActiveHmrSourcePreview(sourcePreviewId)
@@ -95,6 +131,11 @@ const requestedEffectiveMode = computed(() => {
   return shouldUseHmrSfc ? 'sfc' : props.mode
 })
 const effectiveMode = computed(() => renderedMode.value || requestedEffectiveMode.value)
+const previewFrameKey = computed(() =>
+  effectiveMode.value === 'vue'
+    ? `artifact:${vueRuntimeBoundaryKey.value || 'resolving'}`
+    : `source:${currentDraftPackId()}:${currentCanvasArtifactId() || 'local'}`,
+)
 const renderedCanvasArtifactId = computed(() =>
   effectiveMode.value === 'sfc' ? renderedSfcArtifactId.value : currentCanvasArtifactId(),
 )
@@ -225,10 +266,7 @@ function waitForPreviewPaint(win: Window | null): Promise<void> {
 
 function previewIframeWindow(): Window | null {
   if (!import.meta.client) return null
-
-  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
-
-  return frame?.contentWindow ?? null
+  return previewDeviceRef.value?.iframeWindow() ?? null
 }
 
 function previewBodyText(win: Window | null): string {
@@ -305,99 +343,11 @@ function visibleTextCandidates(
   return [...candidates]
 }
 
-async function waitForExpectedPreviewTextOrChange(
-  win: Window | null,
-  expectedTexts: string[],
-  previousText: string | null | undefined,
-): Promise<{ expectedTextVisible: boolean; textChanged: boolean }> {
-  if (!import.meta.client) {
-    return { expectedTextVisible: false, textChanged: false }
-  }
-
-  const candidates = [...expectedTexts].sort((a, b) => b.length - a.length)
-  const hasPreviousText = Boolean(previousText)
-  const hasExpectedText = candidates.length > 0
-
-  const deadline = Date.now() + 4000
-  while (Date.now() < deadline) {
-    const nextText = previewBodyText(win)
-    const comparableNextText = comparablePreviewText(nextText)
-    if (
-      candidates.some((candidate) => comparableNextText.includes(comparablePreviewText(candidate)))
-    ) {
-      return {
-        expectedTextVisible: true,
-        textChanged: hasPreviousText ? nextText !== previousText : false,
-      }
-    }
-
-    if (!hasExpectedText && hasPreviousText && nextText && nextText !== previousText) {
-      return { expectedTextVisible: false, textChanged: true }
-    }
-
-    await wait(50)
-  }
-
-  return { expectedTextVisible: false, textChanged: false }
-}
-
-async function waitForPreviewContent(win: Window | null): Promise<void> {
-  if (!import.meta.client) return
-
-  const deadline = Date.now() + 4000
-
-  while (Date.now() < deadline) {
-    const doc = win?.document ?? previewIframeWindow()?.document ?? document
-
-    if (
-      doc.querySelector(
-        '[data-pod-surface="1"], [data-primitive], [data-pods-preview-root="1"] section',
-      ) ||
-      (doc.body?.textContent || '').trim().length > 0
-    ) {
-      return
-    }
-
-    await wait(50)
-  }
-}
-
-async function waitForPreviewDataReady(sourcePreviewId: string | null = null): Promise<boolean> {
-  if (!import.meta.client) return true
-
-  const deadline = Date.now() + 4000
-  while (Date.now() < deadline) {
-    const dataReady =
-      props.contentReady !== false &&
-      (!sourcePreviewId || props.contentSourcePreviewId === sourcePreviewId)
-
-    if (dataReady) {
-      return true
-    }
-
-    await wait(50)
-  }
-
-  return false
-}
-
-async function waitForCanvasArtifact(
-  win: Window | null,
-  sourcePreviewId: string | null,
-): Promise<void> {
-  if (!import.meta.client || !sourcePreviewId) return
-
-  const deadline = Date.now() + 4000
-  const selector = `[data-pods-canvas-artifact-id="${CSS.escape(sourcePreviewId)}"]`
-
-  while (Date.now() < deadline) {
-    const doc = win?.document ?? previewIframeWindow()?.document ?? document
-    if (doc.querySelector(selector)) {
-      return
-    }
-
-    await wait(50)
-  }
+function previewDataReady(sourcePreviewId: string | null = null): boolean {
+  return (
+    props.contentReady !== false &&
+    (!sourcePreviewId || props.contentSourcePreviewId === sourcePreviewId)
+  )
 }
 
 async function emitPreviewReadyAfterPaint(
@@ -411,8 +361,7 @@ async function emitPreviewReadyAfterPaint(
 ): Promise<void> {
   const requestId = ++previewReadyRequestId
   await nextTick()
-  const dataReady = await waitForPreviewDataReady(sourcePreviewId)
-  if (!dataReady) {
+  if (!previewDataReady(sourcePreviewId)) {
     recordPreviewTiming(sourcePreviewId, 'canvas_ready_deferred_until_matching_source_preview_data', {
       source: options.source || 'unknown',
       contentSourcePreviewId: props.contentSourcePreviewId || null,
@@ -420,28 +369,14 @@ async function emitPreviewReadyAfterPaint(
     })
     return
   }
-  await nextTick()
-  await waitForCanvasArtifact(win, sourcePreviewId)
-  await waitForPreviewContent(win)
   const explicitPreviousText = options.previousText || ''
-  const previousText = explicitPreviousText || previewBodyText(win)
   const registeredExpectedTexts = sourcePreviewExpectedTexts(sourcePreviewId, explicitPreviousText)
   const expectedTexts = [
     ...(sourcePreviewId && registeredExpectedTexts.length > 0
       ? registeredExpectedTexts
       : options.expectedTexts || []),
   ].filter((value, index, list) => list.indexOf(value) === index)
-  const previewWait = await waitForExpectedPreviewTextOrChange(win, expectedTexts, previousText)
   await waitForPreviewPaint(win)
-  const useFastHmrReadyPath = isActiveHmrSourcePreview(sourcePreviewId)
-  if (!useFastHmrReadyPath) {
-    await wait(50)
-    await waitForPreviewPaint(win)
-    if (previewWait.expectedTextVisible) {
-      await wait(125)
-      await waitForPreviewPaint(win)
-    }
-  }
 
   if (requestId !== previewReadyRequestId) {
     return
@@ -451,48 +386,48 @@ async function emitPreviewReadyAfterPaint(
     return
   }
 
-  if (sourcePreviewId && expectedTexts.length > 0 && !previewWait.expectedTextVisible) {
-    return
+  if (!previewDataReady(sourcePreviewId)) return
+  if (sourcePreviewId) {
+    const doc = win?.document ?? previewIframeWindow()?.document ?? document
+    const selector = `[data-pods-canvas-artifact-id="${CSS.escape(sourcePreviewId)}"]`
+    if (!doc.querySelector(selector)) return
   }
 
+  const nextText = previewBodyText(win)
   recordPreviewTiming(sourcePreviewId, 'canvas_painted_ready', {
     source: options.source || 'unknown',
     expectedTextCount: expectedTexts.length,
-    expectedTextVisible: previewWait.expectedTextVisible,
-    textChanged: previewWait.textChanged,
-    fastHmrReadyPath: useFastHmrReadyPath,
+    textChanged: Boolean(explicitPreviousText && nextText !== explicitPreviousText),
+    acknowledgement: 'vue-next-tick-two-animation-frames',
   })
   emitPreviewReady(sourcePreviewId)
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
-async function vueRuntimeApi(win: Window | null): Promise<{
-  renderPod: (args: unknown) => void
-  unmount?: (args: unknown) => void
-} | null> {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const api = (win as any)?.__AUTUMN_PODS_VUE__
-
-    if (api && typeof api.renderPod === 'function') {
-      return api
-    }
-
-    await wait(50)
+function vueRuntimeApi(win: Window | null): { api: PodRuntimeApi; legacy: boolean } {
+  const artifactKey = vueRuntimeArtifactKey.value
+  if (!win || !artifactKey) {
+    throw new PodRuntimeFailure('missing-runtime', 'The preview runtime has no active artifact identity.', {
+      runtimeArtifactKey: artifactKey || undefined,
+      podSlug: props.pod?.slug,
+    })
   }
-
-  return null
+  const runtimeWindow = win as Window & {
+    __AUTUMN_PODS_REGISTRY__?: Record<string, PodRuntimeApi>
+    __AUTUMN_PODS_VUE__?: PodRuntimeApi
+    __AUTUMN_PODS_LEGACY_OWNER__?: string
+  }
+  const registered = runtimeWindow.__AUTUMN_PODS_REGISTRY__?.[artifactKey]
+  if (registered) return { api: registered, legacy: false }
+  return { api: captureLegacyRuntime(runtimeWindow, artifactKey), legacy: true }
 }
 
 function unmountVueRuntimePreview(sourcePreviewId: string | null): boolean {
-  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
-  const api = (frame?.contentWindow as any)?.__AUTUMN_PODS_VUE__
-  if (!api || typeof api.unmount !== 'function') return false
+  const owner = vueMountOwner
+  if (!owner || typeof owner.api.unmount !== 'function') return false
 
   try {
-    api.unmount({ mountSelector: '[data-pods-vue-mount="1"]' })
+    owner.api.unmount({ mountSelector: '[data-pods-vue-mount="1"]' })
+    vueMountOwner = null
     recordPreviewTiming(sourcePreviewId, 'vue_runtime_preview_unmounted_for_sfc', {
       podSlug: props.pod?.slug || null,
     })
@@ -525,7 +460,7 @@ if (import.meta.client && import.meta.hot) {
     }
 
     void (async () => {
-      await waitForPreviewDataReady()
+      if (!previewDataReady()) return
       const previousText = previewBodyText(window)
       const expectedTexts = visibleTextCandidates(props.previewProps || {}, previousText)
 
@@ -556,11 +491,25 @@ async function renderVueRuntimeIntoIframe() {
   if (!vueReady.value) return
   if (!props.pod?.slug) return
 
-  // The iframe is hosted by PodsPlayerPreviewDevice; find it and call into the runtime API.
-  const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Pod preview"]')
-  const win = frame?.contentWindow ?? null
-  const api = await vueRuntimeApi(win)
-  if (!api) return
+  const win = previewIframeWindow()
+  const renderRequest = previewRequests.begin(
+    `${vueRuntimeArtifactKey.value}:${props.pod.slug}:${previewSlotRevision.value}`,
+  )
+  const { api, legacy } = vueRuntimeApi(win)
+  if (!win || !renderRequest.isCurrent()) return
+
+  if (api.getPod && !api.getPod(props.pod.slug)) {
+    throw new PodRuntimeFailure(
+      'missing-pod',
+      `Pod "${props.pod.slug}" is not available in the selected runtime.`,
+      { runtimeArtifactKey: vueRuntimeArtifactKey.value, podSlug: props.pod.slug },
+    )
+  }
+
+  if (vueMountOwner && (vueMountOwner.api !== api || vueMountOwner.win !== win)) {
+    vueMountOwner.api.unmount?.({ mountSelector: '[data-pods-vue-mount="1"]' })
+    vueMountOwner = null
+  }
 
   const googleKey = (window as any)?.__AUTUMN_RUNTIME__?.maps?.google?.key
   const injected =
@@ -569,27 +518,101 @@ async function renderVueRuntimeIntoIframe() {
       : {}
 
   const sourcePreviewId = currentCanvasArtifactId()
-  const previousText = previewBodyText(win)
-  const expectedTexts = visibleTextCandidates(renderedPreviewProps.value, previousText)
+  renderGeneration += 1
+  const renderToken = `render-${renderGeneration}`
+  const sessionKey = `${vueRuntimeArtifactKey.value}:${props.pod.slug}:${renderRequest.generation}`
+  const acknowledgement = {
+    type: 'autumn:pods-rendered' as const,
+    sessionKey,
+    frameGeneration,
+    renderToken,
+  }
+  readiness?.dispose()
+  const activeReadiness = createPreviewReadinessController({
+    allowedOrigins: [window.location.origin],
+    source: win,
+    sessionKey,
+    frameGeneration,
+    renderToken,
+    timeoutMs: PREVIEW_READINESS_TIMEOUT_MS,
+    onTimeout: (failure) => {
+      if (readiness !== activeReadiness || !renderRequest.isCurrent()) return
+      previewState.value = activeReadiness.state()
+      error.value = failure.message
+      vueReady.value = false
+      publishRuntimeSnapshot()
+    },
+  })
+  readiness = activeReadiness
+  previewState.value = readiness.state()
 
   api.renderPod({
     slug: props.pod.slug,
     mountSelector: '[data-pods-vue-mount="1"]',
     props: { ...(renderedPreviewProps.value || {}), ...injected },
+    acknowledgement: {
+      sessionKey,
+      frameGeneration,
+      renderToken,
+      targetOrigin: window.location.origin,
+    },
   })
-  await emitPreviewReadyAfterPaint(win, sourcePreviewId, {
-    previousText,
-    expectedTexts,
-    source: 'vue-runtime-render',
+  vueMountOwner = { api, win, artifactKey: vueRuntimeArtifactKey.value }
+
+  // Historical bundles do not implement acknowledgement. The bounded legacy
+  // adapter emits the same authenticated state transition after two paints.
+  if (legacy) {
+    await waitForPreviewPaint(win)
+    if (!renderRequest.isCurrent() || !readiness) return
+    readiness.accept({ source: win, origin: window.location.origin, data: acknowledgement })
+    previewState.value = readiness.state()
+    publishRuntimeSnapshot()
+    emitPreviewReady(sourcePreviewId)
+  }
+}
+
+function publishRuntimeSnapshot(): void {
+  if (!import.meta.client || !vueRuntimeIdentity.value || !vueRuntimeArtifactKey.value) return
+  const state = previewState.value
+  const failure = state.status === 'failed' ? state.failure : null
+  window.__POD_RUNTIME_SNAPSHOT__ = createRuntimeSnapshot({
+    sessionKey:
+      'sessionKey' in state ? state.sessionKey : `${vueRuntimeArtifactKey.value}:idle`,
+    runtimeArtifactKey: vueRuntimeArtifactKey.value,
+    runtimeBoundaryKey: vueRuntimeBoundaryKey.value,
+    identity: vueRuntimeIdentity.value,
+    requestGeneration: previewRequests.current()?.generation ?? 0,
+    frameGeneration,
+    registryKeys: Object.keys(
+      (previewIframeWindow() as Window & {
+        __AUTUMN_PODS_REGISTRY__?: Record<string, PodRuntimeApi>
+      } | null)?.__AUTUMN_PODS_REGISTRY__ || {},
+    ),
+    ownedStyles: [...vueStylesheets.value],
+    ownedModules: [...vueScripts.value],
+    loadedLayerCommit:
+      String((config.public as Record<string, unknown>).podsPlayerLayerCommit || 'unknown'),
+    state,
+    failure,
   })
 }
 
-function runtimeLoadKey(scripts: readonly string[], stylesheets: readonly string[]): string {
-  return JSON.stringify({
-    scripts,
-    stylesheets,
-  })
+function handleRuntimeAcknowledgement(event: MessageEvent): void {
+  if (!readiness?.accept(event)) return
+  previewState.value = readiness.state()
+  publishRuntimeSnapshot()
+  emitPreviewReady(currentCanvasArtifactId())
 }
+
+onMounted(() => window.addEventListener('message', handleRuntimeAcknowledgement))
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handleRuntimeAcknowledgement)
+  previewRequests.dispose()
+  runtimeLoadRequests.dispose()
+  previewModeRequests.dispose()
+  readiness?.dispose()
+  unmountVueRuntimePreview(currentCanvasArtifactId())
+})
 
 function shouldFallbackToVueRuntime(err: unknown): boolean {
   return err instanceof Error && err.message.startsWith('POD_STUDIO_HMR_PREVIEW_FALLBACK:')
@@ -616,7 +639,6 @@ async function settleLayerSequencesForSourcePreview(
     })
   }
   await nextTick()
-  await wait(0)
 }
 
 async function stageSfcComponentSwap(
@@ -634,6 +656,22 @@ async function stageSfcComponentSwap(
   renderedMode.value = 'sfc'
   renderedSfcArtifactId.value = sourcePreviewId
   renderedSfcPodSlug.value = props.pod?.slug || null
+  const sourceIdentity: PodRuntimeIdentity = {
+    organizationId: typeof route.params.org === 'string' ? route.params.org : 'local',
+    subjectType: sourcePreviewId ? 'preview' : currentDraftPackId() ? 'draft' : 'preview',
+    subjectId: sourcePreviewId || currentDraftPackId() || props.pod?.slug || 'source',
+    packId: typeof route.params.packId === 'string' ? route.params.packId : 'base',
+    releaseId: 'source',
+    manifestHash: sourcePreviewId || currentDraftArtifactId() || 'working-tree',
+    artifactRevision: sourcePreviewId || currentDraftArtifactId() || undefined,
+    podSlug: props.pod?.slug || 'unknown',
+    rendererMode: 'source',
+  }
+  const sourceBoundary = buildRuntimeBoundaryKey(sourceIdentity)
+  if (vueRuntimeBoundaryKey.value !== sourceBoundary) frameGeneration += 1
+  vueRuntimeIdentity.value = sourceIdentity
+  vueRuntimeArtifactKey.value = buildRuntimeArtifactKey(sourceIdentity)
+  vueRuntimeBoundaryKey.value = sourceBoundary
   vueScripts.value = []
   vueStylesheets.value = []
   vueRuntimeLoadKey.value = ''
@@ -650,19 +688,55 @@ async function stageSfcComponentSwap(
     recordPreviewTiming(sourcePreviewId, 'hmr_sfc_swap_committed')
   }
   await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-swap')
+  previewState.value = {
+    status: 'ready',
+    sessionKey: `${vueRuntimeArtifactKey.value}:${previewSlotRevision.value}`,
+    renderToken: `source-${previewSlotRevision.value}`,
+  }
+  publishRuntimeSnapshot()
 }
 
-async function loadVueRuntimePreview(): Promise<void> {
+async function loadVueRuntimePreview(): Promise<boolean> {
   if (!runtime.ensureRuntimeLoaded) {
     throw new Error('Vue runtime mode is not supported by this host.')
   }
-  const ensured = await runtime.ensureRuntimeLoaded(props.pod as PodDetails)
+  const request = runtimeLoadRequests.begin(
+    `${props.pod?.slug || ''}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
+  )
+  const provisionalSessionKey = `${request.key}:${request.generation}`
+  previewState.value = { status: 'resolving', sessionKey: provisionalSessionKey }
+  const ensured = await runtime.ensureRuntimeLoaded(props.pod as PodDetails, {
+    parentStylesInert: true,
+  })
+  if (!request.isCurrent()) return false
   const nextScripts = ensured.vueBundleUrls ?? []
   const nextStylesheets = ensured.stylesheetUrls ?? []
-  vueRuntimeLoadKey.value = runtimeLoadKey(nextScripts, nextStylesheets)
+  const nextArtifactKey = ensured.runtimeArtifactKey || runtimeAssetLoadKey({
+    moduleScripts: nextScripts,
+    extraStylesheets: nextStylesheets,
+  })
+  const nextBoundaryKey = ensured.runtimeBoundaryKey || nextArtifactKey
+  if (vueRuntimeBoundaryKey.value !== nextBoundaryKey) {
+    unmountVueRuntimePreview(currentCanvasArtifactId())
+    readiness?.dispose()
+    frameGeneration += 1
+    vueReady.value = false
+  }
+  vueRuntimeLoadKey.value = runtimeAssetLoadKey({
+    runtimeOwner: nextArtifactKey,
+    moduleScripts: nextScripts,
+    scripts: [],
+    extraStylesheets: nextStylesheets,
+  })
+  vueRuntimeArtifactKey.value = nextArtifactKey
+  vueRuntimeBoundaryKey.value = nextBoundaryKey
+  vueRuntimeIdentity.value = ensured.runtimeIdentity || null
   vueScripts.value = nextScripts
   vueStylesheets.value = nextStylesheets
+  previewState.value = { status: 'loading-assets', sessionKey: provisionalSessionKey }
   vueReady.value = ensured.ready && nextScripts.length === 0
+  publishRuntimeSnapshot()
+  return true
 }
 
 watch(
@@ -676,6 +750,9 @@ watch(
       activeSourcePreviewRevision.value,
     ] as const,
   async ([slug, mode]) => {
+    const selection = previewModeRequests.begin(
+      `${slug || ''}:${mode}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
+    )
     error.value = null
 
     if (!slug || !props.pod) {
@@ -686,9 +763,13 @@ watch(
       vueScripts.value = []
       vueStylesheets.value = []
       vueRuntimeLoadKey.value = ''
+      vueRuntimeArtifactKey.value = ''
+      vueRuntimeBoundaryKey.value = ''
+      vueRuntimeIdentity.value = null
       vueReady.value = false
       vueFallbackActive.value = false
       renderedMode.value = null
+      runtimeLoadRequests.dispose()
       return
     }
 
@@ -736,13 +817,15 @@ watch(
         settledLayerSequenceSourcePreviewId.value = null
       }
       previewCssVars.value = runtime.getPreviewCssVars ? await runtime.getPreviewCssVars() : null
+      if (!selection.isCurrent()) return
       if (mode === 'sfc') {
         if (!runtime.loadSfcComponent) {
           throw new Error('SFC mode is not supported by this host.')
         }
         const previousWindow = previewIframeWindow()
         if (Comp.value) {
-          await waitForPreviewContent(previousWindow)
+          await waitForPreviewPaint(previousWindow)
+          if (!selection.isCurrent()) return
         }
         const previousText = previewBodyText(previousWindow)
         const sourcePreviewId = currentCanvasArtifactId()
@@ -758,6 +841,7 @@ watch(
             podSlug: slug,
           })
           await settleLayerSequencesForSourcePreview(sourcePreviewId, 'sfc-existing-props')
+          if (!selection.isCurrent()) return
           await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
             previousText,
             expectedTexts: visibleTextCandidates(stagedPreviewProps, previousText),
@@ -769,12 +853,14 @@ watch(
         let mod: unknown
         try {
           mod = await runtime.loadSfcComponent(props.pod)
+          if (!selection.isCurrent()) return
         } catch (err) {
           if (!shouldFallbackToVueRuntime(err)) {
             throw err
           }
           vueFallbackActive.value = true
-          await loadVueRuntimePreview()
+          if (!(await loadVueRuntimePreview())) return
+          if (!selection.isCurrent()) return
           commitRenderedPreviewProps(props.previewProps || {})
           Comp.value = null
           renderedSfcArtifactId.value = null
@@ -783,7 +869,8 @@ watch(
           return
         }
         vueFallbackActive.value = false
-        const dataReady = await waitForPreviewDataReady(sourcePreviewId)
+        const dataReady = previewDataReady(sourcePreviewId)
+        if (!selection.isCurrent()) return
         if (!dataReady) {
           // Deferring with no retry deadlocked the canvas on stacked source
           // turns: contentSourcePreviewId only updates after the shell's pod
@@ -806,8 +893,10 @@ watch(
         }
         deferredSfcSwap = null
         await nextTick()
+        if (!selection.isCurrent()) return
         const nextPreviewProps = props.previewProps || {}
         await stageSfcComponentSwap(mod, nextPreviewProps, sourcePreviewId)
+        if (!selection.isCurrent()) return
         const expectedTexts = visibleTextCandidates(nextPreviewProps, previousText)
         await emitPreviewReadyAfterPaint(previewIframeWindow(), sourcePreviewId, {
           previousText,
@@ -822,7 +911,8 @@ watch(
         if (!isFallbackMode) {
           vueFallbackActive.value = false
         }
-        await loadVueRuntimePreview()
+        if (!(await loadVueRuntimePreview())) return
+        if (!selection.isCurrent()) return
         commitRenderedPreviewProps(props.previewProps || {})
         Comp.value = null
         renderedSfcArtifactId.value = null
@@ -832,9 +922,11 @@ watch(
         throw new Error(`Unknown mode: ${mode}`)
       }
     } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err)
+      if (selection.isCurrent()) failPreview(err)
     } finally {
-      loading.value = false
+      selection.commit(() => {
+        loading.value = false
+      })
     }
   },
   { immediate: true },
@@ -919,26 +1011,67 @@ watch(
   { deep: true, immediate: true },
 )
 
-function handleScriptsLoaded(payload: { moduleScripts: string[]; extraStylesheets: string[] }) {
+function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
   if (effectiveMode.value !== 'vue') return
-  if (runtimeLoadKey(payload.moduleScripts, payload.extraStylesheets) !== vueRuntimeLoadKey.value)
-    return
+  if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
 
   vueReady.value = true
+  const state = previewState.value
+  previewState.value = {
+    status: 'mounting',
+    sessionKey: 'sessionKey' in state ? state.sessionKey : vueRuntimeArtifactKey.value,
+    renderToken: `pending-${renderGeneration + 1}`,
+  }
+}
+
+function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknown }): void {
+  if (effectiveMode.value !== 'vue') return
+  if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
+  failPreview(new PodRuntimeFailure(
+    'asset-failed',
+    payload.error instanceof Error ? payload.error.message : 'The pod runtime assets failed to load.',
+    {
+      runtimeArtifactKey: vueRuntimeArtifactKey.value,
+      podSlug: props.pod?.slug,
+      cause: payload.error,
+    },
+  ))
+}
+
+function failPreview(failure: unknown): void {
+  readiness?.dispose()
+  readiness = null
+  const normalized = normalizeRuntimeFailure(failure)
+  const state = previewState.value
+  previewState.value = {
+    status: 'failed',
+    sessionKey: 'sessionKey' in state ? state.sessionKey : vueRuntimeArtifactKey.value || 'preview',
+    failure: normalized,
+  }
+  error.value = normalized.message
+  vueReady.value = false
+  publishRuntimeSnapshot()
 }
 
 watch(
-  () => [effectiveMode.value, vueReady.value, props.pod?.slug, renderedPreviewProps.value] as const,
+  () =>
+    [
+      effectiveMode.value,
+      vueReady.value,
+      props.pod?.slug,
+      renderedPreviewProps.value,
+      loading.value,
+    ] as const,
   () => {
-    if (
-      loading.value &&
-      renderedMode.value &&
-      requestedEffectiveMode.value !== renderedMode.value
-    ) {
-      return
-    }
+    // Pod identity and preview props are one render transaction. A route
+    // change updates the pod slug before the async mode loader has staged its
+    // matching props; rendering during that window mounts the new component
+    // with the previous pod's payload (Hero props briefly reached Cards Grid).
+    // Including the loading edge in this watcher guarantees a render is
+    // scheduled once the matched tuple has committed.
+    if (loading.value) return
 
-    void renderVueRuntimeIntoIframe()
+    void renderVueRuntimeIntoIframe().catch(failPreview)
   },
   { deep: true, immediate: true, flush: 'post' },
 )
@@ -962,10 +1095,13 @@ watch(
       <div class="text-red-500 text-sm">{{ error }}</div>
     </div>
     <PodsPlayerPreviewDevice
+      :key="previewFrameKey"
+      ref="previewDeviceRef"
       v-else
       :device="viewport"
       :module-scripts="effectiveMode === 'vue' ? vueScripts : []"
       :extra-stylesheets="effectiveMode === 'vue' ? vueStylesheets : []"
+      :runtime-owner="effectiveMode === 'vue' ? vueRuntimeArtifactKey : null"
       :ready="effectiveMode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
       :root-classes="['autumn-runtime']"
@@ -976,6 +1112,7 @@ watch(
       :slot-revision="previewSlotRevision"
       class="flex relative"
       @scriptsLoaded="handleScriptsLoaded"
+      @scriptsFailed="handleScriptsFailed"
     >
       <template v-if="effectiveMode === 'sfc' && Comp">
         <div
