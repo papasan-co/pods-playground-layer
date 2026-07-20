@@ -498,12 +498,14 @@ export function createDocumentRuntimeAssetAdapter(doc: Document): RuntimeAssetAd
           asset.kind === 'style' ? doc.createElement('link') : doc.createElement('script')
         node.dataset.podsRuntimeOwner = asset.owner
         node.dataset.podsRuntimeAsset = asset.kind
-        if (node instanceof HTMLLinkElement) {
-          node.rel = 'stylesheet'
-          node.href = asset.url
+        if (node.tagName === 'LINK') {
+          const link = node as HTMLLinkElement
+          link.rel = 'stylesheet'
+          link.href = asset.url
         } else {
-          node.type = 'module'
-          node.src = asset.url
+          const script = node as HTMLScriptElement
+          script.type = 'module'
+          script.src = asset.url
         }
         const cleanupListeners = () => {
           node.removeEventListener('load', handleLoad)
