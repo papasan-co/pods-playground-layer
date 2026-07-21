@@ -16,6 +16,8 @@ import {
   createRenderIdentityCommitGate,
   createRuntimeSnapshot,
   normalizeRuntimeFailure,
+  resolvePreviewRuntimeAssetReady,
+  resolveRegisteredRuntime,
   runtimeAssetLoadKey,
   runtimeArtifactKey as buildRuntimeArtifactKey,
   runtimeBoundaryKey as buildRuntimeBoundaryKey,
@@ -475,8 +477,8 @@ function vueRuntimeApi(win: Window | null): { api: PodRuntimeApi; legacy: boolea
     __AUTUMN_PODS_VUE__?: PodRuntimeApi
     __AUTUMN_PODS_LEGACY_OWNER__?: string
   }
-  const registered = runtimeWindow.__AUTUMN_PODS_REGISTRY__?.[artifactKey]
-  if (registered) return { api: registered, legacy: false }
+  const registered = resolveRegisteredRuntime(runtimeWindow, artifactKey)
+  if (registered) return registered
   return { api: captureLegacyRuntime(runtimeWindow, artifactKey), legacy: true }
 }
 
@@ -619,6 +621,12 @@ async function renderVueRuntimeIntoIframe() {
   readiness = activeReadiness
   previewState.value = readiness.state()
 
+  recordPreviewTiming(sourcePreviewId, 'vue_runtime_render_requested', {
+    legacy,
+    selectionSequence: renderIdentity.selectionSequence,
+    renderToken,
+  })
+
   api.renderPod({
     slug: props.pod.slug,
     mountSelector: '[data-pods-vue-mount="1"]',
@@ -636,10 +644,24 @@ async function renderVueRuntimeIntoIframe() {
   // adapter emits the same authenticated state transition after two paints.
   if (legacy) {
     await waitForPreviewPaint(win)
-    if (!identityIsCurrent() || !readiness) return
+    if (!identityIsCurrent() || !readiness) {
+      recordPreviewTiming(sourcePreviewId, 'legacy_runtime_acknowledgement_discarded', {
+        renderRequestCurrent: renderRequest.isCurrent(),
+        renderIdentityCurrent: renderIdentityCommits.isCurrent(renderIdentity),
+        activeSelectionSequence: vueRenderIdentity.value?.selectionSequence ?? null,
+        expectedSelectionSequence: renderIdentity.selectionSequence,
+        hasReadiness: Boolean(readiness),
+        renderToken,
+      })
+      return
+    }
     readiness.accept({ source: win, origin: window.location.origin, data: acknowledgement })
     previewState.value = readiness.state()
     publishRuntimeSnapshot()
+    recordPreviewTiming(sourcePreviewId, 'legacy_runtime_acknowledgement_accepted', {
+      selectionSequence: renderIdentity.selectionSequence,
+      renderToken,
+    })
     emitPreviewReady(sourcePreviewId)
   }
 }
@@ -826,6 +848,13 @@ async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean
     extraStylesheets: nextStylesheets,
   })
   const nextBoundaryKey = ensured.runtimeBoundaryKey || nextArtifactKey
+  const nextRuntimeReady = resolvePreviewRuntimeAssetReady({
+    previousBoundaryKey: vueRuntimeBoundaryKey.value,
+    nextBoundaryKey,
+    currentlyReady: vueReady.value,
+    ensuredReady: ensured.ready,
+    moduleScripts: nextScripts,
+  })
   if (vueRuntimeBoundaryKey.value !== nextBoundaryKey) {
     unmountVueRuntimePreview(currentCanvasArtifactId())
     readiness?.dispose()
@@ -846,7 +875,7 @@ async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean
   vueScripts.value = nextScripts
   vueStylesheets.value = nextStylesheets
   previewState.value = { status: 'loading-assets', sessionKey: provisionalSessionKey }
-  vueReady.value = ensured.ready && nextScripts.length === 0
+  vueReady.value = nextRuntimeReady
   publishRuntimeSnapshot()
   return true
 }

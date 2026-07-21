@@ -863,7 +863,14 @@ export class PodRuntimeFailure extends Error {
     message: string,
     context: { runtimeArtifactKey?: string; podSlug?: string; cause?: unknown } = {},
   ) {
-    super(message, context.cause === undefined ? undefined : { cause: context.cause })
+    super(message)
+    if (context.cause !== undefined) {
+      Object.defineProperty(this, 'cause', {
+        configurable: true,
+        value: context.cause,
+        writable: true,
+      })
+    }
     this.name = 'PodRuntimeFailure'
     this.code = code
     this.runtimeArtifactKey = context.runtimeArtifactKey
@@ -896,6 +903,19 @@ export interface RuntimeRegistryWindow {
   __AUTUMN_PODS_REGISTRY__?: Record<string, PodRuntimeApi>
   __AUTUMN_PODS_VUE__?: PodRuntimeApi
   __AUTUMN_PODS_LEGACY_OWNER__?: string
+}
+
+export function resolveRegisteredRuntime(
+  target: RuntimeRegistryWindow,
+  artifactKey: string,
+): { api: PodRuntimeApi; legacy: boolean } | null {
+  const api = target.__AUTUMN_PODS_REGISTRY__?.[artifactKey]
+  if (!api) return null
+
+  return {
+    api,
+    legacy: target.__AUTUMN_PODS_LEGACY_OWNER__ === artifactKey,
+  }
 }
 
 export function installRegisteredRuntime(
@@ -1116,6 +1136,27 @@ export function runtimeAssetLoadKey(identity: RuntimeAssetLoadIdentity): string 
 /** Report whether an asset load can execute a runtime rather than styles alone. */
 export function hasRuntimeAssetScripts(identity: RuntimeAssetLoadIdentity): boolean {
   return (identity.moduleScripts?.length ?? 0) > 0 || (identity.scripts?.length ?? 0) > 0
+}
+
+/**
+ * Keep an already-loaded runtime mounted when a new render identity stays on
+ * the same immutable runtime boundary. Viewport, theme, and field changes need
+ * a fresh authenticated render acknowledgement, but they do not need to tear
+ * the runtime script and mount surface out of the iframe first.
+ */
+export function resolvePreviewRuntimeAssetReady(input: {
+  previousBoundaryKey: string
+  nextBoundaryKey: string
+  currentlyReady: boolean
+  ensuredReady: boolean
+  moduleScripts: readonly string[]
+}): boolean {
+  const reusesLoadedBoundary =
+    input.currentlyReady &&
+    Boolean(input.previousBoundaryKey) &&
+    input.previousBoundaryKey === input.nextBoundaryKey
+
+  return reusesLoadedBoundary || (input.ensuredReady && input.moduleScripts.length === 0)
 }
 
 const PREVIEW_SHELL_STYLE = `
