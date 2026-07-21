@@ -876,10 +876,10 @@ async function loadVueRuntimePreview(
   )
   const provisionalSessionKey = `${request.key}:${request.generation}`
   previewState.value = { status: 'resolving', sessionKey: provisionalSessionKey }
-  const metadataReadyAt = import.meta.client ? performance.now() : selectionAcceptedAt
   const ensured = await runtime.ensureRuntimeLoaded(props.pod as PodDetails, {
     parentStylesInert: true,
   })
+  const metadataReadyAt = import.meta.client ? performance.now() : selectionAcceptedAt
   if (!request.isCurrent()) return false
   if (!ensured.runtimeIdentity) {
     throw new PodRenderIdentityFailure(
