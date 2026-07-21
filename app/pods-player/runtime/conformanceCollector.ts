@@ -11,6 +11,14 @@
  * module-scope references so a browser driver can serialize it into the frame.
  */
 
+const COLLECTOR_BUILD_SENTINEL = 'pod-render-conformance-collector-test-only-v1'
+const collectorLoadProbe = globalThis as typeof globalThis & {
+  __POD_RENDER_CONFORMANCE_COLLECTOR_LOADS__?: string[]
+}
+if (Array.isArray(collectorLoadProbe.__POD_RENDER_CONFORMANCE_COLLECTOR_LOADS__)) {
+  collectorLoadProbe.__POD_RENDER_CONFORMANCE_COLLECTOR_LOADS__.push(COLLECTOR_BUILD_SENTINEL)
+}
+
 export type PodFrameKey = {
   key: string
   selector: string
