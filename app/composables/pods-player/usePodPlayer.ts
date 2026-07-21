@@ -11,7 +11,11 @@ import type { FormField } from '#pods-player/formMapper'
 import { flatFromFixture, rebuildPayload } from '#pods-player/formMapper'
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
-import { nextTick, toValue, type MaybeRefOrGetter } from 'vue'
+import {
+  createLatestRequestController,
+  createPodRuntimeSessionController,
+} from '../../pods-player/runtime/isolation'
+import { nextTick, onBeforeUnmount, toValue, type MaybeRefOrGetter } from 'vue'
 
 type PodDetailsWithCompiledContract = PodDetails & {
   compiled_contract?: Record<string, unknown> | null
@@ -33,6 +37,8 @@ export function usePodPlayer(
 ) {
   const runtime = usePodsPlayerRuntime()
   const route = useRoute()
+  const podRequests = createLatestRequestController()
+  const runtimeSessions = createPodRuntimeSessionController()
   const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
   const activeSourcePreviewPodSlug = useState<string>(
     'pod-studio.activeSourcePreviewPodSlug',
@@ -434,39 +440,71 @@ export function usePodPlayer(
   async function loadPodData() {
     const s = toValue(slug)
     const sourcePreviewId = requestedSourcePreviewFromRoute()
+    const request = podRequests.begin(
+      [
+        s,
+        sourcePreviewId,
+        requestedDraftPackFromRoute(),
+        typeof route.query.draftArtifact === 'string' ? route.query.draftArtifact : '',
+        String(activeSourcePreviewRevision.value),
+      ].join(':'),
+    )
+    const draftPackId = requestedDraftPackFromRoute()
+    const draftArtifact =
+      typeof route.query.draftArtifact === 'string' ? route.query.draftArtifact : undefined
+    const preferredMode = preferredModeFromRoute()
+    const session = runtimeSessions.begin({
+      organizationId: typeof route.params.org === 'string' ? route.params.org : 'local',
+      subjectType: sourcePreviewId ? 'preview' : draftPackId ? 'draft' : 'preview',
+      subjectId: sourcePreviewId || draftPackId || s,
+      packId:
+        typeof route.params.packId === 'string'
+          ? route.params.packId
+          : typeof route.query.pack === 'string'
+            ? route.query.pack
+            : 'base',
+      releaseId: draftArtifact || 'resolving',
+      manifestHash: draftArtifact || 'resolving',
+      artifactRevision: sourcePreviewId || draftArtifact,
+      podSlug: s,
+      rendererMode: preferredMode === 'sfc' ? 'source' : 'artifact',
+    })
     loading.value = true
     loadedSourcePreviewId.value = ''
     try {
-      const preferredMode = preferredModeFromRoute()
-      if (preferredMode !== mode.value) {
-        mode.value = preferredMode
-      }
-
-      const nextPod = await runtime.getPod(s)
+      const nextPod = await runtime.getPod(s, { session, signal: request.signal })
+      if (!request.isCurrent()) return
       if (!nextPod) {
         if (sourcePreviewId && pod.value?.slug === s) {
           return
         }
-
-        pod.value = null
-        fixture.value = null
-        schema.value = null
-        formSchema.value = []
-        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
-        initialFormValues.value = {}
-        hydratedVariant.value = null
-        loadedSourcePreviewId.value = ''
+        request.commit(() => {
+          pod.value = null
+          fixture.value = null
+          schema.value = null
+          formSchema.value = []
+          Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+          initialFormValues.value = {}
+          hydratedVariant.value = null
+          loadedSourcePreviewId.value = ''
+        })
         return
       }
 
-      if (!runtime.supportedModes.includes(mode.value)) {
-        mode.value = runtime.supportedModes[0] ?? 'sfc'
-      }
-
       const nextFixture =
-        nextPod.fixture ?? (runtime.getFixture ? await runtime.getFixture(s) : null) ?? null
+        nextPod.fixture ??
+        (runtime.getFixture
+          ? await runtime.getFixture(s, { session, signal: request.signal })
+          : null) ??
+        null
+      if (!request.isCurrent()) return
       const nextSchema =
-        nextPod.schema ?? (runtime.getSchema ? await runtime.getSchema(s) : null) ?? null
+        nextPod.schema ??
+        (runtime.getSchema
+          ? await runtime.getSchema(s, { session, signal: request.signal })
+          : null) ??
+        null
+      if (!request.isCurrent()) return
       let nextFormSchema = fieldsFromPod(nextPod)
 
       if (nextFormSchema.length === 0 && nextSchema) {
@@ -489,22 +527,37 @@ export function usePodPlayer(
         nextHydratedVariant = typeof nextFlatForm.type === 'string' ? nextFlatForm.type : null
       }
 
-      fixture.value = nextFixture
-      schema.value = nextSchema
-      formSchema.value = nextFormSchema
-      Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
-      if (nextFormSchema.length > 0) {
-        Object.assign(flatForm, nextFlatForm)
-      }
-      initialFormValues.value = nextInitialFormValues
-      hydratedVariant.value = nextHydratedVariant
-      pod.value = nextPod
+      if (!request.isCurrent()) return
+      request.commit(() => {
+        mode.value = runtime.supportedModes.includes(preferredMode)
+          ? preferredMode
+          : (runtime.supportedModes[0] ?? 'sfc')
+        fixture.value = nextFixture
+        schema.value = nextSchema
+        formSchema.value = nextFormSchema
+        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+        if (nextFormSchema.length > 0) {
+          Object.assign(flatForm, nextFlatForm)
+        }
+        initialFormValues.value = nextInitialFormValues
+        hydratedVariant.value = nextHydratedVariant
+        pod.value = nextPod
+      })
       await nextTick()
-      loadedSourcePreviewId.value = sourcePreviewId
+      request.commit(() => {
+        loadedSourcePreviewId.value = sourcePreviewId
+      })
     } finally {
-      loading.value = false
+      request.commit(() => {
+        loading.value = false
+      })
     }
   }
+
+  onBeforeUnmount(() => {
+    podRequests.dispose()
+    runtimeSessions.dispose()
+  })
 
   watch(
     () =>
