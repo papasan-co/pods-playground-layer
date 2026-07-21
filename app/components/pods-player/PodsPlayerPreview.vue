@@ -8,19 +8,28 @@ import type {
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import {
   PodRuntimeFailure,
+  PodRenderIdentityFailure,
   captureLegacyRuntime,
   createLatestRequestController,
+  createPodRenderTransactionIdentity,
   createPreviewReadinessController,
+  createRenderIdentityCommitGate,
   createRuntimeSnapshot,
   normalizeRuntimeFailure,
+  resolvePreviewRuntimeAssetReady,
+  resolveRegisteredRuntime,
   runtimeAssetLoadKey,
   runtimeArtifactKey as buildRuntimeArtifactKey,
   runtimeBoundaryKey as buildRuntimeBoundaryKey,
   type PodRuntimeApi,
+  type PodRenderIdentity,
   type PodRuntimeIdentity,
   type PreviewState,
   type PreviewReadinessController,
   type RuntimeAssetLoadIdentity,
+  type RuntimeLayerDependencyDescriptor,
+  type RuntimeLayerIdentityEnforcement,
+  type RuntimeIdentityDiagnosticSnapshot,
 } from '#pods-player/runtime/isolation'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
@@ -109,12 +118,23 @@ const vueRuntimeLoadKey = ref('')
 const vueRuntimeArtifactKey = ref('')
 const vueRuntimeBoundaryKey = ref('')
 const vueRuntimeIdentity = shallowRef<Readonly<PodRuntimeIdentity> | null>(null)
+const vueRenderIdentity = shallowRef<Readonly<PodRenderIdentity> | null>(null)
 const vueReady = ref(false)
 const vueFallbackActive = ref(false)
 const previewCssVars = ref<Record<string, string> | null>(null)
 const debugFill = computed(() => route.query.debugFill === '1')
 const renderedMode = ref<PodsPlayerMode | null>(null)
 const previewState = shallowRef<PreviewState>({ status: 'idle' })
+const mediaModeRevision = ref(0)
+const renderIdentityDiagnostics = shallowRef<RuntimeIdentityDiagnosticSnapshot[]>([])
+const renderIdentityCommits = createRenderIdentityCommitGate((diagnostic) => {
+  renderIdentityDiagnostics.value = [{
+    ...diagnostic,
+    fields: [],
+    message: 'Discarded an obsolete render identity commit.',
+  }]
+  recordPreviewTiming(currentCanvasArtifactId(), diagnostic.code, { ...diagnostic })
+})
 let frameGeneration = 0
 let renderGeneration = 0
 const PREVIEW_READINESS_TIMEOUT_MS = 10_000
@@ -225,6 +245,47 @@ function currentCanvasArtifactId(): string | null {
 
 function emitPreviewReady(sourcePreviewId: string | null): void {
   emit('ready', { sourcePreviewId })
+}
+
+function configuredRuntimeLayerDependencies(): RuntimeLayerDependencyDescriptor[] {
+  const value = (config.public as Record<string, unknown>).runtimeLayerDependencies
+  return Array.isArray(value) ? value as RuntimeLayerDependencyDescriptor[] : []
+}
+
+function configuredIdentityEnforcement(): RuntimeLayerIdentityEnforcement {
+  const value = ((config.public as Record<string, unknown>).runtimeLayerIdentity as
+    | { enforcement?: unknown }
+    | undefined)?.enforcement
+  return value === 'diagnostic' || value === 'hard' ? value : 'warning'
+}
+
+function renderViewport() {
+  if (props.viewport === 'tablet') return { name: 'tablet', width: 900, height: 1200 }
+  if (props.viewport === 'phone') return { name: 'mobile', width: 440, height: 860 }
+  return { name: 'desktop', width: 1662, height: 1066 }
+}
+
+function renderMediaMode() {
+  const matches = (query: string) =>
+    import.meta.client && typeof window.matchMedia === 'function' && window.matchMedia(query).matches
+  return {
+    colorScheme: matches('(prefers-color-scheme: dark)') ? 'dark' as const : 'light' as const,
+    reducedMotion: matches('(prefers-reduced-motion: reduce)')
+      ? 'reduce' as const
+      : 'no-preference' as const,
+  }
+}
+
+if (import.meta.client) {
+  const watchedMedia = [
+    window.matchMedia?.('(prefers-color-scheme: dark)'),
+    window.matchMedia?.('(prefers-reduced-motion: reduce)'),
+  ].filter((query): query is MediaQueryList => Boolean(query))
+  const handleMediaChange = () => {
+    mediaModeRevision.value += 1
+  }
+  onMounted(() => watchedMedia.forEach((query) => query.addEventListener('change', handleMediaChange)))
+  onBeforeUnmount(() => watchedMedia.forEach((query) => query.removeEventListener('change', handleMediaChange)))
 }
 
 function recordPreviewTiming(
@@ -416,8 +477,8 @@ function vueRuntimeApi(win: Window | null): { api: PodRuntimeApi; legacy: boolea
     __AUTUMN_PODS_VUE__?: PodRuntimeApi
     __AUTUMN_PODS_LEGACY_OWNER__?: string
   }
-  const registered = runtimeWindow.__AUTUMN_PODS_REGISTRY__?.[artifactKey]
-  if (registered) return { api: registered, legacy: false }
+  const registered = resolveRegisteredRuntime(runtimeWindow, artifactKey)
+  if (registered) return registered
   return { api: captureLegacyRuntime(runtimeWindow, artifactKey), legacy: true }
 }
 
@@ -490,13 +551,27 @@ async function renderVueRuntimeIntoIframe() {
   if (effectiveMode.value !== 'vue') return
   if (!vueReady.value) return
   if (!props.pod?.slug) return
+  const renderIdentity = vueRenderIdentity.value
+  if (!renderIdentity) {
+    throw new PodRenderIdentityFailure(
+      'invalid-render-identity',
+      'Canonical render identity is required before mount.',
+      ['renderIdentity'],
+    )
+  }
+  if (!renderIdentityCommits.isCurrent(renderIdentity)) return
 
   const win = previewIframeWindow()
   const renderRequest = previewRequests.begin(
-    `${vueRuntimeArtifactKey.value}:${props.pod.slug}:${previewSlotRevision.value}`,
+    `${renderIdentity.sessionFingerprint}:${renderIdentity.selectionSequence}:${previewSlotRevision.value}`,
   )
   const { api, legacy } = vueRuntimeApi(win)
-  if (!win || !renderRequest.isCurrent()) return
+  const identityIsCurrent = () =>
+    renderRequest.isCurrent() &&
+    renderIdentityCommits.isCurrent(renderIdentity) &&
+    vueRenderIdentity.value?.selectionSequence === renderIdentity.selectionSequence &&
+    vueRenderIdentity.value?.sessionFingerprint === renderIdentity.sessionFingerprint
+  if (!win || !identityIsCurrent()) return
 
   if (api.getPod && !api.getPod(props.pod.slug)) {
     throw new PodRuntimeFailure(
@@ -520,7 +595,7 @@ async function renderVueRuntimeIntoIframe() {
   const sourcePreviewId = currentCanvasArtifactId()
   renderGeneration += 1
   const renderToken = `render-${renderGeneration}`
-  const sessionKey = `${vueRuntimeArtifactKey.value}:${props.pod.slug}:${renderRequest.generation}`
+  const sessionKey = renderIdentity.sessionFingerprint
   const acknowledgement = {
     type: 'autumn:pods-rendered' as const,
     sessionKey,
@@ -536,7 +611,7 @@ async function renderVueRuntimeIntoIframe() {
     renderToken,
     timeoutMs: PREVIEW_READINESS_TIMEOUT_MS,
     onTimeout: (failure) => {
-      if (readiness !== activeReadiness || !renderRequest.isCurrent()) return
+      if (readiness !== activeReadiness || !identityIsCurrent()) return
       previewState.value = activeReadiness.state()
       error.value = failure.message
       vueReady.value = false
@@ -545,6 +620,12 @@ async function renderVueRuntimeIntoIframe() {
   })
   readiness = activeReadiness
   previewState.value = readiness.state()
+
+  recordPreviewTiming(sourcePreviewId, 'vue_runtime_render_requested', {
+    legacy,
+    selectionSequence: renderIdentity.selectionSequence,
+    renderToken,
+  })
 
   api.renderPod({
     slug: props.pod.slug,
@@ -563,10 +644,24 @@ async function renderVueRuntimeIntoIframe() {
   // adapter emits the same authenticated state transition after two paints.
   if (legacy) {
     await waitForPreviewPaint(win)
-    if (!renderRequest.isCurrent() || !readiness) return
+    if (!identityIsCurrent() || !readiness) {
+      recordPreviewTiming(sourcePreviewId, 'legacy_runtime_acknowledgement_discarded', {
+        renderRequestCurrent: renderRequest.isCurrent(),
+        renderIdentityCurrent: renderIdentityCommits.isCurrent(renderIdentity),
+        activeSelectionSequence: vueRenderIdentity.value?.selectionSequence ?? null,
+        expectedSelectionSequence: renderIdentity.selectionSequence,
+        hasReadiness: Boolean(readiness),
+        renderToken,
+      })
+      return
+    }
     readiness.accept({ source: win, origin: window.location.origin, data: acknowledgement })
     previewState.value = readiness.state()
     publishRuntimeSnapshot()
+    recordPreviewTiming(sourcePreviewId, 'legacy_runtime_acknowledgement_accepted', {
+      selectionSequence: renderIdentity.selectionSequence,
+      renderToken,
+    })
     emitPreviewReady(sourcePreviewId)
   }
 }
@@ -581,6 +676,12 @@ function publishRuntimeSnapshot(): void {
     runtimeArtifactKey: vueRuntimeArtifactKey.value,
     runtimeBoundaryKey: vueRuntimeBoundaryKey.value,
     identity: vueRuntimeIdentity.value,
+    renderIdentity: vueRenderIdentity.value,
+    identityState: vueRenderIdentity.value
+      ? { status: 'valid' as const }
+      : { status: 'unavailable' as const, reason: effectiveMode.value === 'sfc' ? 'source-transport' : 'not-constructed' },
+    identityDiagnostics: [...renderIdentityDiagnostics.value],
+    runtimeLayerDependencies: configuredRuntimeLayerDependencies(),
     requestGeneration: previewRequests.current()?.generation ?? 0,
     frameGeneration,
     registryKeys: Object.keys(
@@ -598,6 +699,7 @@ function publishRuntimeSnapshot(): void {
 }
 
 function handleRuntimeAcknowledgement(event: MessageEvent): void {
+  if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
   if (!readiness?.accept(event)) return
   previewState.value = readiness.state()
   publishRuntimeSnapshot()
@@ -670,6 +772,7 @@ async function stageSfcComponentSwap(
   const sourceBoundary = buildRuntimeBoundaryKey(sourceIdentity)
   if (vueRuntimeBoundaryKey.value !== sourceBoundary) frameGeneration += 1
   vueRuntimeIdentity.value = sourceIdentity
+  vueRenderIdentity.value = null
   vueRuntimeArtifactKey.value = buildRuntimeArtifactKey(sourceIdentity)
   vueRuntimeBoundaryKey.value = sourceBoundary
   vueScripts.value = []
@@ -696,7 +799,7 @@ async function stageSfcComponentSwap(
   publishRuntimeSnapshot()
 }
 
-async function loadVueRuntimePreview(): Promise<boolean> {
+async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean> {
   if (!runtime.ensureRuntimeLoaded) {
     throw new Error('Vue runtime mode is not supported by this host.')
   }
@@ -709,6 +812,35 @@ async function loadVueRuntimePreview(): Promise<boolean> {
     parentStylesInert: true,
   })
   if (!request.isCurrent()) return false
+  if (!ensured.runtimeIdentity) {
+    throw new PodRenderIdentityFailure(
+      'invalid-render-identity',
+      'The host runtime adapter did not return runtime identity.',
+      ['runtimeIdentity'],
+    )
+  }
+  const nextRenderIdentity = await createPodRenderTransactionIdentity({
+    runtimeIdentity: ensured.runtimeIdentity,
+    runtimeContentIdentity:
+      ensured.runtimeContentRevisions && ensured.packCssAssetSetVersion
+        ? {
+            runtimeContentRevisions: ensured.runtimeContentRevisions,
+            packCssAssetSetVersion: ensured.packCssAssetSetVersion,
+          }
+        : null,
+    schema: props.pod?.schema ?? props.pod?.compiledContract ?? props.pod?.fields ?? undefined,
+    fixture: props.pod?.fixture ?? null,
+    theme: previewCssVars.value ?? {},
+    fields: props.previewProps ?? {},
+    dependencies: configuredRuntimeLayerDependencies(),
+    selectionSequence,
+    viewport: renderViewport(),
+    devicePixelRatio: import.meta.client ? window.devicePixelRatio || 1 : 1,
+    mediaMode: renderMediaMode(),
+    enforcement: configuredIdentityEnforcement(),
+  })
+  if (!request.isCurrent()) return false
+  if (!renderIdentityCommits.activate(nextRenderIdentity)) return false
   const nextScripts = ensured.vueBundleUrls ?? []
   const nextStylesheets = ensured.stylesheetUrls ?? []
   const nextArtifactKey = ensured.runtimeArtifactKey || runtimeAssetLoadKey({
@@ -716,6 +848,13 @@ async function loadVueRuntimePreview(): Promise<boolean> {
     extraStylesheets: nextStylesheets,
   })
   const nextBoundaryKey = ensured.runtimeBoundaryKey || nextArtifactKey
+  const nextRuntimeReady = resolvePreviewRuntimeAssetReady({
+    previousBoundaryKey: vueRuntimeBoundaryKey.value,
+    nextBoundaryKey,
+    currentlyReady: vueReady.value,
+    ensuredReady: ensured.ready,
+    moduleScripts: nextScripts,
+  })
   if (vueRuntimeBoundaryKey.value !== nextBoundaryKey) {
     unmountVueRuntimePreview(currentCanvasArtifactId())
     readiness?.dispose()
@@ -731,10 +870,12 @@ async function loadVueRuntimePreview(): Promise<boolean> {
   vueRuntimeArtifactKey.value = nextArtifactKey
   vueRuntimeBoundaryKey.value = nextBoundaryKey
   vueRuntimeIdentity.value = ensured.runtimeIdentity || null
+  vueRenderIdentity.value = nextRenderIdentity
+  renderIdentityDiagnostics.value = []
   vueScripts.value = nextScripts
   vueStylesheets.value = nextStylesheets
   previewState.value = { status: 'loading-assets', sessionKey: provisionalSessionKey }
-  vueReady.value = ensured.ready && nextScripts.length === 0
+  vueReady.value = nextRuntimeReady
   publishRuntimeSnapshot()
   return true
 }
@@ -748,11 +889,16 @@ watch(
       props.contentSourcePreviewId,
       props.contentReady,
       activeSourcePreviewRevision.value,
+      props.viewport,
+      props.previewProps,
+      brandPreviewRevision.value,
+      mediaModeRevision.value,
     ] as const,
   async ([slug, mode]) => {
     const selection = previewModeRequests.begin(
       `${slug || ''}:${mode}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
     )
+    renderIdentityCommits.begin(selection.generation)
     error.value = null
 
     if (!slug || !props.pod) {
@@ -766,6 +912,7 @@ watch(
       vueRuntimeArtifactKey.value = ''
       vueRuntimeBoundaryKey.value = ''
       vueRuntimeIdentity.value = null
+      vueRenderIdentity.value = null
       vueReady.value = false
       vueFallbackActive.value = false
       renderedMode.value = null
@@ -859,7 +1006,7 @@ watch(
             throw err
           }
           vueFallbackActive.value = true
-          if (!(await loadVueRuntimePreview())) return
+          if (!(await loadVueRuntimePreview(selection.generation))) return
           if (!selection.isCurrent()) return
           commitRenderedPreviewProps(props.previewProps || {})
           Comp.value = null
@@ -911,7 +1058,7 @@ watch(
         if (!isFallbackMode) {
           vueFallbackActive.value = false
         }
-        if (!(await loadVueRuntimePreview())) return
+        if (!(await loadVueRuntimePreview(selection.generation))) return
         if (!selection.isCurrent()) return
         commitRenderedPreviewProps(props.previewProps || {})
         Comp.value = null
@@ -922,14 +1069,30 @@ watch(
         throw new Error(`Unknown mode: ${mode}`)
       }
     } catch (err) {
-      if (selection.isCurrent()) failPreview(err)
+      if (selection.isCurrent()) {
+        if (err instanceof PodRenderIdentityFailure && hasRenderablePreview.value) {
+          renderIdentityDiagnostics.value = [{
+            code: err.code,
+            fields: [...err.fields],
+            message: err.message,
+          }]
+          error.value = err.message
+          recordPreviewTiming(currentCanvasArtifactId(), 'render_identity_rejected', {
+            code: err.code,
+            fields: err.fields,
+          })
+          publishRuntimeSnapshot()
+        } else {
+          failPreview(err)
+        }
+      }
     } finally {
       selection.commit(() => {
         loading.value = false
       })
     }
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 )
 
 // Resume a deferred SFC swap the moment its matching source-preview data
@@ -988,6 +1151,7 @@ watch(brandPreviewRevision, async () => {
 watch(
   () => props.previewProps,
   (nextPreviewProps) => {
+    if (requestedEffectiveMode.value === 'vue') return
     if (loading.value && hasRenderablePreview.value) return
 
     const previousText = previewBodyText(previewIframeWindow())
@@ -1014,6 +1178,7 @@ watch(
 function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
   if (effectiveMode.value !== 'vue') return
   if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
+  if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
 
   vueReady.value = true
   const state = previewState.value
@@ -1027,6 +1192,7 @@ function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
 function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknown }): void {
   if (effectiveMode.value !== 'vue') return
   if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
+  if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
   failPreview(new PodRuntimeFailure(
     'asset-failed',
     payload.error instanceof Error ? payload.error.message : 'The pod runtime assets failed to load.',
