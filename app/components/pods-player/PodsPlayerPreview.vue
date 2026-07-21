@@ -259,8 +259,8 @@ function configuredIdentityEnforcement(): RuntimeLayerIdentityEnforcement {
 
 function renderViewport() {
   if (props.viewport === 'tablet') return { name: 'tablet', width: 900, height: 1200 }
-  if (props.viewport === 'phone') return { name: 'phone', width: 440, height: 860 }
-  return { name: 'laptop', width: 1662, height: 1066 }
+  if (props.viewport === 'phone') return { name: 'mobile', width: 440, height: 860 }
+  return { name: 'desktop', width: 1662, height: 1066 }
 }
 
 function renderMediaMode() {
