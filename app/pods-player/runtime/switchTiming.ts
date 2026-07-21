@@ -105,6 +105,17 @@ export function podSwitchTimingTransactionKey(
   ].join(':')
 }
 
+/** Find one retained stage for an exact render transaction in the bounded ring. */
+export function findPodSwitchTimingMark(
+  target: PodSwitchTimingWindow,
+  identity: PodSwitchTimingIdentity,
+  stage: PodSwitchTimingStage,
+): PodSwitchTimingMark | undefined {
+  const key = podSwitchTimingTransactionKey(identity, stage)
+  return (target.__POD_SWITCH_TIMINGS__ ?? []).find(candidate =>
+    podSwitchTimingTransactionKey(candidate.identity, candidate.stage) === key)
+}
+
 /**
  * Append one exact transaction stage to the bounded diagnostic ring.
  * Repeated callbacks for the same stage return the retained mark without
@@ -116,9 +127,7 @@ export function recordPodSwitchTimingMark(
     atMs?: number | null
   },
 ): PodSwitchTimingMark {
-  const existing = (target.__POD_SWITCH_TIMINGS__ ?? []).find(candidate =>
-    podSwitchTimingTransactionKey(candidate.identity, candidate.stage) ===
-    podSwitchTimingTransactionKey(input.identity, input.stage))
+  const existing = findPodSwitchTimingMark(target, input.identity, input.stage)
   if (existing) return existing
 
   const mark = createPodSwitchTimingMark({
