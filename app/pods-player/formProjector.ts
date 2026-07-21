@@ -21,6 +21,15 @@ export type FormProjectionState = {
 
 export type FormProjectionViewport = 'laptop' | 'tablet' | 'phone'
 
+export class FormProjectionPathError extends Error {
+  readonly code = 'unknown_form_projection_path'
+
+  constructor(readonly path: string) {
+    super(`Form projection path is not declared by the active contract: ${path}`)
+    this.name = 'FormProjectionPathError'
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -173,6 +182,10 @@ export function applyFormProjectionOperation(
   state: FormProjectionState,
   operation: FormProjectionOperation,
 ): FormProjectionState {
+  if (!isCanonicalOperationPath(state.fields, operation.path)) {
+    throw new FormProjectionPathError(operation.path)
+  }
+
   const operations = [...state.operations, clone(operation)]
   const payload = replay(state.base, operations)
   return {
@@ -180,6 +193,69 @@ export function applyFormProjectionOperation(
     model: clone(flatFromFixture(state.fields, payload)),
     operations,
   }
+}
+
+function isCanonicalOperationPath(fields: FormField[], path: string): boolean {
+  const target = pathParts(path)
+  if (target.length === 0) return false
+
+  function matches(
+    nestedFields: FormField[],
+    prefix = '',
+    explicitPathsAreAbsolute = true,
+  ): boolean {
+    for (const field of nestedFields) {
+      if (field.type === 'group' && field.children) {
+        if (!field.name || isUiOnlyGroupName(field.name)) {
+          if (matches(field.children, prefix, explicitPathsAreAbsolute)) return true
+          continue
+        }
+
+        const groupPath = field.path
+          ? explicitPathsAreAbsolute ? field.path : joinPath(prefix, field.path)
+          : joinPath(prefix, field.name)
+        if (pathsEqual(target, pathParts(groupPath))) return true
+        if (matches(field.children, groupPath, explicitPathsAreAbsolute)) return true
+        continue
+      }
+
+      if (field.type === 'row' && field.fields) {
+        if (matches(field.fields, prefix, explicitPathsAreAbsolute)) return true
+        continue
+      }
+
+      if (field.type === 'repeater' && field.fields && field.name) {
+        const listPath = field.path
+          ? explicitPathsAreAbsolute ? field.path : joinPath(prefix, field.path)
+          : joinPath(prefix, field.name)
+        const listParts = pathParts(listPath)
+        if (pathsEqual(target, listParts)) return true
+        if (!startsWithParts(target, listParts) || !isIndex(target[listParts.length] ?? '')) continue
+        if (target.length === listParts.length + 1) return true
+
+        const itemPrefix = [...listParts, target[listParts.length]].join('.')
+        if (matches(field.fields, itemPrefix, false)) return true
+        continue
+      }
+
+      if (!field.name) continue
+      const fieldPath = field.path && explicitPathsAreAbsolute
+        ? field.path
+        : joinPath(prefix, field.path || field.name)
+      if (pathsEqual(target, pathParts(fieldPath))) return true
+    }
+    return false
+  }
+
+  return matches(fields)
+}
+
+function pathsEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((part, index) => part === right[index])
+}
+
+function startsWithParts(path: string[], prefix: string[]): boolean {
+  return prefix.length <= path.length && prefix.every((part, index) => path[index] === part)
 }
 
 const UNSET_SENTINEL = Symbol('form-projector-unset')
