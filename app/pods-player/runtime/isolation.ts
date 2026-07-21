@@ -699,8 +699,27 @@ export function runtimeArtifactKey(identity: PodRuntimeIdentity): string {
     .join(':')
 }
 
-export function runtimeBoundaryKey(identity: PodRuntimeIdentity): string {
-  return runtimeArtifactKey(identity)
+/**
+ * Identify the immutable runtime inputs that may safely share one preview shell.
+ * Selection-owned fields, theme, viewport, and readiness remain fresh per render.
+ */
+export function runtimeBoundaryKey(
+  identity: PodRuntimeIdentity,
+  contentIdentity: PodRuntimeContentIdentity | null = null,
+): string {
+  const artifactKey = runtimeArtifactKey(identity)
+  if (!contentIdentity) return artifactKey
+  const revisions = contentIdentity.runtimeContentRevisions
+  return [
+    artifactKey,
+    revisions.manifest,
+    revisions.pods,
+    revisions.runtime,
+    revisions.packStyles.join(','),
+    contentIdentity.packCssAssetSetVersion,
+  ]
+    .map(encodeIdentityPart)
+    .join(':')
 }
 
 function sessionIdentityKey(identity: PodRuntimeIdentity): string {
@@ -1158,6 +1177,17 @@ export interface RuntimeAssetLoadIdentity {
   extraStylesheets?: readonly string[]
   /** Optional theme/font CSS does not participate in readiness completion. */
   optionalStylesheets?: readonly string[]
+  /** Resource timings captured by the iframe that owns the asset requests. */
+  timing?: RuntimeAssetLoadTiming
+}
+
+export interface RuntimeAssetLoadTiming {
+  /** Count of canonical required runtime resources requested by this iframe boot. */
+  requestCount: number
+  /** Parent-comparable epoch timestamp for the first canonical request. */
+  requestedAtEpochMs: number | null
+  /** Parent-comparable epoch timestamp for the last canonical response. */
+  readyAtEpochMs: number | null
 }
 
 export interface PreviewStylesheetPlan {

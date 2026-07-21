@@ -6,6 +6,7 @@ import {
   hasRuntimeAssetScripts,
   installPreviewShellStyles,
   type RuntimeAssetLoadIdentity,
+  type RuntimeAssetLoadTiming,
 } from '#pods-player/runtime/isolation'
 
 /**
@@ -578,6 +579,7 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
   const doc = iframe.contentDocument
   if (!doc) return
   const win = iframe.contentWindow
+  const timingStartedAt = win?.performance.now() ?? null
 
   if (!miniApp) {
     doc.open()
@@ -637,11 +639,44 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
     sameStringList(extraStylesheets, props.extraStylesheets ?? []) &&
     (assetLoad.runtimeOwner || null) === (props.runtimeOwner || null)
   ) {
-    emit('scriptsLoaded', assetLoad)
+    emit('scriptsLoaded', {
+      ...assetLoad,
+      timing: collectRuntimeAssetLoadTiming(
+        win,
+        [...moduleScripts, ...scripts, ...stylesheetPlan.required],
+        timingStartedAt,
+      ),
+    })
   }
 
   await nextTick()
   applyLayerSequenceSettleOverrides(doc, props.settleLayerSequences === true)
+}
+
+/**
+ * Read resource timing from the iframe that owns runtime asset requests and
+ * convert its separate performance clock to epoch timestamps for the host.
+ */
+function collectRuntimeAssetLoadTiming(
+  win: Window | null,
+  urls: readonly string[],
+  startedAt: number | null,
+): RuntimeAssetLoadTiming {
+  if (!win || startedAt === null) {
+    return { requestCount: 0, requestedAtEpochMs: null, readyAtEpochMs: null }
+  }
+  const assetUrls = new Set(urls
+    .filter(Boolean)
+    .map(url => new URL(url, window.location.origin).href))
+  const entries = (win.performance.getEntriesByType('resource') as PerformanceResourceTiming[])
+    .filter(entry => assetUrls.has(entry.name) && entry.startTime >= startedAt)
+  return entries.length === 0
+    ? { requestCount: 0, requestedAtEpochMs: null, readyAtEpochMs: null }
+    : {
+        requestCount: entries.length,
+        requestedAtEpochMs: win.performance.timeOrigin + Math.min(...entries.map(entry => entry.startTime)),
+        readyAtEpochMs: win.performance.timeOrigin + Math.max(...entries.map(entry => entry.responseEnd)),
+      }
 }
 
 watchEffect(() => {
