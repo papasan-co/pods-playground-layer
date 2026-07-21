@@ -11,12 +11,18 @@
  */
 
 import type {
+  PodRuntimeContentRevisions,
   PodRuntimeIdentity,
   PodRuntimeSession,
   RuntimeAssetSet,
 } from './runtime/isolation'
 
-export type { PodRuntimeIdentity, PodRuntimeSession, RuntimeAssetSet } from './runtime/isolation'
+export type {
+  PodRuntimeContentRevisions,
+  PodRuntimeIdentity,
+  PodRuntimeSession,
+  RuntimeAssetSet,
+} from './runtime/isolation'
 
 export type PodsPlayerMode = 'sfc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
@@ -100,6 +106,8 @@ export interface PodsPlayerEnsureResult {
   runtimeArtifactKey?: string
   runtimeBoundaryKey?: string
   runtimeAssets?: RuntimeAssetSet
+  runtimeContentRevisions?: Readonly<PodRuntimeContentRevisions>
+  packCssAssetSetVersion?: string
   legacyRuntime?: boolean
 }
 

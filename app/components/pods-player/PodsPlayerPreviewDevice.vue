@@ -172,11 +172,23 @@ const SHELL_STYLE_SELECTOR = [
 ].join(',')
 const SYNCED_HEAD_SELECTOR = '[data-pods-shell-style="1"]'
 
+function tagRuntimeAsset(node: HTMLElement, kind: string): void {
+  node.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+  node.dataset.podsRuntimeAsset = kind
+}
+
+function tagInstalledShellStyles(doc: Document): void {
+  doc.querySelectorAll<HTMLElement>('[data-pods-shell-style]').forEach((node) => {
+    tagRuntimeAsset(node, 'shell-style')
+  })
+}
+
 function syncShellStyles(from: Document, to: Document) {
   to.head.querySelectorAll(SYNCED_HEAD_SELECTOR).forEach((n) => n.remove())
   from.head.querySelectorAll(SHELL_STYLE_SELECTOR).forEach((node) => {
     const cloned = node.cloneNode(true) as HTMLElement
     cloned.dataset.podsShellStyle = '1'
+    tagRuntimeAsset(cloned, 'shell-style')
     to.head.appendChild(cloned)
   })
 }
@@ -340,8 +352,12 @@ async function ensureScripts(doc: Document, urls: string[]) {
     .map((url) => new URL(url, window.location.origin).href)
   if (unique.length === 0) return
 
+  const existingNodes = Array.from(
+    doc.querySelectorAll<HTMLScriptElement>('script[data-pods-player-script="1"]'),
+  )
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'script'))
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-script="1"]')).map(
+    existingNodes.map(
       (s) => (s as HTMLScriptElement).src,
     ),
   )
@@ -354,7 +370,7 @@ async function ensureScripts(doc: Document, urls: string[]) {
       s.src = url
       s.async = false
       s.dataset.podsPlayerScript = '1'
-      s.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+      tagRuntimeAsset(s, 'script')
       s.onload = () => resolve()
       s.onerror = () => {
         s.remove()
@@ -371,8 +387,12 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
     .map((url) => new URL(url, window.location.origin).href)
   if (unique.length === 0) return
 
+  const existingNodes = Array.from(
+    doc.querySelectorAll<HTMLScriptElement>('script[data-pods-player-module="1"]'),
+  )
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'module'))
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map(
+    existingNodes.map(
       (s) => (s as HTMLScriptElement).src,
     ),
   )
@@ -385,7 +405,7 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
       s.src = url
       s.async = false
       s.dataset.podsPlayerModule = '1'
-      s.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+      tagRuntimeAsset(s, 'module')
       s.onload = () => resolve()
       s.onerror = () => {
         s.remove()
@@ -459,6 +479,8 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
   ) as HTMLLinkElement[]
   const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
 
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'pack-style'))
+
   for (const node of existingNodes) {
     if (!wanted.includes(node.href)) {
       node.remove()
@@ -471,7 +493,7 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
     link.rel = 'stylesheet'
     link.href = href
     link.dataset.podsExtraStyle = '1'
-    link.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+    tagRuntimeAsset(link, 'pack-style')
     doc.head.appendChild(link)
   }
 
@@ -493,6 +515,8 @@ function syncOptionalStylesheets(doc: Document, urls: string[]) {
   ) as HTMLLinkElement[]
   const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
 
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'optional-style'))
+
   for (const node of existingNodes) {
     if (!wanted.includes(node.href)) node.remove()
   }
@@ -503,7 +527,7 @@ function syncOptionalStylesheets(doc: Document, urls: string[]) {
     link.rel = 'stylesheet'
     link.href = href
     link.dataset.podsOptionalStyle = '1'
-    link.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+    tagRuntimeAsset(link, 'optional-style')
     link.addEventListener('error', () => {
       link.dataset.podsOptionalStyleFailed = '1'
     }, { once: true })
@@ -572,6 +596,7 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
 
     installPreviewShellStyles(doc)
     syncShellStyles(document, doc)
+    tagInstalledShellStyles(doc)
     syncCSSVars(doc)
     syncBodyDataset(doc)
     syncOptionalStylesheets(doc, stylesheetPlan.optional)
@@ -588,6 +613,7 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
   // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
   // non-scroll previews (many pods rely on `h-full`).
   installPreviewShellStyles(doc)
+  tagInstalledShellStyles(doc)
   syncCSSVars(doc)
   syncBodyDataset(doc)
   syncOptionalStylesheets(doc, stylesheetPlan.optional)
