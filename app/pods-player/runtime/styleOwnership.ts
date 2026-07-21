@@ -746,6 +746,16 @@ export interface ResolvedStyleProjectionInput {
   readonly adaptations?: Readonly<Record<string, unknown>>
 }
 
+export interface HostStyleProjectionInput {
+  readonly targetProfile: PodStyleTargetProfile
+  readonly manifest: unknown
+  readonly compiledContract: unknown
+  readonly theme: unknown
+  readonly fields: Readonly<Record<string, unknown>>
+  readonly system?: Readonly<Record<string, unknown>>
+  readonly adaptations?: Readonly<Record<string, unknown>>
+}
+
 export interface ResolvedStyleProjection {
   readonly targetProfile: PodStyleTargetProfile
   readonly ownershipRevision: string
@@ -870,6 +880,185 @@ export async function createResolvedStyleProjection(
     fieldRevision,
     effectiveValues,
   }
+}
+
+function nestedValue(value: unknown, path: string): unknown {
+  if (!isPlainRecord(value)) return undefined
+  if (Object.prototype.hasOwnProperty.call(value, path)) return value[path]
+  return path.split('.').reduce<unknown>((current, part) => {
+    if (!isPlainRecord(current)) return undefined
+    return current[part]
+  }, value)
+}
+
+function firstDefined(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined && value !== null && value !== '')
+}
+
+const HOST_THEME_ROLE_KEYS: Readonly<Record<string, readonly string[]>> = {
+  surface: ['surface', 'page', '--au-surface', '--story-visual-bg'],
+  on_surface: ['on_surface', 'onSurface', 'pageText', '--au-text', '--story-visual-text'],
+  surface_raised: [
+    'surface_raised',
+    'surfaceRaised',
+    'card',
+    '--au-surface-raised',
+    '--story-card-bg',
+  ],
+  on_surface_raised: [
+    'on_surface_raised',
+    'onSurfaceRaised',
+    'cardText',
+    '--au-on-surface-raised',
+  ],
+  border: ['border', '--au-border', '--story-card-border'],
+  accent: ['accent', '--au-accent', '--story-accent', '--color-primary-500'],
+  on_accent: ['on_accent', 'onAccent', '--au-on-accent', '--story-cta-text'],
+  action: ['action', 'accent', '--au-action', '--au-accent', '--story-cta-bg'],
+  on_action: [
+    'on_action',
+    'onAction',
+    'onAccent',
+    '--au-on-action',
+    '--au-on-accent',
+    '--story-cta-text',
+  ],
+  data_series: [
+    'data_series',
+    'dataSeries',
+    'accent',
+    '--au-data-series',
+    '--au-accent',
+    '--pods-chart-accent',
+  ],
+}
+
+function themeSources(theme: unknown): Record<string, unknown>[] {
+  if (!isPlainRecord(theme)) return []
+  return [theme, theme.cssVars, theme.roles].filter(isPlainRecord)
+}
+
+function themeRoleValue(theme: unknown, role: string): unknown {
+  const keys = HOST_THEME_ROLE_KEYS[role] ?? [role]
+  for (const source of themeSources(theme)) {
+    const value = firstDefined(...keys.map((key) => source[key]))
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
+function resolveThemeReference(value: unknown, theme: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const match = value.trim().match(/^var\(\s*(--[a-zA-Z0-9-_]+)(?:\s*,\s*(.+))?\)$/)
+  if (!match) return value
+  const variable = match[1]!
+  for (const source of themeSources(theme)) {
+    const resolved = firstDefined(source[variable])
+    if (resolved !== undefined) return resolved
+  }
+  return match[2]?.trim() || value
+}
+
+function canonicalBrandRoleBindings(
+  compiledContract: unknown,
+): Map<string, Record<string, unknown>> {
+  if (!isPlainRecord(compiledContract)) return new Map()
+  const raw = isPlainRecord(compiledContract.brand_roles)
+    ? compiledContract.brand_roles
+    : isPlainRecord(compiledContract.brandRoles)
+      ? compiledContract.brandRoles
+      : null
+  if (!raw) return new Map()
+  return new Map(
+    Object.entries(raw).flatMap(([name, binding]) =>
+      name !== 'unsupported' && isPlainRecord(binding)
+        ? [[canonicalPodBrandRoleName(name), binding] as const]
+        : [],
+    ),
+  )
+}
+
+/**
+ * Recomputes a generated manifest instead of trusting its published revision.
+ * Runtime snapshots are evidence mirrors; the governed identity is derived
+ * only from the contract input fields.
+ */
+export async function normalizePodStyleOwnershipManifest(
+  value: unknown,
+): Promise<PodStyleOwnershipManifest> {
+  if (!isPlainRecord(value)) {
+    throw new PodStyleOwnershipFailure(
+      'invalid-style-ownership',
+      'The host style ownership manifest is missing.',
+      ['manifest'],
+    )
+  }
+  const normalized = await createPodStyleOwnership({
+    contract: value.contract as typeof POD_STYLE_OWNERSHIP_CONTRACT,
+    artifactRevision: value.artifactRevision as string,
+    contractRevision: value.contractRevision as string,
+    profileDeclarations: value.profileDeclarations as Record<
+      PodStyleTargetProfile,
+      PodStyleTargetProfileState
+    >,
+    entries: value.entries as PodStyleOwnershipEntryInput[],
+  })
+  if (value.ownershipRevision !== normalized.ownershipRevision) {
+    throw new PodStyleOwnershipFailure(
+      'invalid-style-ownership',
+      'The published style ownership revision does not match its registry input.',
+      ['manifest.ownershipRevision'],
+    )
+  }
+  return normalized
+}
+
+/**
+ * Builds the shared host projection from the generated role bindings, resolved
+ * theme, and effective field props. Both Story Pods and CMS call this exact
+ * function before constructing PodRenderIdentity.v1.
+ */
+export async function createHostResolvedStyleProjection(
+  input: HostStyleProjectionInput,
+): Promise<ResolvedStyleProjection> {
+  const manifest = await normalizePodStyleOwnershipManifest(input.manifest)
+  const bindings = canonicalBrandRoleBindings(input.compiledContract)
+  const brandRoles: Record<string, unknown> = {}
+
+  for (const entry of manifest.entries) {
+    if (entry.target_profile !== input.targetProfile || entry.owner.category !== 'brand_role') {
+      continue
+    }
+    const role = canonicalPodBrandRoleName(entry.owner.role)
+    const binding = bindings.get(role)
+    const propPath =
+      typeof binding?.binds_prop === 'string' && binding.binds_prop.trim()
+        ? binding.binds_prop.trim()
+        : null
+    const editablePath =
+      typeof binding?.editable === 'string' && binding.editable.trim()
+        ? binding.editable.trim()
+        : null
+    const fieldValue = firstDefined(
+      propPath ? nestedValue(input.fields, propPath) : undefined,
+      editablePath ? nestedValue(input.fields, editablePath) : undefined,
+    )
+    const value = firstDefined(
+      resolveThemeReference(fieldValue, input.theme),
+      themeRoleValue(input.theme, role),
+      resolveThemeReference(binding?.default, input.theme),
+      resolveThemeReference(entry.sourceDefault.value, input.theme),
+    )
+    if (value !== undefined) brandRoles[role] = value
+  }
+
+  return createResolvedStyleProjection(manifest, {
+    targetProfile: input.targetProfile,
+    brandRoles,
+    fields: input.fields,
+    system: input.system,
+    adaptations: input.adaptations,
+  })
 }
 
 /** Retains the last valid projection when current resolution fails closed. */
