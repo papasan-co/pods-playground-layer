@@ -10,6 +10,7 @@ import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
 import PodsPlayerPositionPicker from './PodsPlayerPositionPicker.vue'
 import PodsPlayerRichTextEditor from './PodsPlayerRichTextEditor.vue'
+import { identifyRepeaterBlueprint } from '#pods-player/designItemIdentity'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -332,6 +333,10 @@ function repeaterBlueprint(field: FormField): Record<string, unknown> {
   }, {})
 }
 
+function identifiedRepeaterBlueprint(field: FormField): Record<string, unknown> {
+  return identifyRepeaterBlueprint(field, repeaterBlueprint(field))
+}
+
 function repeaterMax(field: FormField): number | null {
   const max = Number((field as { max?: unknown }).max)
   return Number.isFinite(max) && max >= 0 ? max : null
@@ -345,7 +350,7 @@ function canAddRepeaterItem(field: FormField): boolean {
 
 const repeaterOpen = reactive<Record<string, Record<string, boolean>>>({})
 function itemKey(item: RepeaterItem, idx: number): string {
-  return String((item as any)?._key ?? idx)
+  return String((item as any)?._design_item_key ?? (item as any)?._key ?? idx)
 }
 function isItemOpen(block: string, key: string): boolean {
   return Boolean(repeaterOpen[block]?.[key])
@@ -1052,7 +1057,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           variant="outline"
           icon="i-lucide-plus"
           :disabled="!canAddRepeaterItem(field)"
-          @click="addRepeaterItem(field.name, repeaterBlueprint(field), repeaterMax(field))"
+          @click="addRepeaterItem(field.name, identifiedRepeaterBlueprint(field), repeaterMax(field))"
         >
           Add {{ field.label }}
         </UButton>
