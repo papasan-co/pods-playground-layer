@@ -35,6 +35,7 @@ export interface PodRenderIdentityInput extends PodRuntimeIdentity {
   selectionSequence: number
   schemaRevision: string
   fixtureRevision: string
+  ownershipRevision: string
   themeRevision: string
   fieldRevision: string
   layerCommits: Readonly<{
@@ -98,6 +99,15 @@ export interface PodRenderTransactionIdentityInput {
   readonly fixture: unknown
   readonly theme: unknown
   readonly fields: unknown
+  /** Null is the explicit compatibility declaration for historical artifacts. */
+  readonly styleOwnershipRevision: string | null
+  /** Required whenever a current artifact declares style ownership. */
+  readonly resolvedStyleProjection: Readonly<{
+    targetProfile: string
+    ownershipRevision: string
+    themeRevision: string
+    fieldRevision: string
+  }> | null
   readonly dependencies: readonly RuntimeLayerDependencyDescriptor[]
   readonly selectionSequence: number
   readonly viewport: Readonly<PodRenderViewport>
@@ -141,6 +151,7 @@ export const POD_RENDER_IDENTITY_FIELDS = [
   'selectionSequence',
   'schemaRevision',
   'fixtureRevision',
+  'ownershipRevision',
   'themeRevision',
   'fieldRevision',
   'layerCommits',
@@ -171,6 +182,7 @@ export const POD_RENDER_PEER_IDENTITY_FIELDS = [
   'rendererMode',
   'schemaRevision',
   'fixtureRevision',
+  'ownershipRevision',
   'themeRevision',
   'fieldRevision',
   'layerCommits',
@@ -308,6 +320,7 @@ function validatePodRenderIdentity(input: PodRenderIdentityInput): void {
   for (const field of [
     'schemaRevision',
     'fixtureRevision',
+    'ownershipRevision',
     'themeRevision',
     'fieldRevision',
   ] as const) {
@@ -537,12 +550,63 @@ export async function createPodRenderTransactionIdentity(
     input.dependencies.map((dependency) => [dependency.name, dependency]),
   )
 
-  const [schemaRevision, fixtureRevision, themeRevision, fieldRevision] = await Promise.all([
+  const [schemaRevision, fixtureRevision] = await Promise.all([
     canonicalContentRevision(input.schema),
     canonicalContentRevision(input.fixture),
-    canonicalContentRevision(input.theme),
-    canonicalContentRevision(input.fields),
   ])
+
+  let ownershipRevision: string
+  let themeRevision: string
+  let fieldRevision: string
+  if (input.styleOwnershipRevision === null) {
+    if (input.resolvedStyleProjection !== null) {
+      throw new PodRenderIdentityFailure(
+        'invalid-render-identity',
+        'A historical artifact cannot attach a current style ownership projection.',
+        ['resolvedStyleProjection'],
+      )
+    }
+    const historicalRevisions = await Promise.all([
+      canonicalContentRevision({ compatibility: 'historical-style-ownership' }),
+      canonicalContentRevision(input.theme),
+      canonicalContentRevision(input.fields),
+    ])
+    ownershipRevision = historicalRevisions[0]
+    themeRevision = historicalRevisions[1]
+    fieldRevision = historicalRevisions[2]
+  } else {
+    const projection = input.resolvedStyleProjection
+    const invalidProjectionFields: string[] = []
+    if (!isSha256Revision(input.styleOwnershipRevision)) {
+      invalidProjectionFields.push('styleOwnershipRevision')
+    }
+    if (!projection) {
+      invalidProjectionFields.push('resolvedStyleProjection')
+    } else {
+      if (!projection.targetProfile.trim()) {
+        invalidProjectionFields.push('resolvedStyleProjection.targetProfile')
+      }
+      if (projection.ownershipRevision !== input.styleOwnershipRevision) {
+        invalidProjectionFields.push('resolvedStyleProjection.ownershipRevision')
+      }
+      if (!isSha256Revision(projection.themeRevision)) {
+        invalidProjectionFields.push('resolvedStyleProjection.themeRevision')
+      }
+      if (!isSha256Revision(projection.fieldRevision)) {
+        invalidProjectionFields.push('resolvedStyleProjection.fieldRevision')
+      }
+    }
+    if (invalidProjectionFields.length > 0 || !projection) {
+      throw new PodRenderIdentityFailure(
+        'invalid-render-identity',
+        'The render transaction style ownership projection is missing or stale.',
+        invalidProjectionFields,
+      )
+    }
+    ownershipRevision = input.styleOwnershipRevision
+    themeRevision = projection.themeRevision
+    fieldRevision = projection.fieldRevision
+  }
 
   return createPodRenderIdentity({
     ...input.runtimeIdentity,
@@ -550,6 +614,7 @@ export async function createPodRenderTransactionIdentity(
     selectionSequence: input.selectionSequence,
     schemaRevision,
     fixtureRevision,
+    ownershipRevision,
     themeRevision,
     fieldRevision,
     layerCommits: {

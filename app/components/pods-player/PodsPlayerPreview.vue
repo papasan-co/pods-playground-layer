@@ -31,6 +31,7 @@ import {
   type RuntimeLayerIdentityEnforcement,
   type RuntimeIdentityDiagnosticSnapshot,
 } from '#pods-player/runtime/isolation'
+import { createHostResolvedStyleProjection } from '#pods-player/runtime/styleOwnership'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
 /**
@@ -819,6 +820,17 @@ async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean
       ['runtimeIdentity'],
     )
   }
+  const declaredStyleOwnership =
+    props.pod?.styleOwnership ?? props.pod?.compiledContract?.style_ownership ?? null
+  const styleProjection = declaredStyleOwnership
+    ? await createHostResolvedStyleProjection({
+        targetProfile: 'story',
+        manifest: declaredStyleOwnership,
+        compiledContract: props.pod?.compiledContract ?? null,
+        theme: previewCssVars.value ?? {},
+        fields: props.previewProps ?? {},
+      })
+    : null
   const nextRenderIdentity = await createPodRenderTransactionIdentity({
     runtimeIdentity: ensured.runtimeIdentity,
     runtimeContentIdentity:
@@ -832,6 +844,8 @@ async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean
     fixture: props.pod?.fixture ?? null,
     theme: previewCssVars.value ?? {},
     fields: props.previewProps ?? {},
+    styleOwnershipRevision: styleProjection?.ownershipRevision ?? null,
+    resolvedStyleProjection: styleProjection,
     dependencies: configuredRuntimeLayerDependencies(),
     selectionSequence,
     viewport: renderViewport(),

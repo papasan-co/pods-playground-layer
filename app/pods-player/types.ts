@@ -16,6 +16,7 @@ import type {
   PodRuntimeSession,
   RuntimeAssetSet,
 } from './runtime/isolation'
+import type { PodStyleOwnershipManifest } from './runtime/styleOwnership'
 
 export type {
   PodRuntimeContentRevisions,
@@ -71,6 +72,12 @@ export interface PodDetails extends PodListItem {
    * When provided, the player can derive `fields` from it.
    */
   compiledContract?: Record<string, unknown> | null
+
+  /**
+   * Canonical style-owner registry emitted with current pod artifacts.
+   * Historical artifacts may omit it and enter the explicit compatibility path.
+   */
+  styleOwnership?: PodStyleOwnershipManifest | null
 }
 
 export interface PodsPlayerCanvasTarget {
