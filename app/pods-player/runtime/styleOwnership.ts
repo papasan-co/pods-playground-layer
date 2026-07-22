@@ -21,6 +21,20 @@ export const POD_COLOR_ROLES = [
 export type PodColorRole = (typeof POD_COLOR_ROLES)[number]
 export type PodBrandRole = PodColorRole | `x-${string}`
 
+export const POD_TYPOGRAPHY_ROLES = ['heading', 'body'] as const
+export type PodTypographyRole = (typeof POD_TYPOGRAPHY_ROLES)[number]
+
+export const POD_MOTION_ROLES = ['enter', 'interaction', 'progress', 'ambient'] as const
+export type PodMotionRole = (typeof POD_MOTION_ROLES)[number]
+
+export type PodStyleSemanticRole =
+  | { readonly domain: 'typography'; readonly role: PodTypographyRole }
+  | {
+      readonly domain: 'motion'
+      readonly role: PodMotionRole
+      readonly capabilityId: string
+    }
+
 /** Generated compatibility mirror of the Story registry; read-only at runtime. */
 export const POD_COLOR_ROLE_ALIASES = {
   page: 'surface',
@@ -65,6 +79,7 @@ export interface PodStyleOwnershipEntryInput {
   readonly cascadePoint: string
   readonly sourceDefault: PodStyleSourceDefaultEvidence
   readonly owner: PodStyleOwner
+  readonly semanticRole?: PodStyleSemanticRole
 }
 
 export interface PodStyleOwnershipInput {
@@ -118,6 +133,9 @@ export class PodStyleOwnershipFailure extends Error {
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/
 const TARGET_PROFILE_SET = new Set<string>(POD_STYLE_TARGET_PROFILES)
 const COLOR_ROLE_SET = new Set<string>(POD_COLOR_ROLES)
+const TYPOGRAPHY_ROLE_SET = new Set<string>(POD_TYPOGRAPHY_ROLES)
+const MOTION_ROLE_SET = new Set<string>(POD_MOTION_ROLES)
+const MOTION_CAPABILITY_ID_PATTERN = /^[a-z][a-z0-9-]*\.v[1-9][0-9]*$/
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -256,6 +274,60 @@ function normalizeOwner(value: unknown, path: string): PodStyleOwner {
   }
 }
 
+function normalizeSemanticRole(value: unknown, path: string): PodStyleSemanticRole {
+  if (!isPlainRecord(value)) {
+    throw new PodStyleOwnershipFailure(
+      'invalid-style-ownership',
+      `Style semantic role at ${path} is invalid.`,
+      [path],
+    )
+  }
+
+  if (value.domain === 'typography') {
+    assertExactKeys(value, ['domain', 'role'], path)
+    if (typeof value.role !== 'string' || !TYPOGRAPHY_ROLE_SET.has(value.role)) {
+      throw new PodStyleOwnershipFailure(
+        'unsupported-style-ownership-value',
+        `Typography semantic role at ${path}.role is unsupported.`,
+        [`${path}.role`],
+      )
+    }
+    return { domain: 'typography', role: value.role as PodTypographyRole }
+  }
+
+  if (value.domain === 'motion') {
+    assertExactKeys(value, ['domain', 'role', 'capabilityId'], path)
+    if (typeof value.role !== 'string' || !MOTION_ROLE_SET.has(value.role)) {
+      throw new PodStyleOwnershipFailure(
+        'unsupported-style-ownership-value',
+        `Motion semantic role at ${path}.role is unsupported.`,
+        [`${path}.role`],
+      )
+    }
+    if (
+      typeof value.capabilityId !== 'string' ||
+      !MOTION_CAPABILITY_ID_PATTERN.test(value.capabilityId)
+    ) {
+      throw new PodStyleOwnershipFailure(
+        'unsupported-style-ownership-value',
+        `Motion capability at ${path}.capabilityId is unsupported.`,
+        [`${path}.capabilityId`],
+      )
+    }
+    return {
+      domain: 'motion',
+      role: value.role as PodMotionRole,
+      capabilityId: value.capabilityId,
+    }
+  }
+
+  throw new PodStyleOwnershipFailure(
+    'unsupported-style-ownership-value',
+    `Style semantic domain at ${path}.domain is unsupported.`,
+    [`${path}.domain`],
+  )
+}
+
 function normalizeEntry(value: unknown, index: number): PodStyleOwnershipEntryInput {
   const path = `entries[${index}]`
   if (!isPlainRecord(value)) {
@@ -267,7 +339,15 @@ function normalizeEntry(value: unknown, index: number): PodStyleOwnershipEntryIn
   }
   assertExactKeys(
     value,
-    ['target_profile', 'designKey', 'property', 'cascadePoint', 'sourceDefault', 'owner'],
+    [
+      'target_profile',
+      'designKey',
+      'property',
+      'cascadePoint',
+      'sourceDefault',
+      'owner',
+      'semanticRole',
+    ],
     path,
   )
   if (typeof value.target_profile !== 'string' || !TARGET_PROFILE_SET.has(value.target_profile)) {
@@ -298,6 +378,11 @@ function normalizeEntry(value: unknown, index: number): PodStyleOwnershipEntryIn
       ),
     },
     owner: normalizeOwner(value.owner, `${path}.owner`),
+    ...(value.semanticRole !== undefined
+      ? {
+          semanticRole: normalizeSemanticRole(value.semanticRole, `${path}.semanticRole`),
+        }
+      : {}),
   }
 }
 
@@ -821,14 +906,14 @@ export async function createResolvedStyleProjection(
       themeValues[key] = value
     } else if (entry.owner.category === 'field') {
       fieldPath = `fields.${entry.owner.fieldKey}`
-      if (!Object.prototype.hasOwnProperty.call(input.fields, entry.owner.fieldKey)) {
+      value = nestedValue(input.fields, entry.owner.fieldKey)
+      if (value === undefined) {
         throw new PodStyleOwnershipFailure(
           'unowned-style-property',
           'The authoritative field is missing from the resolved profile.',
           [fieldPath],
         )
       }
-      value = input.fields[entry.owner.fieldKey]
       fieldValues[key] = value
     } else if (entry.owner.category === 'system') {
       fieldPath = `system.${entry.owner.systemKey}`
@@ -905,12 +990,7 @@ const HOST_THEME_ROLE_KEYS: Readonly<Record<string, readonly string[]>> = {
     '--au-surface-raised',
     '--story-card-bg',
   ],
-  on_surface_raised: [
-    'on_surface_raised',
-    'onSurfaceRaised',
-    'cardText',
-    '--au-on-surface-raised',
-  ],
+  on_surface_raised: ['on_surface_raised', 'onSurfaceRaised', 'cardText', '--au-on-surface-raised'],
   border: ['border', '--au-border', '--story-card-border'],
   accent: ['accent', '--au-accent', '--story-accent', '--color-primary-500'],
   on_accent: ['on_accent', 'onAccent', '--au-on-accent', '--story-cta-text'],
