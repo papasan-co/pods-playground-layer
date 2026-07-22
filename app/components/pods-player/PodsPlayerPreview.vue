@@ -27,11 +27,19 @@ import {
   type PreviewState,
   type PreviewReadinessController,
   type RuntimeAssetLoadIdentity,
+  type RuntimeAssetLoadTiming,
   type RuntimeLayerDependencyDescriptor,
   type RuntimeLayerIdentityEnforcement,
   type RuntimeIdentityDiagnosticSnapshot,
 } from '#pods-player/runtime/isolation'
 import { createHostResolvedStyleProjection } from '#pods-player/runtime/styleOwnership'
+import {
+  findPodSwitchTimingMark,
+  recordPodSwitchTimingMark,
+  type PodSwitchTimingIdentity,
+  type PodSwitchTimingStage,
+  type PodSwitchTimingWindow,
+} from '#pods-player/runtime/switchTiming'
 import PodsPlayerPreviewDevice from './PodsPlayerPreviewDevice.vue'
 
 /**
@@ -312,6 +320,68 @@ function recordPreviewTiming(
     data,
   })
   win.__POD_STUDIO_PREVIEW_TIMINGS__ = timings
+}
+
+function switchTimingIdentity(identity: Readonly<PodRenderIdentity>): PodSwitchTimingIdentity {
+  return {
+    sessionFingerprint: identity.sessionFingerprint,
+    renderFingerprint: identity.renderFingerprint,
+    selectionSequence: identity.selectionSequence,
+    runtimeBoundaryKey: vueRuntimeBoundaryKey.value,
+    podSlug: identity.podSlug,
+  }
+}
+
+function recordSwitchStage(
+  stage: PodSwitchTimingStage,
+  identity: Readonly<PodRenderIdentity>,
+  atMs?: number | null,
+  unavailableReason?: string | null,
+): void {
+  if (!import.meta.client) return
+  if ((window as PodSwitchTimingWindow).__POD_SWITCH_TIMING_DISABLED__) return
+  recordPodSwitchTimingMark(window, {
+    stage,
+    owner: 'pods-playground-layer/PodsPlayerPreview',
+    identity: switchTimingIdentity(identity),
+    atMs,
+    unavailableReason,
+  })
+}
+
+function recordRuntimeAssetStages(
+  identity: Readonly<PodRenderIdentity>,
+  timing: RuntimeAssetLoadTiming | undefined = undefined,
+): void {
+  if (!import.meta.client) return
+  const metadataMark = findPodSwitchTimingMark(window, switchTimingIdentity(identity), 'metadataReady')
+  const predatesMetadata = Boolean(
+    timing?.requestedAtEpochMs !== null &&
+    timing?.requestedAtEpochMs !== undefined &&
+    metadataMark?.epochMs !== null &&
+    metadataMark?.epochMs !== undefined &&
+    timing.requestedAtEpochMs < metadataMark.epochMs,
+  )
+  if (
+    !timing ||
+    timing.requestCount === 0 ||
+    timing.requestedAtEpochMs === null ||
+    timing.readyAtEpochMs === null ||
+    predatesMetadata
+  ) {
+    const reason = predatesMetadata
+      ? 'The iframe asset request began before current metadata was ready and is not attributed to this transaction.'
+      : 'Immutable runtime assets were already resident; this selection made no asset request.'
+    recordSwitchStage('artifactRequested', identity, null, reason)
+    recordSwitchStage('artifactReady', identity, null, reason)
+  } else {
+    recordSwitchStage(
+      'artifactRequested',
+      identity,
+      timing.requestedAtEpochMs - performance.timeOrigin,
+    )
+    recordSwitchStage('artifactReady', identity, timing.readyAtEpochMs - performance.timeOrigin)
+  }
 }
 
 function waitForPreviewPaint(win: Window | null): Promise<void> {
@@ -627,6 +697,7 @@ async function renderVueRuntimeIntoIframe() {
     selectionSequence: renderIdentity.selectionSequence,
     renderToken,
   })
+  recordSwitchStage('mountAccepted', renderIdentity)
 
   api.renderPod({
     slug: props.pod.slug,
@@ -658,6 +729,8 @@ async function renderVueRuntimeIntoIframe() {
     }
     readiness.accept({ source: win, origin: window.location.origin, data: acknowledgement })
     previewState.value = readiness.state()
+    recordSwitchStage('firstStableMeaningfulPaint', renderIdentity)
+    recordSwitchStage('fieldsReady', renderIdentity)
     publishRuntimeSnapshot()
     recordPreviewTiming(sourcePreviewId, 'legacy_runtime_acknowledgement_accepted', {
       selectionSequence: renderIdentity.selectionSequence,
@@ -700,9 +773,12 @@ function publishRuntimeSnapshot(): void {
 }
 
 function handleRuntimeAcknowledgement(event: MessageEvent): void {
-  if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
+  const identity = vueRenderIdentity.value
+  if (!identity || !renderIdentityCommits.isCurrent(identity)) return
   if (!readiness?.accept(event)) return
   previewState.value = readiness.state()
+  recordSwitchStage('firstStableMeaningfulPaint', identity)
+  recordSwitchStage('fieldsReady', identity)
   publishRuntimeSnapshot()
   emitPreviewReady(currentCanvasArtifactId())
 }
@@ -800,7 +876,10 @@ async function stageSfcComponentSwap(
   publishRuntimeSnapshot()
 }
 
-async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean> {
+async function loadVueRuntimePreview(
+  selectionSequence: number,
+  selectionAcceptedAt: number,
+): Promise<boolean> {
   if (!runtime.ensureRuntimeLoaded) {
     throw new Error('Vue runtime mode is not supported by this host.')
   }
@@ -812,6 +891,7 @@ async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean
   const ensured = await runtime.ensureRuntimeLoaded(props.pod as PodDetails, {
     parentStylesInert: true,
   })
+  const metadataReadyAt = import.meta.client ? performance.now() : selectionAcceptedAt
   if (!request.isCurrent()) return false
   if (!ensured.runtimeIdentity) {
     throw new PodRenderIdentityFailure(
@@ -890,6 +970,13 @@ async function loadVueRuntimePreview(selectionSequence: number): Promise<boolean
   vueStylesheets.value = nextStylesheets
   previewState.value = { status: 'loading-assets', sessionKey: provisionalSessionKey }
   vueReady.value = nextRuntimeReady
+  recordSwitchStage('selectionAccepted', nextRenderIdentity, selectionAcceptedAt)
+  recordSwitchStage('metadataReady', nextRenderIdentity, metadataReadyAt)
+  if (nextRuntimeReady) {
+    recordRuntimeAssetStages(nextRenderIdentity)
+    recordSwitchStage('componentRegistered', nextRenderIdentity)
+    recordSwitchStage('frameShellReady', nextRenderIdentity)
+  }
   publishRuntimeSnapshot()
   return true
 }
@@ -909,6 +996,7 @@ watch(
       mediaModeRevision.value,
     ] as const,
   async ([slug, mode]) => {
+    const selectionAcceptedAt = import.meta.client ? performance.now() : 0
     const selection = previewModeRequests.begin(
       `${slug || ''}:${mode}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
     )
@@ -1020,7 +1108,7 @@ watch(
             throw err
           }
           vueFallbackActive.value = true
-          if (!(await loadVueRuntimePreview(selection.generation))) return
+          if (!(await loadVueRuntimePreview(selection.generation, selectionAcceptedAt))) return
           if (!selection.isCurrent()) return
           commitRenderedPreviewProps(props.previewProps || {})
           Comp.value = null
@@ -1072,7 +1160,7 @@ watch(
         if (!isFallbackMode) {
           vueFallbackActive.value = false
         }
-        if (!(await loadVueRuntimePreview(selection.generation))) return
+        if (!(await loadVueRuntimePreview(selection.generation, selectionAcceptedAt))) return
         if (!selection.isCurrent()) return
         commitRenderedPreviewProps(props.previewProps || {})
         Comp.value = null
@@ -1194,6 +1282,10 @@ function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
   if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
   if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
 
+  const identity = vueRenderIdentity.value
+  recordRuntimeAssetStages(identity, payload.timing)
+  recordSwitchStage('componentRegistered', identity)
+  recordSwitchStage('frameShellReady', identity)
   vueReady.value = true
   const state = previewState.value
   previewState.value = {
