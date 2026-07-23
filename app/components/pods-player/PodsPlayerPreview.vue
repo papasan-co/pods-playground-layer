@@ -137,17 +137,25 @@ const previewState = shallowRef<PreviewState>({ status: 'idle' })
 const mediaModeRevision = ref(0)
 const renderIdentityDiagnostics = shallowRef<RuntimeIdentityDiagnosticSnapshot[]>([])
 const renderIdentityCommits = createRenderIdentityCommitGate((diagnostic) => {
-  renderIdentityDiagnostics.value = [{
+  renderIdentityDiagnostics.value = [
+    {
+      ...diagnostic,
+      fields: [],
+      message: 'Discarded an obsolete render identity commit.',
+    },
+  ]
+  recordPreviewTiming(currentCanvasArtifactId(), diagnostic.code, {
     ...diagnostic,
-    fields: [],
-    message: 'Discarded an obsolete render identity commit.',
-  }]
-  recordPreviewTiming(currentCanvasArtifactId(), diagnostic.code, { ...diagnostic })
+  })
 })
 let frameGeneration = 0
 let renderGeneration = 0
 const PREVIEW_READINESS_TIMEOUT_MS = 10_000
-let vueMountOwner: { api: PodRuntimeApi; win: Window; artifactKey: string } | null = null
+let vueMountOwner: {
+  api: PodRuntimeApi
+  win: Window
+  artifactKey: string
+} | null = null
 let readiness: PreviewReadinessController | null = null
 const requestedEffectiveMode = computed(() => {
   const sourcePreviewId = currentCanvasArtifactId()
@@ -258,13 +266,15 @@ function emitPreviewReady(sourcePreviewId: string | null): void {
 
 function configuredRuntimeLayerDependencies(): RuntimeLayerDependencyDescriptor[] {
   const value = (config.public as Record<string, unknown>).runtimeLayerDependencies
-  return Array.isArray(value) ? value as RuntimeLayerDependencyDescriptor[] : []
+  return Array.isArray(value) ? (value as RuntimeLayerDependencyDescriptor[]) : []
 }
 
 function configuredIdentityEnforcement(): RuntimeLayerIdentityEnforcement {
-  const value = ((config.public as Record<string, unknown>).runtimeLayerIdentity as
-    | { enforcement?: unknown }
-    | undefined)?.enforcement
+  const value = (
+    (config.public as Record<string, unknown>).runtimeLayerIdentity as
+      | { enforcement?: unknown }
+      | undefined
+  )?.enforcement
   return value === 'diagnostic' || value === 'hard' ? value : 'warning'
 }
 
@@ -276,12 +286,14 @@ function renderViewport() {
 
 function renderMediaMode() {
   const matches = (query: string) =>
-    import.meta.client && typeof window.matchMedia === 'function' && window.matchMedia(query).matches
+    import.meta.client &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(query).matches
   return {
-    colorScheme: matches('(prefers-color-scheme: dark)') ? 'dark' as const : 'light' as const,
+    colorScheme: matches('(prefers-color-scheme: dark)') ? ('dark' as const) : ('light' as const),
     reducedMotion: matches('(prefers-reduced-motion: reduce)')
-      ? 'reduce' as const
-      : 'no-preference' as const,
+      ? ('reduce' as const)
+      : ('no-preference' as const),
   }
 }
 
@@ -293,8 +305,12 @@ if (import.meta.client) {
   const handleMediaChange = () => {
     mediaModeRevision.value += 1
   }
-  onMounted(() => watchedMedia.forEach((query) => query.addEventListener('change', handleMediaChange)))
-  onBeforeUnmount(() => watchedMedia.forEach((query) => query.removeEventListener('change', handleMediaChange)))
+  onMounted(() =>
+    watchedMedia.forEach((query) => query.addEventListener('change', handleMediaChange)),
+  )
+  onBeforeUnmount(() =>
+    watchedMedia.forEach((query) => query.removeEventListener('change', handleMediaChange)),
+  )
 }
 
 function recordPreviewTiming(
@@ -354,13 +370,17 @@ function recordRuntimeAssetStages(
   timing: RuntimeAssetLoadTiming | undefined = undefined,
 ): void {
   if (!import.meta.client) return
-  const metadataMark = findPodSwitchTimingMark(window, switchTimingIdentity(identity), 'metadataReady')
+  const metadataMark = findPodSwitchTimingMark(
+    window,
+    switchTimingIdentity(identity),
+    'metadataReady',
+  )
   const predatesMetadata = Boolean(
     timing?.requestedAtEpochMs !== null &&
-    timing?.requestedAtEpochMs !== undefined &&
-    metadataMark?.epochMs !== null &&
-    metadataMark?.epochMs !== undefined &&
-    timing.requestedAtEpochMs < metadataMark.epochMs,
+      timing?.requestedAtEpochMs !== undefined &&
+      metadataMark?.epochMs !== null &&
+      metadataMark?.epochMs !== undefined &&
+      timing.requestedAtEpochMs < metadataMark.epochMs,
   )
   if (
     !timing ||
@@ -494,11 +514,15 @@ async function emitPreviewReadyAfterPaint(
   const requestId = ++previewReadyRequestId
   await nextTick()
   if (!previewDataReady(sourcePreviewId)) {
-    recordPreviewTiming(sourcePreviewId, 'canvas_ready_deferred_until_matching_source_preview_data', {
-      source: options.source || 'unknown',
-      contentSourcePreviewId: props.contentSourcePreviewId || null,
-      contentReady: props.contentReady !== false,
-    })
+    recordPreviewTiming(
+      sourcePreviewId,
+      'canvas_ready_deferred_until_matching_source_preview_data',
+      {
+        source: options.source || 'unknown',
+        contentSourcePreviewId: props.contentSourcePreviewId || null,
+        contentReady: props.contentReady !== false,
+      },
+    )
     return
   }
   const explicitPreviousText = options.previousText || ''
@@ -535,13 +559,20 @@ async function emitPreviewReadyAfterPaint(
   emitPreviewReady(sourcePreviewId)
 }
 
-function vueRuntimeApi(win: Window | null): { api: PodRuntimeApi; legacy: boolean } {
+function vueRuntimeApi(win: Window | null): {
+  api: PodRuntimeApi
+  legacy: boolean
+} {
   const artifactKey = vueRuntimeArtifactKey.value
   if (!win || !artifactKey) {
-    throw new PodRuntimeFailure('missing-runtime', 'The preview runtime has no active artifact identity.', {
-      runtimeArtifactKey: artifactKey || undefined,
-      podSlug: props.pod?.slug,
-    })
+    throw new PodRuntimeFailure(
+      'missing-runtime',
+      'The preview runtime has no active artifact identity.',
+      {
+        runtimeArtifactKey: artifactKey || undefined,
+        podSlug: props.pod?.slug,
+      },
+    )
   }
   const runtimeWindow = win as Window & {
     __AUTUMN_PODS_REGISTRY__?: Record<string, PodRuntimeApi>
@@ -550,7 +581,10 @@ function vueRuntimeApi(win: Window | null): { api: PodRuntimeApi; legacy: boolea
   }
   const registered = resolveRegisteredRuntime(runtimeWindow, artifactKey)
   if (registered) return registered
-  return { api: captureLegacyRuntime(runtimeWindow, artifactKey), legacy: true }
+  return {
+    api: captureLegacyRuntime(runtimeWindow, artifactKey),
+    legacy: true,
+  }
 }
 
 function unmountVueRuntimePreview(sourcePreviewId: string | null): boolean {
@@ -648,7 +682,10 @@ async function renderVueRuntimeIntoIframe() {
     throw new PodRuntimeFailure(
       'missing-pod',
       `Pod "${props.pod.slug}" is not available in the selected runtime.`,
-      { runtimeArtifactKey: vueRuntimeArtifactKey.value, podSlug: props.pod.slug },
+      {
+        runtimeArtifactKey: vueRuntimeArtifactKey.value,
+        podSlug: props.pod.slug,
+      },
     )
   }
 
@@ -727,7 +764,11 @@ async function renderVueRuntimeIntoIframe() {
       })
       return
     }
-    readiness.accept({ source: win, origin: window.location.origin, data: acknowledgement })
+    readiness.accept({
+      source: win,
+      origin: window.location.origin,
+      data: acknowledgement,
+    })
     previewState.value = readiness.state()
     recordSwitchStage('firstStableMeaningfulPaint', renderIdentity)
     recordSwitchStage('fieldsReady', renderIdentity)
@@ -745,28 +786,35 @@ function publishRuntimeSnapshot(): void {
   const state = previewState.value
   const failure = state.status === 'failed' ? state.failure : null
   window.__POD_RUNTIME_SNAPSHOT__ = createRuntimeSnapshot({
-    sessionKey:
-      'sessionKey' in state ? state.sessionKey : `${vueRuntimeArtifactKey.value}:idle`,
+    sessionKey: 'sessionKey' in state ? state.sessionKey : `${vueRuntimeArtifactKey.value}:idle`,
     runtimeArtifactKey: vueRuntimeArtifactKey.value,
     runtimeBoundaryKey: vueRuntimeBoundaryKey.value,
     identity: vueRuntimeIdentity.value,
     renderIdentity: vueRenderIdentity.value,
     identityState: vueRenderIdentity.value
       ? { status: 'valid' as const }
-      : { status: 'unavailable' as const, reason: effectiveMode.value === 'sfc' ? 'source-transport' : 'not-constructed' },
+      : {
+          status: 'unavailable' as const,
+          reason: effectiveMode.value === 'sfc' ? 'source-transport' : 'not-constructed',
+        },
     identityDiagnostics: [...renderIdentityDiagnostics.value],
     runtimeLayerDependencies: configuredRuntimeLayerDependencies(),
     requestGeneration: previewRequests.current()?.generation ?? 0,
     frameGeneration,
     registryKeys: Object.keys(
-      (previewIframeWindow() as Window & {
-        __AUTUMN_PODS_REGISTRY__?: Record<string, PodRuntimeApi>
-      } | null)?.__AUTUMN_PODS_REGISTRY__ || {},
+      (
+        previewIframeWindow() as
+          | (Window & {
+              __AUTUMN_PODS_REGISTRY__?: Record<string, PodRuntimeApi>
+            })
+          | null
+      )?.__AUTUMN_PODS_REGISTRY__ || {},
     ),
     ownedStyles: [...vueStylesheets.value],
     ownedModules: [...vueScripts.value],
-    loadedLayerCommit:
-      String((config.public as Record<string, unknown>).podsPlayerLayerCommit || 'unknown'),
+    loadedLayerCommit: String(
+      (config.public as Record<string, unknown>).podsPlayerLayerCommit || 'unknown',
+    ),
     state,
     failure,
   })
@@ -887,7 +935,10 @@ async function loadVueRuntimePreview(
     `${props.pod?.slug || ''}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
   )
   const provisionalSessionKey = `${request.key}:${request.generation}`
-  previewState.value = { status: 'resolving', sessionKey: provisionalSessionKey }
+  previewState.value = {
+    status: 'resolving',
+    sessionKey: provisionalSessionKey,
+  }
   const ensured = await runtime.ensureRuntimeLoaded(props.pod as PodDetails, {
     parentStylesInert: true,
   })
@@ -925,6 +976,7 @@ async function loadVueRuntimePreview(
     theme: previewCssVars.value ?? {},
     fields: props.previewProps ?? {},
     styleOwnershipRevision: styleProjection?.ownershipRevision ?? null,
+    recompositionRevision: props.pod?.recompositionRevision ?? null,
     resolvedStyleProjection: styleProjection,
     dependencies: configuredRuntimeLayerDependencies(),
     selectionSequence,
@@ -937,10 +989,12 @@ async function loadVueRuntimePreview(
   if (!renderIdentityCommits.activate(nextRenderIdentity)) return false
   const nextScripts = ensured.vueBundleUrls ?? []
   const nextStylesheets = ensured.stylesheetUrls ?? []
-  const nextArtifactKey = ensured.runtimeArtifactKey || runtimeAssetLoadKey({
-    moduleScripts: nextScripts,
-    extraStylesheets: nextStylesheets,
-  })
+  const nextArtifactKey =
+    ensured.runtimeArtifactKey ||
+    runtimeAssetLoadKey({
+      moduleScripts: nextScripts,
+      extraStylesheets: nextStylesheets,
+    })
   const nextBoundaryKey = ensured.runtimeBoundaryKey || nextArtifactKey
   const nextRuntimeReady = resolvePreviewRuntimeAssetReady({
     previousBoundaryKey: vueRuntimeBoundaryKey.value,
@@ -968,7 +1022,10 @@ async function loadVueRuntimePreview(
   renderIdentityDiagnostics.value = []
   vueScripts.value = nextScripts
   vueStylesheets.value = nextStylesheets
-  previewState.value = { status: 'loading-assets', sessionKey: provisionalSessionKey }
+  previewState.value = {
+    status: 'loading-assets',
+    sessionKey: provisionalSessionKey,
+  }
   vueReady.value = nextRuntimeReady
   recordSwitchStage('selectionAccepted', nextRenderIdentity, selectionAcceptedAt)
   recordSwitchStage('metadataReady', nextRenderIdentity, metadataReadyAt)
@@ -1128,7 +1185,12 @@ watch(
           // artifact while chat announced success (live: the in-session
           // activation stall). Stash the loaded module; the resume watcher
           // below completes the swap the moment matching data arrives.
-          deferredSfcSwap = { mod, sourcePreviewId, podSlug: slug, previousText }
+          deferredSfcSwap = {
+            mod,
+            sourcePreviewId,
+            podSlug: slug,
+            previousText,
+          }
           recordPreviewTiming(
             sourcePreviewId,
             'hmr_sfc_swap_deferred_until_matching_source_preview_data',
@@ -1173,11 +1235,13 @@ watch(
     } catch (err) {
       if (selection.isCurrent()) {
         if (err instanceof PodRenderIdentityFailure && hasRenderablePreview.value) {
-          renderIdentityDiagnostics.value = [{
-            code: err.code,
-            fields: [...err.fields],
-            message: err.message,
-          }]
+          renderIdentityDiagnostics.value = [
+            {
+              code: err.code,
+              fields: [...err.fields],
+              message: err.message,
+            },
+          ]
           error.value = err.message
           recordPreviewTiming(currentCanvasArtifactId(), 'render_identity_rejected', {
             code: err.code,
@@ -1299,15 +1363,19 @@ function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknow
   if (effectiveMode.value !== 'vue') return
   if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
   if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
-  failPreview(new PodRuntimeFailure(
-    'asset-failed',
-    payload.error instanceof Error ? payload.error.message : 'The pod runtime assets failed to load.',
-    {
-      runtimeArtifactKey: vueRuntimeArtifactKey.value,
-      podSlug: props.pod?.slug,
-      cause: payload.error,
-    },
-  ))
+  failPreview(
+    new PodRuntimeFailure(
+      'asset-failed',
+      payload.error instanceof Error
+        ? payload.error.message
+        : 'The pod runtime assets failed to load.',
+      {
+        runtimeArtifactKey: vueRuntimeArtifactKey.value,
+        podSlug: props.pod?.slug,
+        cause: payload.error,
+      },
+    ),
+  )
 }
 
 function failPreview(failure: unknown): void {

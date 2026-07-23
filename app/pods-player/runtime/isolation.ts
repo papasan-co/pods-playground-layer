@@ -14,6 +14,7 @@ export interface PodRuntimeIdentity {
 }
 
 export const POD_RENDER_IDENTITY_CONTRACT = 'PodRenderIdentity.v1' as const
+export const POD_RENDER_RECOMPOSITION_NONE = 'dense-scene-recomposition:none.v1' as const
 
 export type PodRenderIdentityContract = typeof POD_RENDER_IDENTITY_CONTRACT
 export type PodRenderColorScheme = 'light' | 'dark'
@@ -38,6 +39,7 @@ export interface PodRenderIdentityInput extends PodRuntimeIdentity {
   ownershipRevision: string
   themeRevision: string
   fieldRevision: string
+  recompositionRevision: string
   layerCommits: Readonly<{
     'pods-playground-layer': string
     'scroll-runtime-layer': string
@@ -101,6 +103,11 @@ export interface PodRenderTransactionIdentityInput {
   readonly fields: unknown
   /** Null is the explicit compatibility declaration for historical artifacts. */
   readonly styleOwnershipRevision: string | null
+  /**
+   * The deterministic Story target-skeleton revision. Historical and
+   * non-recomposed artifacts pass null and receive the explicit `none` value.
+   */
+  readonly recompositionRevision?: string | null
   /** Required whenever a current artifact declares style ownership. */
   readonly resolvedStyleProjection: Readonly<{
     targetProfile: string
@@ -154,6 +161,7 @@ export const POD_RENDER_IDENTITY_FIELDS = [
   'ownershipRevision',
   'themeRevision',
   'fieldRevision',
+  'recompositionRevision',
   'layerCommits',
   'viewport',
   'devicePixelRatio',
@@ -185,6 +193,7 @@ export const POD_RENDER_PEER_IDENTITY_FIELDS = [
   'ownershipRevision',
   'themeRevision',
   'fieldRevision',
+  'recompositionRevision',
   'layerCommits',
   'viewport',
   'devicePixelRatio',
@@ -326,6 +335,12 @@ function validatePodRenderIdentity(input: PodRenderIdentityInput): void {
   ] as const) {
     if (!isSha256Revision(input[field])) invalidFields.push(field)
   }
+  if (
+    input.recompositionRevision !== POD_RENDER_RECOMPOSITION_NONE &&
+    !isSha256Revision(input.recompositionRevision)
+  ) {
+    invalidFields.push('recompositionRevision')
+  }
   if (input.artifactRevision !== undefined && !input.artifactRevision.trim()) {
     invalidFields.push('artifactRevision')
   }
@@ -374,7 +389,10 @@ function identityProjection(
   fields: readonly (keyof PodRenderIdentityInput)[],
 ): Record<string, unknown> {
   return Object.fromEntries(
-    fields.map((field) => [field, field === 'artifactRevision' ? input[field] ?? null : input[field]]),
+    fields.map((field) => [
+      field,
+      field === 'artifactRevision' ? (input[field] ?? null) : input[field],
+    ]),
   )
 }
 
@@ -393,9 +411,7 @@ export async function createPodRenderIdentity(
   const sessionFingerprint = await canonicalContentRevision(
     identityProjection(input, POD_RENDER_SESSION_IDENTITY_FIELDS),
   )
-  const renderFingerprint = await canonicalContentRevision(
-    podRenderPeerIdentityProjection(input),
-  )
+  const renderFingerprint = await canonicalContentRevision(podRenderPeerIdentityProjection(input))
   return Object.freeze({
     ...input,
     layerCommits: Object.freeze({ ...input.layerCommits }),
@@ -518,8 +534,7 @@ export async function createPodRenderTransactionIdentity(
     input.runtimeContentIdentity.runtimeContentRevisions,
   )
   if (
-    canonicalContent.packCssAssetSetVersion !==
-    input.runtimeContentIdentity.packCssAssetSetVersion
+    canonicalContent.packCssAssetSetVersion !== input.runtimeContentIdentity.packCssAssetSetVersion
   ) {
     throw new PodRenderIdentityFailure(
       'invalid-render-identity',
@@ -617,11 +632,10 @@ export async function createPodRenderTransactionIdentity(
     ownershipRevision,
     themeRevision,
     fieldRevision,
+    recompositionRevision: input.recompositionRevision ?? POD_RENDER_RECOMPOSITION_NONE,
     layerCommits: {
-      'pods-playground-layer':
-        dependencyByName.get('pods-playground-layer')?.resolvedCommit || '',
-      'scroll-runtime-layer':
-        dependencyByName.get('scroll-runtime-layer')?.resolvedCommit || '',
+      'pods-playground-layer': dependencyByName.get('pods-playground-layer')?.resolvedCommit || '',
+      'scroll-runtime-layer': dependencyByName.get('scroll-runtime-layer')?.resolvedCommit || '',
     },
     viewport: input.viewport,
     devicePixelRatio: input.devicePixelRatio,
@@ -881,9 +895,7 @@ export class InFlightPromiseCache<T> {
         }
 
         const ttl =
-          classification === 'authoritative-negative'
-            ? this.#negativeTtlMs
-            : this.#positiveTtlMs
+          classification === 'authoritative-negative' ? this.#negativeTtlMs : this.#positiveTtlMs
         if (ttl <= 0) {
           if (this.#entries.get(key) === entry) this.#entries.delete(key)
           return value
@@ -945,7 +957,11 @@ export class PodRuntimeFailure extends Error {
   constructor(
     code: PodRuntimeFailureCode,
     message: string,
-    context: { runtimeArtifactKey?: string; podSlug?: string; cause?: unknown } = {},
+    context: {
+      runtimeArtifactKey?: string
+      podSlug?: string
+      cause?: unknown
+    } = {},
   ) {
     super(message)
     if (context.cause !== undefined) {
@@ -1200,7 +1216,10 @@ export interface PreviewStylesheetPlan {
  * brand and font decoration arrive independently.
  */
 export function createPreviewStylesheetPlan(
-  identity: Pick<RuntimeAssetLoadIdentity, 'shellStylesheets' | 'extraStylesheets' | 'optionalStylesheets'>,
+  identity: Pick<
+    RuntimeAssetLoadIdentity,
+    'shellStylesheets' | 'extraStylesheets' | 'optionalStylesheets'
+  >,
 ): PreviewStylesheetPlan {
   const normalize = (stylesheets: readonly string[] = []) => [
     ...new Set(
@@ -1212,7 +1231,10 @@ export function createPreviewStylesheetPlan(
   ]
 
   return {
-    required: normalize([...(identity.shellStylesheets ?? []), ...(identity.extraStylesheets ?? [])]),
+    required: normalize([
+      ...(identity.shellStylesheets ?? []),
+      ...(identity.extraStylesheets ?? []),
+    ]),
     optional: normalize(identity.optionalStylesheets),
   }
 }
@@ -1316,20 +1338,25 @@ export interface RuntimeSnapshot {
 export type RuntimeSnapshotInput = Omit<
   RuntimeSnapshot,
   'renderIdentity' | 'identityState' | 'identityDiagnostics' | 'runtimeLayerDependencies'
-> & Partial<Pick<
-  RuntimeSnapshot,
-  'renderIdentity' | 'identityState' | 'identityDiagnostics' | 'runtimeLayerDependencies'
->>
+> &
+  Partial<
+    Pick<
+      RuntimeSnapshot,
+      'renderIdentity' | 'identityState' | 'identityDiagnostics' | 'runtimeLayerDependencies'
+    >
+  >
 
 export function createRuntimeSnapshot(input: RuntimeSnapshotInput): Readonly<RuntimeSnapshot> {
   return Object.freeze({
     ...input,
     identity: Object.freeze({ ...input.identity }),
     renderIdentity: input.renderIdentity ? Object.freeze({ ...input.renderIdentity }) : null,
-    identityState: Object.freeze(input.identityState || {
-      status: 'unavailable' as const,
-      reason: 'legacy-snapshot',
-    }),
+    identityState: Object.freeze(
+      input.identityState || {
+        status: 'unavailable' as const,
+        reason: 'legacy-snapshot',
+      },
+    ),
     identityDiagnostics: (input.identityDiagnostics || []).map((diagnostic) => ({
       ...diagnostic,
       fields: [...diagnostic.fields],
@@ -1373,7 +1400,9 @@ export function runtimeSnapshotsEquivalent(
   direct: RuntimeSnapshot,
   navigated: RuntimeSnapshot,
 ): boolean {
-  return JSON.stringify(comparableSnapshot(direct)) === JSON.stringify(comparableSnapshot(navigated))
+  return (
+    JSON.stringify(comparableSnapshot(direct)) === JSON.stringify(comparableSnapshot(navigated))
+  )
 }
 
 declare global {
