@@ -11,12 +11,19 @@
  */
 
 import type {
+  PodRuntimeContentRevisions,
   PodRuntimeIdentity,
   PodRuntimeSession,
   RuntimeAssetSet,
 } from './runtime/isolation'
+import type { PodStyleOwnershipManifest } from './runtime/styleOwnership'
 
-export type { PodRuntimeIdentity, PodRuntimeSession, RuntimeAssetSet } from './runtime/isolation'
+export type {
+  PodRuntimeContentRevisions,
+  PodRuntimeIdentity,
+  PodRuntimeSession,
+  RuntimeAssetSet,
+} from './runtime/isolation'
 
 export type PodsPlayerMode = 'sfc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
@@ -65,6 +72,18 @@ export interface PodDetails extends PodListItem {
    * When provided, the player can derive `fields` from it.
    */
   compiledContract?: Record<string, unknown> | null
+
+  /**
+   * Canonical style-owner registry emitted with current pod artifacts.
+   * Historical artifacts may omit it and enter the explicit compatibility path.
+   */
+  styleOwnership?: PodStyleOwnershipManifest | null
+
+  /**
+   * Identity-bearing dense-scene target-skeleton revision. Historical and
+   * ordinary pods omit it and resolve to the canonical non-recomposed value.
+   */
+  recompositionRevision?: string | null
 }
 
 export interface PodsPlayerCanvasTarget {
@@ -100,6 +119,8 @@ export interface PodsPlayerEnsureResult {
   runtimeArtifactKey?: string
   runtimeBoundaryKey?: string
   runtimeAssets?: RuntimeAssetSet
+  runtimeContentRevisions?: Readonly<PodRuntimeContentRevisions>
+  packCssAssetSetVersion?: string
   legacyRuntime?: boolean
 }
 
@@ -139,7 +160,10 @@ export interface PodsPlayerRuntime {
   /**
    * Optional: load a default fixture for initial preview.
    */
-  getFixture?(slug: string, options?: PodsPlayerRuntimeRequest): Promise<Record<string, unknown> | null>
+  getFixture?(
+    slug: string,
+    options?: PodsPlayerRuntimeRequest,
+  ): Promise<Record<string, unknown> | null>
 
   /**
    * Optional: CSS custom properties applied to preview roots/iframes.
@@ -162,7 +186,11 @@ export interface PodsPlayerRuntime {
     podSlug: string
     sourcePreviewId: string
     draftPackId?: string | null
-  }): Promise<{ prepared: boolean; transport?: string | null; fallbackReason?: string | null }>
+  }): Promise<{
+    prepared: boolean
+    transport?: string | null
+    fallbackReason?: string | null
+  }>
 
   /**
    * Vue runtime mode: provide the ESM runtime bundle URL(s) and/or perform any preloading.
