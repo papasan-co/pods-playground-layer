@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import Sortable from 'sortablejs'
-import { get as dotGet } from 'lodash-es'
-import type { FormField } from '#pods-player/formMapper'
-import type { PodsPlayerViewport } from '#pods-player/types'
-import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
-import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
-import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
-import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
-import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
-import PodsPlayerPositionPicker from './PodsPlayerPositionPicker.vue'
-import PodsPlayerRichTextEditor from './PodsPlayerRichTextEditor.vue'
-import { identifyRepeaterBlueprint } from '#pods-player/designItemIdentity'
+import Sortable from "sortablejs";
+import { get as dotGet } from "lodash-es";
+import type { FormField } from "#pods-player/formMapper";
+import type { PodsPlayerViewport } from "#pods-player/types";
+import PodsPlayerResponsiveField from "./PodsPlayerResponsiveField.vue";
+import PodsPlayerBrandColorPicker from "./PodsPlayerBrandColorPicker.vue";
+import PodsPlayerMediaPicker from "./PodsPlayerMediaPicker.vue";
+import PodsPlayerGeoPointPicker from "./PodsPlayerGeoPointPicker.vue";
+import PodsPlayerIconSourceField from "./PodsPlayerIconSourceField.vue";
+import PodsPlayerPositionPicker from "./PodsPlayerPositionPicker.vue";
+import PodsPlayerRichTextEditor from "./PodsPlayerRichTextEditor.vue";
+import { identifyRepeaterBlueprint } from "#pods-player/designItemIdentity";
+import {
+  activeVariantFields,
+  datetimeFromInput,
+  datetimeInputValue,
+  type NestedPodValue,
+} from "#pods-player/fieldPrimitives";
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerBlockForm
@@ -20,25 +26,25 @@ import { identifyRepeaterBlueprint } from '#pods-player/designItemIdentity'
  * and the playground share the same authoring controls.
  */
 
-defineOptions({ name: 'PodsPlayerBlockForm' })
+defineOptions({ name: "PodsPlayerBlockForm" });
 
 const props = defineProps<{
-  fields: FormField[]
-  modelValue: Record<string, unknown>
-  rootModelValue?: Record<string, unknown>
-  viewport?: PodsPlayerViewport
-  compositeFieldUpdates?: boolean
-  mediaItems?: Array<Record<string, unknown>>
-  storyMediaItems?: Array<Record<string, unknown>>
-  libraryMediaItems?: Array<Record<string, unknown>>
-  mediaSourceMode?: 'cms' | 'playground'
-  readOnly?: boolean
+  fields: FormField[];
+  modelValue: Record<string, unknown>;
+  rootModelValue?: Record<string, unknown>;
+  viewport?: PodsPlayerViewport;
+  compositeFieldUpdates?: boolean;
+  mediaItems?: Array<Record<string, unknown>>;
+  storyMediaItems?: Array<Record<string, unknown>>;
+  libraryMediaItems?: Array<Record<string, unknown>>;
+  mediaSourceMode?: "cms" | "playground";
+  readOnly?: boolean;
   /**
    * Field-anchored notes (e.g. accessibility auto-adjustments) rendered under
    * the matching control, keyed by the YAML field dot-path.
    */
-  fieldNotes?: Array<{ fieldPath: string; message: string }>
-}>()
+  fieldNotes?: Array<{ fieldPath: string; message: string }>;
+}>();
 
 /**
  * Resolve the note for a field by exact or prefix dot-path match.
@@ -47,411 +53,662 @@ const props = defineProps<{
  * to the responsible control so auto-corrections are visible, never silent.
  */
 function noteFor(field: FormField): string | null {
-  const notes = props.fieldNotes
+  const notes = props.fieldNotes;
 
   if (!notes?.length) {
-    return null
+    return null;
   }
 
-  const key = String((field as { path?: unknown }).path || field.name || '').trim()
+  const key = String(
+    (field as { path?: unknown }).path || field.name || "",
+  ).trim();
 
   if (!key) {
-    return null
+    return null;
   }
 
   const match = notes.find(
     (note) => note.fieldPath === key || note.fieldPath.startsWith(`${key}.`),
-  )
+  );
 
-  return match?.message || null
+  return match?.message || null;
 }
 
 interface UpdatePayload {
-  field: string
-  value: unknown
+  field: string;
+  value: unknown;
+  structural?: boolean;
 }
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: UpdatePayload): void
-  (e: 'update:viewport', value: PodsPlayerViewport): void
-}>()
+  (e: "update:modelValue", value: UpdatePayload): void;
+  (e: "update:viewport", value: PodsPlayerViewport): void;
+}>();
 
-function updateField(name: string, value: unknown, type: string) {
-  if (props.readOnly) return
+function updateField(
+  name: string,
+  value: unknown,
+  type: string,
+  structural = false,
+) {
+  if (props.readOnly) return;
 
-  const v = type === 'number' ? Number(value) : value
-  emit('update:modelValue', { field: name, value: v })
+  const v = type === "number" ? Number(value) : value;
+  emit("update:modelValue", { field: name, value: v, structural });
+}
+
+function updateDatetimeField(field: FormField, value: string) {
+  if (!field.name) return;
+  updateField(field.name, datetimeFromInput(value), field.type);
+}
+
+function multiselectValues(field: FormField): string[] {
+  if (!field.name) return [];
+  const value = props.modelValue[field.name];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function toggleMultiselect(field: FormField, option: string, checked: boolean) {
+  if (!field.name) return;
+  const values = multiselectValues(field);
+  const next = checked
+    ? [...values.filter((value) => value !== option), option]
+    : values.filter((value) => value !== option);
+  updateField(field.name, next, field.type);
+}
+
+function referenceItems(
+  field: FormField,
+): Array<{ value: string; label: string }> {
+  const ui = isObjectLike(field["x-ui"]) ? field["x-ui"] : {};
+  const references = Array.isArray(ui.references) ? ui.references : [];
+  return references.flatMap((item) => {
+    if (!isObjectLike(item) || typeof item.uuid !== "string") return [];
+    return [
+      {
+        value: item.uuid,
+        label: typeof item.label === "string" ? item.label : item.uuid,
+      },
+    ];
+  });
+}
+
+function referenceUuid(field: FormField): string {
+  if (!field.name || !isObjectLike(props.modelValue[field.name])) return "";
+  const uuid = (props.modelValue[field.name] as Record<string, unknown>).uuid;
+  return typeof uuid === "string" ? uuid : "";
+}
+
+function updateReference(field: FormField, uuid: string) {
+  if (!field.name || typeof field.target !== "string") return;
+  updateField(field.name, { type: field.target, uuid }, field.type);
+}
+
+function variantValue(field: FormField): Record<string, unknown> {
+  if (!field.name || !isObjectLike(props.modelValue[field.name])) return {};
+  return props.modelValue[field.name] as Record<string, unknown>;
+}
+
+function variantItems(
+  field: FormField,
+): Array<{ value: string; label: string }> {
+  const variants = isObjectLike(field.variants) ? field.variants : {};
+  return Object.keys(variants).map((value) => ({
+    value,
+    label: value
+      .replace(/[-_]/g, " ")
+      .replace(/^./, (letter) => letter.toUpperCase()),
+  }));
+}
+
+function updateVariantBranch(field: FormField, branch: string) {
+  if (!field.name || typeof field.discriminator !== "string") return;
+  updateField(field.name, { [field.discriminator]: branch }, field.type, true);
+}
+
+function updateVariantChild(field: FormField, child: string, value: unknown) {
+  if (!field.name || typeof field.discriminator !== "string") return;
+  const current = variantValue(field);
+  updateField(
+    field.name,
+    {
+      [field.discriminator]: current[field.discriminator],
+      ...Object.fromEntries(
+        activeVariantFields(field, current)
+          .filter(
+            (branchField) =>
+              branchField.name && current[branchField.name] !== undefined,
+          )
+          .map((branchField) => [
+            branchField.name as string,
+            current[branchField.name as string],
+          ]),
+      ),
+      [child]: value,
+    },
+    field.type,
+  );
+}
+
+function podsValue(field: FormField): NestedPodValue[] {
+  if (!field.name || !Array.isArray(props.modelValue[field.name])) return [];
+  return props.modelValue[field.name] as NestedPodValue[];
+}
+
+function makeUlid(): string {
+  const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  let timestamp = Date.now();
+  let value = "";
+  for (let index = 0; index < 10; index += 1) {
+    value = alphabet[timestamp % 32] + value;
+    timestamp = Math.floor(timestamp / 32);
+  }
+  for (let index = 0; index < 16; index += 1) {
+    value += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return value;
+}
+
+function podWhitelistItems(
+  field: FormField,
+): Array<{ value: string; label: string }> {
+  return (Array.isArray(field.pod_whitelist) ? field.pod_whitelist : [])
+    .filter((slug): slug is string => typeof slug === "string")
+    .map((slug) => ({ value: slug, label: slug.replace(/-/g, " ") }));
+}
+
+function podContractFields(field: FormField, slug: string): FormField[] {
+  const contracts = isObjectLike(field.pod_contracts)
+    ? field.pod_contracts
+    : {};
+  const contract = isObjectLike(contracts[slug]) ? contracts[slug] : {};
+  return Array.isArray(contract.fields) ? (contract.fields as FormField[]) : [];
+}
+
+function updatePods(
+  field: FormField,
+  value: NestedPodValue[],
+  structural = false,
+) {
+  if (!field.name) return;
+  updateField(field.name, value, field.type, structural);
+}
+
+function addPod(field: FormField) {
+  const slug = podWhitelistItems(field)[0]?.value;
+  if (!slug) return;
+  const propsValue = Object.fromEntries(
+    podContractFields(field, slug)
+      .filter((child) => child.name)
+      .map((child) => [
+        child.name as string,
+        child.default ?? child.fixture ?? "",
+      ]),
+  );
+  updatePods(
+    field,
+    [
+      ...podsValue(field),
+      { _uid: makeUlid(), pod_slug: slug, props: propsValue },
+    ],
+    true,
+  );
+}
+
+function removePod(field: FormField, index: number) {
+  updatePods(
+    field,
+    podsValue(field).filter((_, itemIndex) => itemIndex !== index),
+    true,
+  );
+}
+
+function movePod(field: FormField, index: number, offset: number) {
+  const nextIndex = index + offset;
+  const values = [...podsValue(field)];
+  if (nextIndex < 0 || nextIndex >= values.length) return;
+  const [item] = values.splice(index, 1);
+  values.splice(nextIndex, 0, item);
+  updatePods(field, values, true);
+}
+
+function updatePodSlug(field: FormField, index: number, slug: string) {
+  updatePods(
+    field,
+    podsValue(field).map((item, itemIndex) =>
+      itemIndex === index ? { ...item, pod_slug: slug, props: {} } : item,
+    ),
+    true,
+  );
+}
+
+function updatePodProps(
+  field: FormField,
+  index: number,
+  child: string,
+  value: unknown,
+) {
+  updatePods(
+    field,
+    podsValue(field).map((item, itemIndex) =>
+      itemIndex === index
+        ? { ...item, props: { ...item.props, [child]: value } }
+        : item,
+    ),
+  );
 }
 
 function isObjectLike(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isUiOnlyMergeField(name: string | undefined): boolean {
-  return Boolean(name && name.startsWith('__'))
+  return Boolean(name && name.startsWith("__"));
 }
 
 interface Condition {
-  field: string
-  equals: unknown
+  field: string;
+  equals: unknown;
 }
 
 function isVisible(field: FormField) {
-  const cond = (field as { when?: Condition | Condition[] }).when
-  if (!cond) return true
-  const conditions = Array.isArray(cond) ? cond : [cond]
-  return conditions.every((c) => dotGet(props.modelValue, c.field) === c.equals)
+  const cond = (field as { when?: Condition | Condition[] }).when;
+  if (!cond) return true;
+  const conditions = Array.isArray(cond) ? cond : [cond];
+  return conditions.every(
+    (c) => dotGet(props.modelValue, c.field) === c.equals,
+  );
 }
 
 function shouldEmitMediaObject(field: FormField): boolean {
-  const path = typeof field.path === 'string' ? field.path.trim() : ''
-  if (!path) return true
-  if (path.endsWith('.src') || path.endsWith('.url')) return false
-  if (path.includes('.')) return true
-  return path === field.name
+  const path = typeof field.path === "string" ? field.path.trim() : "";
+  if (!path) return true;
+  if (path.endsWith(".src") || path.endsWith(".url")) return false;
+  if (path.includes(".")) return true;
+  return path === field.name;
 }
 
 function isHidden(field: FormField): boolean {
-  const ui = (field as any)?.['x-ui']
-  return Boolean(ui && typeof ui === 'object' && ui.hidden === true)
+  const ui = (field as any)?.["x-ui"];
+  return Boolean(ui && typeof ui === "object" && ui.hidden === true);
 }
 
 function isReadOnly(field: FormField): boolean {
-  if (props.readOnly) return true
+  if (props.readOnly) return true;
 
-  const ui = (field as any)?.['x-ui']
-  return Boolean(ui && typeof ui === 'object' && ui.readonly === true)
+  const ui = (field as any)?.["x-ui"];
+  return Boolean(ui && typeof ui === "object" && ui.readonly === true);
 }
 
-function getA11yConfig(field: FormField): { againstField?: string; kind?: string } | null {
-  const explicit = (field as any)?.['x-a11y']
-  if (explicit && typeof explicit === 'object') {
-    return explicit as { againstField?: string; kind?: string }
+function getA11yConfig(
+  field: FormField,
+): { againstField?: string; kind?: string } | null {
+  const explicit = (field as any)?.["x-a11y"];
+  if (explicit && typeof explicit === "object") {
+    return explicit as { againstField?: string; kind?: string };
   }
-  const ui = (field as any)?.['x-ui']
-  const a11y = ui?.a11y
-  if (!a11y || typeof a11y !== 'object') return null
-  return a11y as { againstField?: string; kind?: string }
+  const ui = (field as any)?.["x-ui"];
+  const a11y = ui?.a11y;
+  if (!a11y || typeof a11y !== "object") return null;
+  return a11y as { againstField?: string; kind?: string };
 }
 
-function getGroupUiConfig(field: FormField): { collapsible?: boolean; defaultOpen?: boolean } | null {
-  const ui = (field as any)?.['x-ui']
-  if (!ui || typeof ui !== 'object') return null
-  return ui as { collapsible?: boolean; defaultOpen?: boolean }
+function getGroupUiConfig(
+  field: FormField,
+): { collapsible?: boolean; defaultOpen?: boolean } | null {
+  const ui = (field as any)?.["x-ui"];
+  if (!ui || typeof ui !== "object") return null;
+  return ui as { collapsible?: boolean; defaultOpen?: boolean };
 }
 
-function getPositionGridConfig(field: FormField): { verticalField?: string; horizontalField: string; mode: 'text' | 'block' } | null {
-  const ui = (field as any)?.['x-ui']
-  const verticalField = ui?.verticalField
-  const horizontalField = ui?.horizontalField
-  const mode = ui?.mode === 'block' ? 'block' : 'text'
-  if (typeof horizontalField !== 'string') return null
-  return { verticalField: typeof verticalField === 'string' ? verticalField : undefined, horizontalField, mode }
+function getPositionGridConfig(
+  field: FormField,
+): {
+  verticalField?: string;
+  horizontalField: string;
+  mode: "text" | "block";
+} | null {
+  const ui = (field as any)?.["x-ui"];
+  const verticalField = ui?.verticalField;
+  const horizontalField = ui?.horizontalField;
+  const mode = ui?.mode === "block" ? "block" : "text";
+  if (typeof horizontalField !== "string") return null;
+  return {
+    verticalField:
+      typeof verticalField === "string" ? verticalField : undefined,
+    horizontalField,
+    mode,
+  };
 }
 
 function isGroupCollapsible(field: FormField): boolean {
-  return getGroupUiConfig(field)?.collapsible === true
+  return getGroupUiConfig(field)?.collapsible === true;
 }
 
 function groupDefaultOpen(field: FormField): boolean {
-  const configured = getGroupUiConfig(field)?.defaultOpen
-  return typeof configured === 'boolean' ? configured : true
+  const configured = getGroupUiConfig(field)?.defaultOpen;
+  return typeof configured === "boolean" ? configured : true;
 }
 
-function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
-  const dynamicItems = dynamicSelectItems(field)
-  if (dynamicItems.length > 0) return dynamicItems
+function selectItems(
+  field: FormField & { options?: Record<string, string> | string[] },
+) {
+  const dynamicItems = dynamicSelectItems(field);
+  if (dynamicItems.length > 0) return dynamicItems;
 
   if (Array.isArray(field.options)) {
-    return field.options.map((value) => ({ value, label: value }))
+    return field.options.map((value) => ({ value, label: value }));
   }
 
-  if (field.options && typeof field.options === 'object') {
-    return Object.entries(field.options).map(([value, label]) => ({ value, label }))
+  if (field.options && typeof field.options === "object") {
+    return Object.entries(field.options).map(([value, label]) => ({
+      value,
+      label,
+    }));
   }
 
-  return []
+  return [];
 }
 
 type DynamicSelectConfig =
   | {
-      kind: 'array-field'
-      path: string
-      field: string
-      source?: 'root' | 'current'
+      kind: "array-field";
+      path: string;
+      field: string;
+      source?: "root" | "current";
     }
   | {
-      kind: 'chart-line-domain'
-      path: string
-      source?: 'root' | 'current'
-    }
+      kind: "chart-line-domain";
+      path: string;
+      source?: "root" | "current";
+    };
 
 function dynamicSelectItems(field: FormField) {
-  const ui = (field as any)?.['x-ui']
-  const config = ui?.optionsFrom as DynamicSelectConfig | undefined
-  if (!config || typeof config !== 'object' || typeof config.path !== 'string') return []
+  const ui = (field as any)?.["x-ui"];
+  const config = ui?.optionsFrom as DynamicSelectConfig | undefined;
+  if (!config || typeof config !== "object" || typeof config.path !== "string")
+    return [];
 
-  const sourceModel = config.source === 'current'
-    ? props.modelValue
-    : (props.rootModelValue ?? props.modelValue)
+  const sourceModel =
+    config.source === "current"
+      ? props.modelValue
+      : (props.rootModelValue ?? props.modelValue);
 
-  const pushUnique = (items: Array<{ value: string; label: string }>, value: unknown) => {
-    const normalized = String(value ?? '').trim()
-    if (!normalized || items.some((item) => item.value === normalized)) return
-    items.push({ value: normalized, label: normalized })
-  }
+  const pushUnique = (
+    items: Array<{ value: string; label: string }>,
+    value: unknown,
+  ) => {
+    const normalized = String(value ?? "").trim();
+    if (!normalized || items.some((item) => item.value === normalized)) return;
+    items.push({ value: normalized, label: normalized });
+  };
 
-  const items: Array<{ value: string; label: string }> = []
-  const sourceValue = dotGet(sourceModel, config.path)
+  const items: Array<{ value: string; label: string }> = [];
+  const sourceValue = dotGet(sourceModel, config.path);
 
-  if (config.kind === 'array-field' && Array.isArray(sourceValue)) {
+  if (config.kind === "array-field" && Array.isArray(sourceValue)) {
     for (const entry of sourceValue) {
-      if (!entry || typeof entry !== 'object') continue
-      pushUnique(items, (entry as Record<string, unknown>)[config.field])
+      if (!entry || typeof entry !== "object") continue;
+      pushUnique(items, (entry as Record<string, unknown>)[config.field]);
     }
-    return items
+    return items;
   }
 
-  if (config.kind === 'chart-line-domain' && Array.isArray(sourceValue)) {
+  if (config.kind === "chart-line-domain" && Array.isArray(sourceValue)) {
     for (const series of sourceValue) {
-      if (!series || typeof series !== 'object') continue
-      const points = (series as Record<string, unknown>).points
-      if (!Array.isArray(points)) continue
+      if (!series || typeof series !== "object") continue;
+      const points = (series as Record<string, unknown>).points;
+      if (!Array.isArray(points)) continue;
       for (const point of points) {
-        if (!point || typeof point !== 'object') continue
-        pushUnique(items, (point as Record<string, unknown>).x)
+        if (!point || typeof point !== "object") continue;
+        pushUnique(items, (point as Record<string, unknown>).x);
       }
     }
   }
 
-  return items
+  return items;
 }
 
-function colorSelectKeys(field: FormField & { options?: Record<string, string> | string[] }): string[] {
-  if (Array.isArray(field.options)) return field.options
-  if (field.options && typeof field.options === 'object') return Object.keys(field.options)
-  return []
+function colorSelectKeys(
+  field: FormField & { options?: Record<string, string> | string[] },
+): string[] {
+  if (Array.isArray(field.options)) return field.options;
+  if (field.options && typeof field.options === "object")
+    return Object.keys(field.options);
+  return [];
 }
 
-function sliderUnitFromLabel(label: unknown): 'ms' | 's' | '' {
-  const l = String(label ?? '').toLowerCase()
-  if (!l) return ''
-  if (l.includes('(ms)') || /\bms\b/.test(l) || l.includes('millisecond')) return 'ms'
-  if (l.includes('(s)') || /\bsec\b/.test(l) || l.includes('second')) return 's'
-  return ''
+function sliderUnitFromLabel(label: unknown): "ms" | "s" | "" {
+  const l = String(label ?? "").toLowerCase();
+  if (!l) return "";
+  if (l.includes("(ms)") || /\bms\b/.test(l) || l.includes("millisecond"))
+    return "ms";
+  if (l.includes("(s)") || /\bsec\b/.test(l) || l.includes("second"))
+    return "s";
+  return "";
 }
 
 function formatSliderValue(field: FormField): string {
-  const name = field?.name
-  if (!name) return ''
-  const v = props.modelValue[name]
-  if (v === undefined || v === null || v === '') return ''
-  const n = Number(v)
-  if (!Number.isFinite(n)) return String(v)
+  const name = field?.name;
+  if (!name) return "";
+  const v = props.modelValue[name];
+  if (v === undefined || v === null || v === "") return "";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
 
-  const unit = sliderUnitFromLabel((field as any)?.label)
-  if (unit === 'ms') {
-    return `${Math.round(n)}ms`
+  const unit = sliderUnitFromLabel((field as any)?.label);
+  if (unit === "ms") {
+    return `${Math.round(n)}ms`;
   }
-  if (unit === 's') {
-    const str =
-      Number.isInteger(n)
-        ? String(n)
-        : n
-            .toFixed(2)
-            .replace(/0+$/, '')
-            .replace(/\.$/, '')
-    return `${str}s`
+  if (unit === "s") {
+    const str = Number.isInteger(n)
+      ? String(n)
+      : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return `${str}s`;
   }
-  return String(n)
+  return String(n);
 }
 
 function makeKey() {
   // stable-enough for UI lists; fixture data can also include its own keys
-  return Math.random().toString(36).slice(2, 8)
+  return Math.random().toString(36).slice(2, 8);
 }
 
-type RepeaterItem = Record<string, unknown> & { _key?: string; _removing?: boolean }
+type RepeaterItem = Record<string, unknown> & {
+  _key?: string;
+  _removing?: boolean;
+};
 
 function normaliseRepeater(value: unknown): RepeaterItem[] {
   return (Array.isArray(value) ? value : []).map((v) => ({
     _key: (v as any)?._key ?? makeKey(),
     ...(v as Record<string, unknown>),
-  }))
+  }));
 }
 
 function cloneFormValue(value: unknown): unknown {
-  if (value === undefined || value === null) return value
-  if (typeof value !== 'object') return value
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "object") return value;
 
   try {
-    return JSON.parse(JSON.stringify(value))
+    return JSON.parse(JSON.stringify(value));
   } catch {
-    return value
+    return value;
   }
 }
 
 function firstSelectValue(field: FormField): string | undefined {
-  const options = (field as FormField & { options?: Record<string, string> | string[] }).options
-  if (Array.isArray(options)) return options[0]
-  if (options && typeof options === 'object') return Object.keys(options)[0]
-  return undefined
+  const options = (
+    field as FormField & { options?: Record<string, string> | string[] }
+  ).options;
+  if (Array.isArray(options)) return options[0];
+  if (options && typeof options === "object") return Object.keys(options)[0];
+  return undefined;
 }
 
 function defaultValueForRepeaterField(field: FormField): unknown {
-  const fixture = (field as { fixture?: unknown }).fixture
-  if (fixture !== undefined) return cloneFormValue(fixture)
+  const fixture = (field as { fixture?: unknown }).fixture;
+  if (fixture !== undefined) return cloneFormValue(fixture);
 
-  const configuredDefault = (field as { default?: unknown }).default
-  if (configuredDefault !== undefined) return cloneFormValue(configuredDefault)
+  const configuredDefault = (field as { default?: unknown }).default;
+  if (configuredDefault !== undefined) return cloneFormValue(configuredDefault);
 
-  if (field.type === 'toggle') return false
-  if (field.type === 'select') return firstSelectValue(field)
-  if (field.type === 'number') return 0
-  if (field.type === 'group' && Array.isArray(field.fields)) {
+  if (field.type === "toggle") return false;
+  if (field.type === "select") return firstSelectValue(field);
+  if (field.type === "number") return 0;
+  if (field.type === "group" && Array.isArray(field.fields)) {
     return field.fields.reduce<Record<string, unknown>>((next, child) => {
-      if (!child.name) return next
-      const childValue = defaultValueForRepeaterField(child)
-      if (childValue !== undefined) next[child.name] = childValue
-      return next
-    }, {})
+      if (!child.name) return next;
+      const childValue = defaultValueForRepeaterField(child);
+      if (childValue !== undefined) next[child.name] = childValue;
+      return next;
+    }, {});
   }
 
-  return ''
+  return "";
 }
 
 function repeaterBlueprint(field: FormField): Record<string, unknown> {
-  const explicitBlueprint = (field as { blueprint?: unknown }).blueprint
-  if (isObjectLike(explicitBlueprint)) return explicitBlueprint
-  if (field.type !== 'repeater' || !Array.isArray(field.fields)) return {}
+  const explicitBlueprint = (field as { blueprint?: unknown }).blueprint;
+  if (isObjectLike(explicitBlueprint)) return explicitBlueprint;
+  if (field.type !== "repeater" || !Array.isArray(field.fields)) return {};
 
   return field.fields.reduce<Record<string, unknown>>((next, child) => {
-    if (!child.name) return next
-    const value = defaultValueForRepeaterField(child)
-    if (value !== undefined) next[child.name] = value
-    return next
-  }, {})
+    if (!child.name) return next;
+    const value = defaultValueForRepeaterField(child);
+    if (value !== undefined) next[child.name] = value;
+    return next;
+  }, {});
 }
 
-function identifiedRepeaterBlueprint(field: FormField): Record<string, unknown> {
-  return identifyRepeaterBlueprint(field, repeaterBlueprint(field))
+function identifiedRepeaterBlueprint(
+  field: FormField,
+): Record<string, unknown> {
+  return identifyRepeaterBlueprint(field, repeaterBlueprint(field));
 }
 
 function repeaterMax(field: FormField): number | null {
-  const max = Number((field as { max?: unknown }).max)
-  return Number.isFinite(max) && max >= 0 ? max : null
+  const max = Number((field as { max?: unknown }).max);
+  return Number.isFinite(max) && max >= 0 ? max : null;
 }
 
 function canAddRepeaterItem(field: FormField): boolean {
-  if (!field.name || props.readOnly) return false
-  const max = repeaterMax(field)
-  return max === null || listFor(field.name).value.length < max
+  if (!field.name || props.readOnly) return false;
+  const max = repeaterMax(field);
+  return max === null || listFor(field.name).value.length < max;
 }
 
-const repeaterOpen = reactive<Record<string, Record<string, boolean>>>({})
+const repeaterOpen = reactive<Record<string, Record<string, boolean>>>({});
 function itemKey(item: RepeaterItem, idx: number): string {
-  return String((item as any)?._design_item_key ?? (item as any)?._key ?? idx)
+  return String((item as any)?._design_item_key ?? (item as any)?._key ?? idx);
 }
 function isItemOpen(block: string, key: string): boolean {
-  return Boolean(repeaterOpen[block]?.[key])
+  return Boolean(repeaterOpen[block]?.[key]);
 }
 function setItemOpen(block: string, key: string, open: boolean) {
-  repeaterOpen[block] ??= {}
-  repeaterOpen[block]![key] = open
+  repeaterOpen[block] ??= {};
+  repeaterOpen[block]![key] = open;
 }
 function toggleItemOpen(block: string, key: string) {
-  setItemOpen(block, key, !isItemOpen(block, key))
+  setItemOpen(block, key, !isItemOpen(block, key));
 }
 
 function summarizeRepeaterItem(item: RepeaterItem, idx: number): string {
-  const label = typeof item.label === 'string' ? item.label : ''
-  const prefix = typeof item.prefix === 'string' ? item.prefix : ''
-  const suffix = typeof item.suffix === 'string' ? item.suffix : ''
-  const value = item.value ?? item.end ?? item.start
+  const label = typeof item.label === "string" ? item.label : "";
+  const prefix = typeof item.prefix === "string" ? item.prefix : "";
+  const suffix = typeof item.suffix === "string" ? item.suffix : "";
+  const value = item.value ?? item.end ?? item.start;
   const valueStr =
-    typeof value === 'number' || typeof value === 'string'
-      ? String(value)
-      : ''
+    typeof value === "number" || typeof value === "string" ? String(value) : "";
 
-  if (label && valueStr) return `${label} — ${prefix}${valueStr}${suffix}`
-  if (label) return label
-  if (valueStr) return `${prefix}${valueStr}${suffix}`
-  return `Item #${idx + 1}`
+  if (label && valueStr) return `${label} — ${prefix}${valueStr}${suffix}`;
+  if (label) return label;
+  if (valueStr) return `${prefix}${valueStr}${suffix}`;
+  return `Item #${idx + 1}`;
 }
 
-const lists = new Map<string, ReturnType<typeof shallowRef<RepeaterItem[]>>>()
+const lists = new Map<string, ReturnType<typeof shallowRef<RepeaterItem[]>>>();
 function listFor(block: string) {
-  if (!lists.has(block)) lists.set(block, shallowRef(normaliseRepeater(props.modelValue[block])))
-  return lists.get(block)!
+  if (!lists.has(block))
+    lists.set(block, shallowRef(normaliseRepeater(props.modelValue[block])));
+  return lists.get(block)!;
 }
 
 function saveLocal(block: string) {
-  const data = JSON.stringify(listFor(block).value)
-  localStorage.setItem(`PodsPlayerBlockForm:${block}`, data)
+  const data = JSON.stringify(listFor(block).value);
+  localStorage.setItem(`PodsPlayerBlockForm:${block}`, data);
 }
 
 function commitRepeaterValue(block: string, value: RepeaterItem[]) {
   if (isObjectLike(props.modelValue)) {
-    props.modelValue[block] = value
+    props.modelValue[block] = value;
   }
 
-  emit('update:modelValue', { field: block, value })
-  saveLocal(block)
+  emit("update:modelValue", { field: block, value });
+  saveLocal(block);
 }
 
 function initSortable(el: HTMLElement, name: string) {
-  if ((el as any)._podsPlayerSortable) return
-  ;(el as any)._podsPlayerSortable = true
+  if ((el as any)._podsPlayerSortable) return;
+  (el as any)._podsPlayerSortable = true;
 
-  const list = listFor(name)
+  const list = listFor(name);
   Sortable.create(el, {
     animation: 150,
-    handle: '.repeater-handle',
-    draggable: '.repeater-card',
-    ghostClass: 'opacity-40',
-    filter: 'input, textarea, select, button, [contenteditable]',
+    handle: ".repeater-handle",
+    draggable: ".repeater-card",
+    ghostClass: "opacity-40",
+    filter: "input, textarea, select, button, [contenteditable]",
     preventOnFilter: false,
     onEnd(evt) {
-      if (props.readOnly) return
-      if (evt.oldIndex == null || evt.newIndex == null) return
-      const arr = [...list.value]
-      const [moved] = arr.splice(evt.oldIndex, 1)
-      arr.splice(evt.newIndex, 0, moved)
-      list.value = arr
-      commitRepeaterValue(name, arr)
+      if (props.readOnly) return;
+      if (evt.oldIndex == null || evt.newIndex == null) return;
+      const arr = [...list.value];
+      const [moved] = arr.splice(evt.oldIndex, 1);
+      arr.splice(evt.newIndex, 0, moved);
+      list.value = arr;
+      commitRepeaterValue(name, arr);
     },
-  })
+  });
 }
 
 function hoistUiOnlyGroupValues() {
   for (const field of props.fields) {
-    if (field.type !== 'group' || !field.children?.length || !isUiOnlyMergeField(field.name)) continue
-    const nested = props.modelValue[field.name]
-    if (!isObjectLike(nested)) continue
+    if (
+      field.type !== "group" ||
+      !field.children?.length ||
+      !isUiOnlyMergeField(field.name)
+    )
+      continue;
+    const nested = props.modelValue[field.name];
+    if (!isObjectLike(nested)) continue;
 
     for (const [child, value] of Object.entries(nested)) {
-      if (props.modelValue[child] !== undefined || value === undefined) continue
-      emitUiOnlyRootUpdate(child, value)
+      if (props.modelValue[child] !== undefined || value === undefined)
+        continue;
+      emitUiOnlyRootUpdate(child, value);
     }
   }
 }
 
 function initializeRepeater(field: FormField) {
-  if (field.type !== 'repeater') return
-  if (props.readOnly) return
+  if (field.type !== "repeater") return;
+  if (props.readOnly) return;
 
-  const modelValue = props.modelValue[field.name]
+  const modelValue = props.modelValue[field.name];
 
   if (modelValue && Array.isArray(modelValue) && modelValue.length > 0) {
-    listFor(field.name).value = normaliseRepeater(modelValue)
-    localStorage.removeItem(`PodsPlayerBlockForm:${field.name}`)
+    listFor(field.name).value = normaliseRepeater(modelValue);
+    localStorage.removeItem(`PodsPlayerBlockForm:${field.name}`);
   } else {
-    const cached = localStorage.getItem(`PodsPlayerBlockForm:${field.name}`)
+    const cached = localStorage.getItem(`PodsPlayerBlockForm:${field.name}`);
     if (cached) {
       try {
-        const parsed = JSON.parse(cached)
-        listFor(field.name).value = normaliseRepeater(parsed)
-        emit('update:modelValue', { field: field.name, value: parsed })
+        const parsed = JSON.parse(cached);
+        listFor(field.name).value = normaliseRepeater(parsed);
+        emit("update:modelValue", { field: field.name, value: parsed });
       } catch {
         // ignore
       }
@@ -460,132 +717,179 @@ function initializeRepeater(field: FormField) {
 }
 
 onMounted(() => {
-  hoistUiOnlyGroupValues()
-  for (const field of props.fields) initializeRepeater(field)
-})
+  hoistUiOnlyGroupValues();
+  for (const field of props.fields) initializeRepeater(field);
+});
 
 watch(
   () => props.modelValue,
   (newValue) => {
-    hoistUiOnlyGroupValues()
+    hoistUiOnlyGroupValues();
     for (const field of props.fields) {
-      if (field.type === 'repeater') {
-        const mv = newValue[field.name]
+      if (field.type === "repeater") {
+        const mv = newValue[field.name];
         if (mv && Array.isArray(mv) && mv.length > 0) {
-          listFor(field.name).value = normaliseRepeater(mv)
-          localStorage.removeItem(`PodsPlayerBlockForm:${field.name}`)
+          listFor(field.name).value = normaliseRepeater(mv);
+          localStorage.removeItem(`PodsPlayerBlockForm:${field.name}`);
         }
       }
     }
   },
   { deep: true, immediate: false },
-)
+);
 
-function updateRepeaterItem(block: string, idx: number, child: string, value: unknown) {
-  if (props.readOnly) return
+function updateRepeaterItem(
+  block: string,
+  idx: number,
+  child: string,
+  value: unknown,
+) {
+  if (props.readOnly) return;
 
-  const list = listFor(block)
+  const list = listFor(block);
   list.value = list.value.map((it, i) => {
-    if (i !== idx) return it
-    if (isUiOnlyMergeField(child) && isObjectLike(value)) return { ...it, ...value }
-    return { ...it, [child]: value }
-  })
-  commitRepeaterValue(block, list.value)
+    if (i !== idx) return it;
+    if (isUiOnlyMergeField(child) && isObjectLike(value))
+      return { ...it, ...value };
+    return { ...it, [child]: value };
+  });
+  commitRepeaterValue(block, list.value);
 }
 
-function addRepeaterItem(block: string, blueprint: Record<string, unknown> = {}, max?: number | null) {
-  if (props.readOnly) return
+function addRepeaterItem(
+  block: string,
+  blueprint: Record<string, unknown> = {},
+  max?: number | null,
+) {
+  if (props.readOnly) return;
 
-  const list = listFor(block)
-  if (max !== null && max !== undefined && list.value.length >= max) return
+  const list = listFor(block);
+  if (max !== null && max !== undefined && list.value.length >= max) return;
 
-  const key = makeKey()
-  const newItem = { _key: key, ...blueprint }
-  list.value = [...list.value, newItem]
-  setItemOpen(block, key, true)
-  commitRepeaterValue(block, list.value)
+  const key = makeKey();
+  const newItem = { _key: key, ...blueprint };
+  list.value = [...list.value, newItem];
+  setItemOpen(block, key, true);
+  commitRepeaterValue(block, list.value);
 }
 
 function removeRepeaterItem(block: string, idx: number) {
-  if (props.readOnly) return
+  if (props.readOnly) return;
 
-  const list = listFor(block)
-  list.value = list.value.map((it, i) => (i === idx ? { ...it, _removing: true } : it))
+  const list = listFor(block);
+  list.value = list.value.map((it, i) =>
+    i === idx ? { ...it, _removing: true } : it,
+  );
   setTimeout(() => {
-    list.value = list.value.filter((_, i) => i !== idx)
-    commitRepeaterValue(block, list.value)
-  }, 300)
+    list.value = list.value.filter((_, i) => i !== idx);
+    commitRepeaterValue(block, list.value);
+  }, 300);
 }
 
 function mergeGroupValue(groupName: string, child: string, value: unknown) {
-  const current = isObjectLike(props.modelValue[groupName]) ? (props.modelValue[groupName] as Record<string, unknown>) : {}
+  const current = isObjectLike(props.modelValue[groupName])
+    ? (props.modelValue[groupName] as Record<string, unknown>)
+    : {};
   const next =
     isUiOnlyMergeField(child) && isObjectLike(value)
       ? { ...current, ...value }
-      : { ...current, [child]: value }
-  updateField(groupName, next, 'group')
+      : { ...current, [child]: value };
+  updateField(groupName, next, "group");
 }
 
-function groupModelValue(groupName: string | undefined): Record<string, unknown> {
-  if (!groupName || isUiOnlyMergeField(groupName)) return props.modelValue
-  return (props.modelValue[groupName] as Record<string, unknown>) ?? {}
+function groupModelValue(
+  groupName: string | undefined,
+): Record<string, unknown> {
+  if (!groupName || isUiOnlyMergeField(groupName)) return props.modelValue;
+  return (props.modelValue[groupName] as Record<string, unknown>) ?? {};
 }
 
 function emitUiOnlyRootUpdate(child: string, value: unknown) {
-  if (props.readOnly) return
+  if (props.readOnly) return;
 
   if (isUiOnlyMergeField(child) && isObjectLike(value)) {
     for (const [key, nestedValue] of Object.entries(value)) {
-      emit('update:modelValue', { field: key, value: nestedValue })
+      emit("update:modelValue", { field: key, value: nestedValue });
     }
-    return
+    return;
   }
 
-  emit('update:modelValue', { field: child, value })
+  emit("update:modelValue", { field: child, value });
 }
 
-function handleGroupUpdate(groupName: string | undefined, child: string, value: unknown) {
+function handleGroupUpdate(
+  groupName: string | undefined,
+  child: string,
+  value: unknown,
+) {
   if (!groupName || isUiOnlyMergeField(groupName)) {
-    emitUiOnlyRootUpdate(child, value)
-    return
+    emitUiOnlyRootUpdate(child, value);
+    return;
   }
 
-  mergeGroupValue(groupName, child, value)
+  mergeGroupValue(groupName, child, value);
 }
 
-function emitGroupPositionUpdate(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
-  if (props.readOnly) return
+function emitGroupPositionUpdate(
+  field: FormField,
+  value: {
+    verticalPosition: "top" | "middle" | "bottom";
+    horizontalPosition: "left" | "center" | "right";
+  },
+) {
+  if (props.readOnly) return;
 
-  const config = getPositionGridConfig(field)
-  if (!config) return
-  emit('update:modelValue', {
-    field: field.name || '__positionGrid',
+  const config = getPositionGridConfig(field);
+  if (!config) return;
+  emit("update:modelValue", {
+    field: field.name || "__positionGrid",
     value: {
-      ...(config.verticalField ? { [config.verticalField]: value.verticalPosition } : {}),
+      ...(config.verticalField
+        ? { [config.verticalField]: value.verticalPosition }
+        : {}),
       [config.horizontalField]: value.horizontalPosition,
     },
-  })
+  });
 }
 
-function updateRootPositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
-  const config = getPositionGridConfig(field)
-  if (!config) return
-  if (config.verticalField) updateField(config.verticalField, value.verticalPosition, 'select')
-  updateField(config.horizontalField, value.horizontalPosition, 'select')
+function updateRootPositionGrid(
+  field: FormField,
+  value: {
+    verticalPosition: "top" | "middle" | "bottom";
+    horizontalPosition: "left" | "center" | "right";
+  },
+) {
+  const config = getPositionGridConfig(field);
+  if (!config) return;
+  if (config.verticalField)
+    updateField(config.verticalField, value.verticalPosition, "select");
+  updateField(config.horizontalField, value.horizontalPosition, "select");
 }
 
-function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' | 'middle' | 'bottom'; horizontalPosition: 'left' | 'center' | 'right' }) {
+function updatePositionGrid(
+  field: FormField,
+  value: {
+    verticalPosition: "top" | "middle" | "bottom";
+    horizontalPosition: "left" | "center" | "right";
+  },
+) {
   if (props.compositeFieldUpdates) {
-    emitGroupPositionUpdate(field, value)
-    return
+    emitGroupPositionUpdate(field, value);
+    return;
   }
-  updateRootPositionGrid(field, value)
+  updateRootPositionGrid(field, value);
 }
 </script>
 
 <template>
-  <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
-    <div v-if="field.type === 'group' && isVisible(field) && !isHidden(field)" class="mb-4 last:mb-0">
+  <template
+    v-for="(field, idx) in fields"
+    :key="field.name || `${field.type}-${idx}`"
+  >
+    <div
+      v-if="field.type === 'group' && isVisible(field) && !isHidden(field)"
+      class="mb-4 last:mb-0"
+    >
       <UCollapsible
         v-if="isGroupCollapsible(field)"
         :default-open="groupDefaultOpen(field)"
@@ -599,7 +903,9 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             block
             class="w-full justify-between rounded-md px-4 py-3"
           >
-            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+            <span
+              class="text-sm font-semibold text-gray-700 dark:text-gray-200"
+            >
               {{ field.label }}
             </span>
             <svg
@@ -630,7 +936,12 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :composite-field-updates="true"
                 :field-notes="fieldNotes"
                 @update:model-value="
-                  ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
+                  ({ field: child, value }) =>
+                    handleGroupUpdate(
+                      field.name as string | undefined,
+                      child,
+                      value,
+                    )
                 "
                 @update:viewport="(val) => emit('update:viewport', val)"
               />
@@ -638,7 +949,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           </div>
         </template>
       </UCollapsible>
-      <div v-else class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+      <div
+        v-else
+        class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4"
+      >
         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
           {{ field.label }}
         </h3>
@@ -656,7 +970,8 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :library-media-items="libraryMediaItems || []"
           :media-source-mode="mediaSourceMode || 'playground'"
           @update:model-value="
-            ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
+            ({ field: child, value }) =>
+              handleGroupUpdate(field.name as string | undefined, child, value)
           "
           @update:viewport="(val) => emit('update:viewport', val)"
         />
@@ -664,15 +979,23 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
     </div>
 
     <!-- Row: UI/layout primitive (does not store data) -->
-    <div v-else-if="field.type === 'row' && isVisible(field) && !isHidden(field)" class="flex gap-3 mb-4 last:mb-0">
-      <template v-for="(child, ci) in field.fields || []" :key="child.name || `${child.type}-${ci}`">
+    <div
+      v-else-if="field.type === 'row' && isVisible(field) && !isHidden(field)"
+      class="flex gap-3 mb-4 last:mb-0"
+    >
+      <template
+        v-for="(child, ci) in field.fields || []"
+        :key="child.name || `${child.type}-${ci}`"
+      >
         <div :class="(child.width as string) || 'flex-1'">
           <PodsPlayerResponsiveField
             v-if="child.responsive"
             :field="child"
             :model-value="modelValue"
             :viewport="viewport || 'laptop'"
-            @update:model-value="({ field: name, value }) => updateField(name, value, child.type)"
+            @update:model-value="
+              ({ field: name, value }) => updateField(name, value, child.type)
+            "
             @update:viewport="(val) => emit('update:viewport', val)"
           />
 
@@ -684,7 +1007,9 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             <template v-if="child.type === 'slider'" #label>
               <div class="flex items-center justify-between gap-2">
                 <span>{{ child.label }}</span>
-                <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(child as any) }}</span>
+                <span class="text-xs text-gray-500 tabular-nums">{{
+                  formatSliderValue(child as any)
+                }}</span>
               </div>
             </template>
             <UInput
@@ -692,21 +1017,27 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <UTextarea
               v-else-if="child.type === 'textarea'"
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <PodsPlayerRichTextEditor
               v-else-if="child.type === 'rich-text' || child.type === 'wysiwyg'"
               :model-value="modelValue[child.name as string] as string"
               :disabled="isReadOnly(child)"
               :placeholder="child.placeholder as string"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <USelect
               v-else-if="child.type === 'select'"
@@ -720,7 +1051,9 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               value-attribute="value"
               label-attribute="label"
               arrow
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <UInputNumber
               v-else-if="child.type === 'input-number'"
@@ -730,14 +1063,18 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :min="(child.min as number) ?? undefined"
               :max="(child.max as number) ?? undefined"
               :step="(child.step as number) ?? 1"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <USwitch
               v-else-if="child.type === 'toggle'"
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <USlider
               v-else-if="child.type === 'slider'"
@@ -748,17 +1085,44 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :max="(child.max as number) ?? 100"
               :step="(child.step as number) ?? 1"
               :tooltip="true"
-              @update:model-value="(val) => updateField(child.name as string, Array.isArray(val) ? val[0] : val, child.type)"
+              @update:model-value="
+                (val) =>
+                  updateField(
+                    child.name as string,
+                    Array.isArray(val) ? val[0] : val,
+                    child.type,
+                  )
+              "
             />
             <PodsPlayerBrandColorPicker
-              v-else-if="child.type === 'background-color' || child.type === 'brand-color-picker' || child.type === 'color-select'"
+              v-else-if="
+                child.type === 'background-color' ||
+                child.type === 'brand-color-picker' ||
+                child.type === 'color-select'
+              "
               :model-value="modelValue[child.name as string] as string"
-              :output-mode="child.type === 'color-select' ? 'token' : (((child as any)['x-ui']?.outputMode as any) || 'hex')"
-              :token-options="child.type === 'color-select' ? colorSelectKeys(child as any) : undefined"
-              :contrast-against="getA11yConfig(child)?.againstField ? (modelValue[getA11yConfig(child)?.againstField as string] as string) : undefined"
+              :output-mode="
+                child.type === 'color-select'
+                  ? 'token'
+                  : ((child as any)['x-ui']?.outputMode as any) || 'hex'
+              "
+              :token-options="
+                child.type === 'color-select'
+                  ? colorSelectKeys(child as any)
+                  : undefined
+              "
+              :contrast-against="
+                getA11yConfig(child)?.againstField
+                  ? (modelValue[
+                      getA11yConfig(child)?.againstField as string
+                    ] as string)
+                  : undefined
+              "
               :enforce-aa-for-text="getA11yConfig(child)?.kind === 'text-aa'"
               policy="disableTokens"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <PodsPlayerMediaPicker
               v-else-if="child.type === 'medias'"
@@ -769,25 +1133,33 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :story-media-items="storyMediaItems || []"
               :library-media-items="libraryMediaItems || []"
               :source-mode="mediaSourceMode || 'playground'"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <PodsPlayerGeoPointPicker
               v-else-if="child.type === 'geopoint'"
               :model-value="modelValue[child.name as string] as any"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <PodsPlayerIconSourceField
               v-else-if="child.type === 'icon-source'"
               :model-value="modelValue[child.name as string]"
               :disabled="isReadOnly(child)"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <UInput
               v-else
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
-              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+              @update:model-value="
+                (val) => updateField(child.name as string, val, child.type)
+              "
             />
             <p
               v-if="noteFor(child)"
@@ -810,7 +1182,9 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       :field="field"
       :model-value="modelValue"
       :viewport="viewport || 'laptop'"
-      @update:model-value="({ field: name, value }) => updateField(name, value, field.type)"
+      @update:model-value="
+        ({ field: name, value }) => updateField(name, value, field.type)
+      "
       @update:viewport="(val) => emit('update:viewport', val)"
     />
 
@@ -823,15 +1197,27 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       <template v-if="field.type === 'slider'" #label>
         <div class="flex items-center justify-between gap-2">
           <span>{{ field.label }}</span>
-          <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(field as any) }}</span>
+          <span class="text-xs text-gray-500 tabular-nums">{{
+            formatSliderValue(field as any)
+          }}</span>
         </div>
       </template>
       <PodsPlayerPositionPicker
         v-if="field.type === 'position-grid'"
-        :vertical="modelValue[getPositionGridConfig(field)?.verticalField as string] as string"
-        :horizontal="modelValue[getPositionGridConfig(field)?.horizontalField as string] as string"
+        :vertical="
+          modelValue[
+            getPositionGridConfig(field)?.verticalField as string
+          ] as string
+        "
+        :horizontal="
+          modelValue[
+            getPositionGridConfig(field)?.horizontalField as string
+          ] as string
+        "
         :mode="getPositionGridConfig(field)?.mode"
-        :axis="getPositionGridConfig(field)?.verticalField ? 'both' : 'horizontal'"
+        :axis="
+          getPositionGridConfig(field)?.verticalField ? 'both' : 'horizontal'
+        "
         :disabled="isReadOnly(field)"
         @update="(val) => updatePositionGrid(field, val)"
       />
@@ -843,6 +1229,177 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name]"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
+      <UInput
+        v-else-if="field.type === 'datetime'"
+        class="w-full"
+        type="datetime-local"
+        :name="field.name"
+        :aria-label="field.label || field.name"
+        size="sm"
+        :disabled="isReadOnly(field)"
+        :model-value="datetimeInputValue(modelValue[field.name])"
+        @update:model-value="
+          (val) => updateDatetimeField(field, String(val || ''))
+        "
+      />
+      <fieldset
+        v-else-if="field.type === 'multiselect'"
+        class="space-y-2"
+        :disabled="isReadOnly(field)"
+      >
+        <label
+          v-for="item in selectItems(field as any)"
+          :key="item.value"
+          class="flex items-center gap-2 text-sm"
+        >
+          <input
+            type="checkbox"
+            :name="field.name"
+            :value="item.value"
+            :checked="multiselectValues(field).includes(item.value)"
+            @change="
+              (event) =>
+                toggleMultiselect(
+                  field,
+                  item.value,
+                  (event.target as HTMLInputElement).checked,
+                )
+            "
+          />
+          <span>{{ item.label }}</span>
+        </label>
+      </fieldset>
+      <div v-else-if="field.type === 'reference'" class="space-y-2">
+        <USelect
+          v-if="referenceItems(field).length"
+          class="w-full"
+          :name="field.name"
+          :aria-label="field.label || field.name"
+          size="sm"
+          :disabled="isReadOnly(field)"
+          :model-value="referenceUuid(field)"
+          :items="referenceItems(field)"
+          value-key="value"
+          label-key="label"
+          @update:model-value="
+            (uuid) => updateReference(field, String(uuid || ''))
+          "
+        />
+        <UInput
+          v-else
+          class="w-full"
+          :name="field.name"
+          :aria-label="field.label || field.name"
+          size="sm"
+          :disabled="isReadOnly(field)"
+          :model-value="referenceUuid(field)"
+          :placeholder="`${String(field.target || 'record')} UUID`"
+          @update:model-value="
+            (uuid) => updateReference(field, String(uuid || ''))
+          "
+        />
+        <p class="text-xs text-gray-500">Typed target: {{ field.target }}</p>
+      </div>
+      <div v-else-if="field.type === 'variant'" class="space-y-3">
+        <USelect
+          class="w-full"
+          :name="field.name"
+          :aria-label="field.label || field.name"
+          size="sm"
+          :disabled="isReadOnly(field)"
+          :model-value="variantValue(field)[field.discriminator as string]"
+          :items="variantItems(field)"
+          value-key="value"
+          label-key="label"
+          @update:model-value="
+            (branch) => updateVariantBranch(field, String(branch || ''))
+          "
+        />
+        <PodsPlayerBlockForm
+          v-if="activeVariantFields(field, variantValue(field)).length"
+          :fields="activeVariantFields(field, variantValue(field))"
+          :model-value="variantValue(field)"
+          :root-model-value="rootModelValue || modelValue"
+          :viewport="viewport"
+          :read-only="readOnly"
+          @update:model-value="
+            ({ field: child, value }) => updateVariantChild(field, child, value)
+          "
+        />
+      </div>
+      <div
+        v-else-if="field.type === 'pods'"
+        class="space-y-3"
+        data-testid="pods-field-control"
+      >
+        <div
+          v-for="(pod, podIndex) in podsValue(field)"
+          :key="pod._uid"
+          class="rounded-md border border-gray-200 p-3 dark:border-gray-700"
+        >
+          <div class="mb-3 flex items-center gap-2">
+            <USelect
+              class="flex-1"
+              :name="`${field.name}-${podIndex}-slug`"
+              :aria-label="`${field.label || field.name} ${podIndex + 1} type`"
+              size="sm"
+              :disabled="isReadOnly(field)"
+              :model-value="pod.pod_slug"
+              :items="podWhitelistItems(field)"
+              value-key="value"
+              label-key="label"
+              @update:model-value="
+                (slug) => updatePodSlug(field, podIndex, String(slug || ''))
+              "
+            />
+            <UButton
+              size="xs"
+              variant="ghost"
+              aria-label="Move pod up"
+              :disabled="podIndex === 0"
+              @click="movePod(field, podIndex, -1)"
+              >↑</UButton
+            >
+            <UButton
+              size="xs"
+              variant="ghost"
+              aria-label="Move pod down"
+              :disabled="podIndex === podsValue(field).length - 1"
+              @click="movePod(field, podIndex, 1)"
+              >↓</UButton
+            >
+            <UButton
+              size="xs"
+              variant="ghost"
+              aria-label="Remove pod"
+              @click="removePod(field, podIndex)"
+              >×</UButton
+            >
+          </div>
+          <p class="mb-2 text-[11px] text-gray-500">{{ pod._uid }}</p>
+          <PodsPlayerBlockForm
+            v-if="podContractFields(field, pod.pod_slug).length"
+            :fields="podContractFields(field, pod.pod_slug)"
+            :model-value="pod.props"
+            :root-model-value="rootModelValue || modelValue"
+            :viewport="viewport"
+            :read-only="readOnly"
+            @update:model-value="
+              ({ field: child, value }) =>
+                updatePodProps(field, podIndex, child, value)
+            "
+          />
+        </div>
+        <UButton
+          size="sm"
+          variant="outline"
+          :aria-label="`Add ${field.label || 'pod'}`"
+          :disabled="isReadOnly(field)"
+          @click="addPod(field)"
+        >
+          Add {{ field.label || "pod" }}
+        </UButton>
+      </div>
       <UTextarea
         v-else-if="field.type === 'textarea'"
         class="w-full"
@@ -918,20 +1475,40 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :max="(field.max as number) ?? 100"
         :step="(field.step as number) ?? 1"
         :tooltip="true"
-        @update:model-value="(val) => updateField(field.name, Array.isArray(val) ? val[0] : val, field.type)"
+        @update:model-value="
+          (val) =>
+            updateField(
+              field.name,
+              Array.isArray(val) ? val[0] : val,
+              field.type,
+            )
+        "
       />
       <PodsPlayerBrandColorPicker
-        v-else-if="field.type === 'background-color' || field.type === 'brand-color-picker'"
+        v-else-if="
+          field.type === 'background-color' ||
+          field.type === 'brand-color-picker'
+        "
         :model-value="modelValue[field.name] as string"
         :output-mode="((field as any)['x-ui']?.outputMode as any) || 'hex'"
-        :token-options="((field as any)['x-ui']?.tokenOptions as string[]) || undefined"
-        :contrast-against="getA11yConfig(field)?.againstField ? (modelValue[getA11yConfig(field)?.againstField as string] as string) : undefined"
+        :token-options="
+          ((field as any)['x-ui']?.tokenOptions as string[]) || undefined
+        "
+        :contrast-against="
+          getA11yConfig(field)?.againstField
+            ? (modelValue[
+                getA11yConfig(field)?.againstField as string
+              ] as string)
+            : undefined
+        "
         :enforce-aa-for-text="getA11yConfig(field)?.kind === 'text-aa'"
         :allow-auto="Boolean((field as any)['x-ui']?.allowAuto)"
         :allow-custom="(field as any)['x-ui']?.allowCustom !== false"
         :auto-label="((field as any)['x-ui']?.autoLabel as string) || undefined"
         :preview-mode="((field as any)['x-ui']?.previewMode as any) || 'swatch'"
-        :preview-text="((field as any)['x-ui']?.previewText as string) || undefined"
+        :preview-text="
+          ((field as any)['x-ui']?.previewText as string) || undefined
+        "
         policy="disableTokens"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
@@ -972,24 +1549,31 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           >
             <UCollapsible
               :open="isItemOpen(field.name, itemKey(item as any, idx))"
-              @update:open="(v) => setItemOpen(field.name, itemKey(item as any, idx), Boolean(v))"
+              @update:open="
+                (v) =>
+                  setItemOpen(field.name, itemKey(item as any, idx), Boolean(v))
+              "
               :unmount-on-hide="true"
             >
               <template #default="{ open }">
                 <div class="flex items-start justify-between gap-2">
-                  <span class="repeater-handle cursor-grab text-gray-400 pt-0.5" @click.stop>
+                  <span
+                    class="repeater-handle cursor-grab text-gray-400 pt-0.5"
+                    @click.stop
+                  >
                     <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
                   </span>
-                  <button
-                    type="button"
-                    class="flex-1 text-left min-w-0"
-                  >
+                  <button type="button" class="flex-1 text-left min-w-0">
                     <div class="flex items-center gap-2 min-w-0">
                       <div class="min-w-0">
-                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                        <div
+                          class="text-xs font-semibold text-gray-700 dark:text-gray-200"
+                        >
                           {{ field.label }} #{{ idx + 1 }}
                         </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        <div
+                          class="text-xs text-gray-500 dark:text-gray-400 truncate"
+                        >
                           {{ summarizeRepeaterItem(item as any, idx) }}
                         </div>
                       </div>
@@ -1002,7 +1586,9 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                       variant="ghost"
                       size="xs"
                       aria-label="Toggle repeater item"
-                      @click.stop="toggleItemOpen(field.name, itemKey(item as any, idx))"
+                      @click.stop="
+                        toggleItemOpen(field.name, itemKey(item as any, idx))
+                      "
                     >
                       <svg
                         data-collapsible-caret="1"
@@ -1034,7 +1620,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 <div class="pt-3 space-y-3">
                   <PodsPlayerBlockForm
                     :fields="(field.fields || []) as any"
-                    :model-value="(item as any)"
+                    :model-value="item as any"
                     :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
                     :composite-field-updates="true"
@@ -1042,7 +1628,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                     :story-media-items="storyMediaItems || []"
                     :library-media-items="libraryMediaItems || []"
                     :media-source-mode="mediaSourceMode || 'playground'"
-                    @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
+                    @update:model-value="
+                      ({ field: child, value }) =>
+                        updateRepeaterItem(field.name, idx, child, value)
+                    "
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
                 </div>
@@ -1057,12 +1646,21 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           variant="outline"
           icon="i-lucide-plus"
           :disabled="!canAddRepeaterItem(field)"
-          @click="addRepeaterItem(field.name, identifiedRepeaterBlueprint(field), repeaterMax(field))"
+          @click="
+            addRepeaterItem(
+              field.name,
+              identifiedRepeaterBlueprint(field),
+              repeaterMax(field),
+            )
+          "
         >
           Add {{ field.label }}
         </UButton>
-        <p v-if="!canAddRepeaterItem(field)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Maximum {{ repeaterMax(field) }} {{ field.label || 'items' }} reached.
+        <p
+          v-if="!canAddRepeaterItem(field)"
+          class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+        >
+          Maximum {{ repeaterMax(field) }} {{ field.label || "items" }} reached.
         </p>
       </div>
       <p
