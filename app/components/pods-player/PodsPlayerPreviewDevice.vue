@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { createApp, h } from 'vue'
 import type { PodsPlayerViewport } from '#pods-player/types'
+import {
+  createPreviewStylesheetPlan,
+  hasRuntimeAssetScripts,
+  installPreviewShellStyles,
+  type RuntimeAssetLoadIdentity,
+  type RuntimeAssetLoadTiming,
+} from '#pods-player/runtime/isolation'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerPreviewDevice
@@ -40,12 +47,24 @@ const props = defineProps<{
   cssVars?: Record<string, string> | null
   /**
    * Additional stylesheet URLs injected directly into iframe head.
+   * These are required runtime or pack styles and participate in readiness.
    */
   extraStylesheets?: string[]
+  /** Structural stylesheets explicitly owned by this preview iframe. */
+  shellStylesheets?: readonly string[]
+  /**
+   * Theme and font stylesheet URLs injected into the iframe without delaying
+   * runtime readiness. A slow optional font must never hold the canvas blank.
+   */
+  optionalStylesheets?: string[]
+  /** Immutable owner attached to every managed stylesheet/module node. */
+  runtimeOwner?: string | null
   /**
    * Extra classes applied to iframe document root.
    */
   rootClasses?: string[]
+  /** Dataset values applied explicitly to the iframe body. */
+  bodyDataset?: Record<string, string> | null
   /**
    * The source preview or draft artifact currently rendered inside the iframe.
    * Parent readiness waits for this marker so it does not race the iframe mini-app render.
@@ -73,14 +92,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (
-    e: 'scriptsLoaded',
-    payload: {
-      moduleScripts: string[]
-      scripts: string[]
-      extraStylesheets: string[]
-    },
-  ): void
+  (e: 'scriptsLoaded', payload: RuntimeAssetLoadIdentity): void
+  (e: 'scriptsFailed', payload: RuntimeAssetLoadIdentity & { error: unknown }): void
 }>()
 
 const frameSize = computed(
@@ -136,30 +149,53 @@ const iframeRef = ref<HTMLIFrameElement>()
 const slotVNode = shallowRef()
 const slots = useSlots()
 
-let obs: MutationObserver | null = null
 let miniApp: ReturnType<typeof createApp> | null = null
 let booting = false
 let bootAgain = false
 
 onBeforeUnmount(() => {
-  obs?.disconnect()
   miniApp?.unmount()
 })
 
-const STYLE_SELECTOR = 'style,link[rel="stylesheet"]'
-const SYNCED_HEAD_SELECTOR = '[data-pods-head-sync="1"]'
+// Vite represents explicitly imported shell CSS and scoped component CSS as
+// style nodes in development. Copy only the known preview-shell sources; the
+// previous catch-all copied every host style (including unrelated CMS chrome)
+// into every preview frame.
+const SHELL_STYLE_SELECTOR = [
+  'style[data-vite-dev-id*="/assets/css/"]',
+  'style[data-vite-dev-id*="/.nuxt/ui.css"]',
+  'style[data-vite-dev-id*="/.nuxt/nuxt-fonts-global.css"]',
+  'style[data-vite-dev-id*="/pods-playground-layer/app/components/pods-player/"]',
+  'style[data-vite-dev-id*="/cms-story-pods/src/pods/"]',
+  'style[data-vite-dev-id*="/cms-story-pods/.pod-studio/"]',
+  'style[data-vite-dev-id*="/scroll-runtime-layer/"]',
+  'style[data-vite-dev-id*="/story-scroll-layer/"]',
+].join(',')
+const SYNCED_HEAD_SELECTOR = '[data-pods-shell-style="1"]'
 
-function syncHead(from: Document, to: Document) {
+function tagRuntimeAsset(node: HTMLElement, kind: string): void {
+  node.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
+  node.dataset.podsRuntimeAsset = kind
+}
+
+function tagInstalledShellStyles(doc: Document): void {
+  doc.querySelectorAll<HTMLElement>('[data-pods-shell-style]').forEach((node) => {
+    tagRuntimeAsset(node, 'shell-style')
+  })
+}
+
+function syncShellStyles(from: Document, to: Document) {
   to.head.querySelectorAll(SYNCED_HEAD_SELECTOR).forEach((n) => n.remove())
-  from.head.querySelectorAll(STYLE_SELECTOR).forEach((node) => {
+  from.head.querySelectorAll(SHELL_STYLE_SELECTOR).forEach((node) => {
     const cloned = node.cloneNode(true) as HTMLElement
-    cloned.dataset.podsHeadSync = '1'
+    cloned.dataset.podsShellStyle = '1'
+    tagRuntimeAsset(cloned, 'shell-style')
     to.head.appendChild(cloned)
   })
 }
 
 function syncCSSVars(to: Document) {
-  to.documentElement.style.cssText = document.documentElement.style.cssText
+  to.documentElement.style.cssText = ''
 
   const vars = props.cssVars
   if (vars && typeof vars === 'object') {
@@ -170,13 +206,7 @@ function syncCSSVars(to: Document) {
     }
   }
 
-  // Keep host classes in sync so dark mode works, then append caller-provided runtime classes.
-  const classSet = new Set(
-    document.documentElement.className
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter(Boolean),
-  )
+  const classSet = new Set<string>()
 
   for (const className of props.rootClasses ?? []) {
     if (typeof className !== 'string') continue
@@ -186,6 +216,21 @@ function syncCSSVars(to: Document) {
   }
 
   to.documentElement.className = Array.from(classSet).join(' ')
+}
+
+const appliedBodyDatasetKeys = new Set<string>()
+
+function syncBodyDataset(to: Document) {
+  for (const key of appliedBodyDatasetKeys) {
+    delete to.body.dataset[key]
+  }
+  appliedBodyDatasetKeys.clear()
+
+  for (const [key, value] of Object.entries(props.bodyDataset ?? {})) {
+    if (!key || typeof value !== 'string') continue
+    to.body.dataset[key] = value
+    appliedBodyDatasetKeys.add(key)
+  }
 }
 
 function syncRuntime(fromWin: Window, toWin: Window) {
@@ -303,11 +348,17 @@ function applyLayerSequenceSettleOverrides(doc: Document, enabled: boolean) {
 }
 
 async function ensureScripts(doc: Document, urls: string[]) {
-  const unique = [...new Set(urls)].filter(Boolean)
+  const unique = [...new Set(urls)]
+    .filter(Boolean)
+    .map((url) => new URL(url, window.location.origin).href)
   if (unique.length === 0) return
 
+  const existingNodes = Array.from(
+    doc.querySelectorAll<HTMLScriptElement>('script[data-pods-player-script="1"]'),
+  )
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'script'))
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-script="1"]')).map(
+    existingNodes.map(
       (s) => (s as HTMLScriptElement).src,
     ),
   )
@@ -320,19 +371,29 @@ async function ensureScripts(doc: Document, urls: string[]) {
       s.src = url
       s.async = false
       s.dataset.podsPlayerScript = '1'
+      tagRuntimeAsset(s, 'script')
       s.onload = () => resolve()
-      s.onerror = () => reject(new Error(`Failed to load script: ${url}`))
+      s.onerror = () => {
+        s.remove()
+        reject(new Error(`Failed to load script: ${url}`))
+      }
       doc.head.appendChild(s)
     })
   }
 }
 
 async function ensureModuleScripts(doc: Document, urls: string[]) {
-  const unique = [...new Set(urls)].filter(Boolean)
+  const unique = [...new Set(urls)]
+    .filter(Boolean)
+    .map((url) => new URL(url, window.location.origin).href)
   if (unique.length === 0) return
 
+  const existingNodes = Array.from(
+    doc.querySelectorAll<HTMLScriptElement>('script[data-pods-player-module="1"]'),
+  )
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'module'))
   const existing = new Set(
-    Array.from(doc.querySelectorAll('script[data-pods-player-module="1"]')).map(
+    existingNodes.map(
       (s) => (s as HTMLScriptElement).src,
     ),
   )
@@ -345,8 +406,12 @@ async function ensureModuleScripts(doc: Document, urls: string[]) {
       s.src = url
       s.async = false
       s.dataset.podsPlayerModule = '1'
+      tagRuntimeAsset(s, 'module')
       s.onload = () => resolve()
-      s.onerror = () => reject(new Error(`Failed to load module script: ${url}`))
+      s.onerror = () => {
+        s.remove()
+        reject(new Error(`Failed to load module script: ${url}`))
+      }
       doc.head.appendChild(s)
     })
   }
@@ -369,7 +434,7 @@ function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
     return Promise.resolve()
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup()
       if (stylesheetLoaded(link)) {
@@ -389,7 +454,9 @@ function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
     }
     const handleError = () => {
       cleanup()
-      resolve()
+      const url = link.href
+      link.remove()
+      reject(new Error(`Failed to load stylesheet: ${url}`))
     }
 
     link.addEventListener('load', handleLoad, { once: true })
@@ -413,6 +480,8 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
   ) as HTMLLinkElement[]
   const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
 
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'pack-style'))
+
   for (const node of existingNodes) {
     if (!wanted.includes(node.href)) {
       node.remove()
@@ -425,6 +494,7 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
     link.rel = 'stylesheet'
     link.href = href
     link.dataset.podsExtraStyle = '1'
+    tagRuntimeAsset(link, 'pack-style')
     doc.head.appendChild(link)
   }
 
@@ -436,6 +506,36 @@ async function syncExtraStylesheets(doc: Document, urls: string[]) {
   )
 }
 
+function syncOptionalStylesheets(doc: Document, urls: string[]) {
+  const wanted = [...new Set(urls)]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => new URL(value.trim(), window.location.origin).href)
+
+  const existingNodes = Array.from(
+    doc.querySelectorAll('link[data-pods-optional-style="1"]'),
+  ) as HTMLLinkElement[]
+  const existingMap = new Map(existingNodes.map((node) => [node.href, node]))
+
+  existingNodes.forEach((node) => tagRuntimeAsset(node, 'optional-style'))
+
+  for (const node of existingNodes) {
+    if (!wanted.includes(node.href)) node.remove()
+  }
+
+  for (const href of wanted) {
+    if (existingMap.has(href)) continue
+    const link = doc.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = href
+    link.dataset.podsOptionalStyle = '1'
+    tagRuntimeAsset(link, 'optional-style')
+    link.addEventListener('error', () => {
+      link.dataset.podsOptionalStyleFailed = '1'
+    }, { once: true })
+    doc.head.appendChild(link)
+  }
+}
+
 async function bootIframe() {
   if (booting) {
     bootAgain = true
@@ -443,8 +543,17 @@ async function bootIframe() {
   }
 
   booting = true
+  const assetLoad: RuntimeAssetLoadIdentity = {
+    runtimeOwner: props.runtimeOwner || null,
+    moduleScripts: [...(props.moduleScripts ?? [])],
+    scripts: [...(props.scripts ?? [])],
+    shellStylesheets: [...(props.shellStylesheets ?? [])],
+    extraStylesheets: [...(props.extraStylesheets ?? [])],
+  }
   try {
-    await bootIframeNow()
+    await bootIframeNow(assetLoad)
+  } catch (error) {
+    emit('scriptsFailed', { ...assetLoad, error })
   } finally {
     booting = false
     if (bootAgain) {
@@ -454,16 +563,23 @@ async function bootIframe() {
   }
 }
 
-async function bootIframeNow() {
+async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
   const iframe = iframeRef.value
   if (!iframe) return
 
-  const moduleScripts = [...(props.moduleScripts ?? [])]
-  const scripts = [...(props.scripts ?? [])]
-  const extraStylesheets = [...(props.extraStylesheets ?? [])]
+  const moduleScripts = [...(assetLoad.moduleScripts ?? [])]
+  const scripts = [...(assetLoad.scripts ?? [])]
+  const shellStylesheets = [...(assetLoad.shellStylesheets ?? [])]
+  const extraStylesheets = [...(assetLoad.extraStylesheets ?? [])]
+  const stylesheetPlan = createPreviewStylesheetPlan({
+    shellStylesheets,
+    extraStylesheets,
+    optionalStylesheets: props.optionalStylesheets ?? [],
+  })
   const doc = iframe.contentDocument
   if (!doc) return
   const win = iframe.contentWindow
+  const timingStartedAt = win?.performance.now() ?? null
 
   if (!miniApp) {
     doc.open()
@@ -480,13 +596,14 @@ async function bootIframeNow() {
     doc.close()
     await nextTick()
 
-    syncHead(document, doc)
+    installPreviewShellStyles(doc)
+    syncShellStyles(document, doc)
+    tagInstalledShellStyles(doc)
     syncCSSVars(doc)
-    await syncExtraStylesheets(doc, extraStylesheets)
+    syncBodyDataset(doc)
+    syncOptionalStylesheets(doc, stylesheetPlan.optional)
+    await syncExtraStylesheets(doc, stylesheetPlan.required)
     if (win) syncRuntime(window, win)
-
-    obs = new MutationObserver(() => syncHead(document, doc))
-    obs.observe(document.head, { childList: true })
 
     applyScrollMode(doc, !!props.scrollable)
 
@@ -497,33 +614,69 @@ async function bootIframeNow() {
   // IMPORTANT: `syncCSSVars()` overwrites `documentElement.style.cssText`, so it must run
   // BEFORE `applyScrollMode()` to avoid clobbering overflow/height rules required for
   // non-scroll previews (many pods rely on `h-full`).
+  installPreviewShellStyles(doc)
+  tagInstalledShellStyles(doc)
   syncCSSVars(doc)
-  await syncExtraStylesheets(doc, extraStylesheets)
+  syncBodyDataset(doc)
+  syncOptionalStylesheets(doc, stylesheetPlan.optional)
+  await syncExtraStylesheets(doc, stylesheetPlan.required)
   applyScrollMode(doc, !!props.scrollable)
   if (win) syncRuntime(window, win)
 
   if (moduleScripts.length) {
     await ensureModuleScripts(doc, moduleScripts)
-    if (
-      sameStringList(moduleScripts, props.moduleScripts ?? []) &&
-      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
-    ) {
-      emit('scriptsLoaded', { moduleScripts, scripts: [], extraStylesheets })
-    }
   }
 
   if (scripts.length) {
     await ensureScripts(doc, scripts)
-    if (
-      sameStringList(scripts, props.scripts ?? []) &&
-      sameStringList(extraStylesheets, props.extraStylesheets ?? [])
-    ) {
-      emit('scriptsLoaded', { moduleScripts: [], scripts, extraStylesheets })
-    }
+  }
+
+  if (
+    hasRuntimeAssetScripts(assetLoad) &&
+    sameStringList(moduleScripts, props.moduleScripts ?? []) &&
+    sameStringList(scripts, props.scripts ?? []) &&
+    sameStringList(shellStylesheets, props.shellStylesheets ?? []) &&
+    sameStringList(extraStylesheets, props.extraStylesheets ?? []) &&
+    (assetLoad.runtimeOwner || null) === (props.runtimeOwner || null)
+  ) {
+    emit('scriptsLoaded', {
+      ...assetLoad,
+      timing: collectRuntimeAssetLoadTiming(
+        win,
+        [...moduleScripts, ...scripts, ...stylesheetPlan.required],
+        timingStartedAt,
+      ),
+    })
   }
 
   await nextTick()
   applyLayerSequenceSettleOverrides(doc, props.settleLayerSequences === true)
+}
+
+/**
+ * Read resource timing from the iframe that owns runtime asset requests and
+ * convert its separate performance clock to epoch timestamps for the host.
+ */
+function collectRuntimeAssetLoadTiming(
+  win: Window | null,
+  urls: readonly string[],
+  startedAt: number | null,
+): RuntimeAssetLoadTiming {
+  if (!win || startedAt === null) {
+    return { requestCount: 0, requestedAtEpochMs: null, readyAtEpochMs: null }
+  }
+  const assetUrls = new Set(urls
+    .filter(Boolean)
+    .map(url => new URL(url, window.location.origin).href))
+  const entries = (win.performance.getEntriesByType('resource') as PerformanceResourceTiming[])
+    .filter(entry => assetUrls.has(entry.name) && entry.startTime >= startedAt)
+  return entries.length === 0
+    ? { requestCount: 0, requestedAtEpochMs: null, readyAtEpochMs: null }
+    : {
+        requestCount: entries.length,
+        requestedAtEpochMs: win.performance.timeOrigin + Math.min(...entries.map(entry => entry.startTime)),
+        readyAtEpochMs: win.performance.timeOrigin + Math.max(...entries.map(entry => entry.responseEnd)),
+      }
 }
 
 watchEffect(() => {
@@ -534,8 +687,12 @@ watchEffect(() => {
   void props.ready
   void props.scrollable
   void props.cssVars
+  void props.shellStylesheets
   void props.extraStylesheets
+  void props.optionalStylesheets
+  void props.runtimeOwner
   void props.rootClasses
+  void props.bodyDataset
   void props.canvasArtifactId
   void props.debugFill
   void props.settleLayerSequences
@@ -561,18 +718,29 @@ watchEffect(() => {
             'data-pods-canvas-artifact-id': props.canvasArtifactId || '',
             'data-pods-debug-fill': props.debugFill ? '1' : '0',
             'data-pods-preview-settle-layer-sequences': props.settleLayerSequences ? '1' : '0',
-            style: props.debugFill
-              ? {
-                  backgroundImage:
-                    'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 18px, rgba(248,113,113,0.16) 18px 36px)',
-                  outline: '2px solid rgba(220,38,38,0.7)',
-                  outlineOffset: '-2px',
-                }
-              : undefined,
+            style: {
+              width: '100%',
+              ...(props.scrollable
+                ? { minHeight: '100%' }
+                : { height: '100%', overflow: 'hidden' }),
+              ...(props.debugFill
+                ? {
+                    backgroundImage:
+                      'repeating-linear-gradient(135deg, rgba(239,68,68,0.16) 0 18px, rgba(248,113,113,0.16) 18px 36px)',
+                    outline: '2px solid rgba(220,38,38,0.7)',
+                    outlineOffset: '-2px',
+                  }
+                : {}),
+            },
           },
           slots.default?.(),
         )
   void nextTick().then(() => bootIframe())
+})
+
+defineExpose({
+  iframeElement: () => iframeRef.value ?? null,
+  iframeWindow: () => iframeRef.value?.contentWindow ?? null,
 })
 </script>
 

@@ -8,10 +8,22 @@
 
 import type { PodDetails, PodsPlayerMode, PodsPlayerViewport } from '#pods-player/types'
 import type { FormField } from '#pods-player/formMapper'
-import { flatFromFixture, rebuildPayload } from '#pods-player/formMapper'
+import { flatFromFixture } from '#pods-player/formMapper'
+import {
+  applyFormModelOperation,
+  hydrateFormProjection,
+  projectFormViewport,
+  reconcileFormProjectionModel,
+  serializeFormProjection,
+  type FormProjectionState,
+} from '#pods-player/formProjector'
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
-import { nextTick, toValue, type MaybeRefOrGetter } from 'vue'
+import {
+  createLatestRequestController,
+  createPodRuntimeSessionController,
+} from '../../pods-player/runtime/isolation'
+import { nextTick, onBeforeUnmount, toValue, type MaybeRefOrGetter } from 'vue'
 
 type PodDetailsWithCompiledContract = PodDetails & {
   compiled_contract?: Record<string, unknown> | null
@@ -33,6 +45,8 @@ export function usePodPlayer(
 ) {
   const runtime = usePodsPlayerRuntime()
   const route = useRoute()
+  const podRequests = createLatestRequestController()
+  const runtimeSessions = createPodRuntimeSessionController()
   const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
   const activeSourcePreviewPodSlug = useState<string>(
     'pod-studio.activeSourcePreviewPodSlug',
@@ -100,6 +114,7 @@ export function usePodPlayer(
 
   const flatForm = reactive<Record<string, unknown>>({})
   const formSchema = ref<FormField[]>([])
+  const formProjection = shallowRef<FormProjectionState | null>(null)
 
   function applySavedValuesOverlay(target: Record<string, unknown>): void {
     const saved = toValue(options?.savedValuesOverlay)
@@ -148,18 +163,6 @@ export function usePodPlayer(
       cur = cur[part]
     }
     return cur
-  }
-
-  function dotSet(obj: Record<string, unknown>, path: string, value: unknown) {
-    const parts = path.split('.')
-    let cur: Record<string, unknown> = obj
-    for (let i = 0; i < parts.length - 1; i++) {
-      const key = parts[i]
-      const next = cur[key]
-      if (!isRecord(next)) cur[key] = {}
-      cur = cur[key] as Record<string, unknown>
-    }
-    cur[parts[parts.length - 1]] = value
   }
 
   function fieldsFromPod(p: PodDetails | null): FormField[] {
@@ -298,114 +301,19 @@ export function usePodPlayer(
     return changed
   }
 
-  function mergePreviewPayload(
-    base: Record<string, unknown>,
-    override: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const merged: Record<string, unknown> = JSON.parse(JSON.stringify(base || {}))
-
-    for (const [key, value] of Object.entries(override || {})) {
-      if (isRecord(value) && isRecord(merged[key])) {
-        merged[key] = mergePreviewPayload(merged[key] as Record<string, unknown>, value)
-      } else {
-        merged[key] = value
-      }
-    }
-
-    return merged
-  }
-
-  function extractResponsiveValue(value: unknown, vp: PodsPlayerViewport): unknown {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const viewportMap = {
-        laptop: 'desktop',
-        tablet: 'tablet',
-        phone: 'phone',
-      } as const
-      const key = viewportMap[vp]
-      if (key in (value as Record<string, unknown>)) return (value as Record<string, unknown>)[key]
-    }
-    return value
-  }
-
-  function applyResponsiveToPayload(
-    payload: Record<string, unknown>,
-    fields: FormField[],
-    vp: PodsPlayerViewport,
-  ): Record<string, unknown> {
-    const out: Record<string, unknown> = JSON.parse(JSON.stringify(payload || {}))
-
-    const joinPath = (prefix: string, next: string) => (prefix ? `${prefix}.${next}` : next)
-
-    const visit = (fs: FormField[], prefix: string) => {
-      for (const f of fs) {
-        if (f.type === 'group' && f.children) {
-          const name = (f as { name?: string }).name as string | undefined
-          const nextPrefix = name && !isUiOnlyGroupName(name) ? joinPath(prefix, name) : prefix
-          visit(f.children, nextPrefix)
-          continue
-        }
-        if (f.type === 'row' && f.fields) {
-          visit(f.fields, prefix)
-          continue
-        }
-        if (f.type === 'repeater' && f.fields && f.name) {
-          const listPath = f.path || joinPath(prefix, f.name)
-          const arr = dotGet(out, listPath)
-          if (Array.isArray(arr)) {
-            const next = arr.map((item) => {
-              if (!isRecord(item)) return item
-              const copy = JSON.parse(JSON.stringify(item))
-              const applyInItem = (itemFields: FormField[]) => {
-                for (const rf of itemFields) {
-                  if (rf.type === 'group' && rf.children) {
-                    applyInItem(rf.children)
-                    continue
-                  }
-                  if (rf.type === 'row' && rf.fields) {
-                    applyInItem(rf.fields)
-                    continue
-                  }
-                  if (rf.responsive && rf.name) {
-                    const p = rf.path || rf.name
-                    const v = dotGet(copy, p)
-                    if (v !== undefined) dotSet(copy, p, extractResponsiveValue(v, vp))
-                  }
-                }
-              }
-              applyInItem(f.fields!)
-              return copy
-            })
-            dotSet(out, listPath, next)
-          }
-          continue
-        }
-
-        if (f.responsive && f.name) {
-          const path = f.path || joinPath(prefix, f.name)
-          const v = dotGet(out, path)
-          if (v !== undefined) {
-            dotSet(out, path, extractResponsiveValue(v, vp))
-          }
-        }
-      }
-    }
-
-    visit(fields, '')
-    return out
-  }
-
   const previewProps = computed(() => {
     if (formSchema.value.length === 0) return fixture.value || {}
-    const payload = rebuildPayload(formSchema.value, flatForm)
-    const merged = fixture.value ? mergePreviewPayload(fixture.value, payload) : payload
-    const result = applyResponsiveToPayload(merged, formSchema.value, viewport.value)
+    const projection = formProjection.value
+      ? reconcileFormProjectionModel(formProjection.value, flatForm)
+      : hydrateFormProjection(formSchema.value, fixture.value ?? {})
+    const payload = serializeFormProjection(projection)
+    const result = projectFormViewport(payload, formSchema.value, viewport.value)
 
     if (import.meta.dev && import.meta.client) {
       // Debug visibility for value-pipeline investigations (dev only).
       ;(window as unknown as Record<string, unknown>).__POD_PREVIEW_DEBUG__ = {
         fixture: fixture.value,
-        rebuilt: payload,
+        projected: payload,
         result,
       }
     }
@@ -434,39 +342,72 @@ export function usePodPlayer(
   async function loadPodData() {
     const s = toValue(slug)
     const sourcePreviewId = requestedSourcePreviewFromRoute()
+    const request = podRequests.begin(
+      [
+        s,
+        sourcePreviewId,
+        requestedDraftPackFromRoute(),
+        typeof route.query.draftArtifact === 'string' ? route.query.draftArtifact : '',
+        String(activeSourcePreviewRevision.value),
+      ].join(':'),
+    )
+    const draftPackId = requestedDraftPackFromRoute()
+    const draftArtifact =
+      typeof route.query.draftArtifact === 'string' ? route.query.draftArtifact : undefined
+    const preferredMode = preferredModeFromRoute()
+    const session = runtimeSessions.begin({
+      organizationId: typeof route.params.org === 'string' ? route.params.org : 'local',
+      subjectType: sourcePreviewId ? 'preview' : draftPackId ? 'draft' : 'preview',
+      subjectId: sourcePreviewId || draftPackId || s,
+      packId:
+        typeof route.params.packId === 'string'
+          ? route.params.packId
+          : typeof route.query.pack === 'string'
+            ? route.query.pack
+            : 'base',
+      releaseId: draftArtifact || 'resolving',
+      manifestHash: draftArtifact || 'resolving',
+      artifactRevision: sourcePreviewId || draftArtifact,
+      podSlug: s,
+      rendererMode: preferredMode === 'sfc' ? 'source' : 'artifact',
+    })
     loading.value = true
     loadedSourcePreviewId.value = ''
     try {
-      const preferredMode = preferredModeFromRoute()
-      if (preferredMode !== mode.value) {
-        mode.value = preferredMode
-      }
-
-      const nextPod = await runtime.getPod(s)
+      const nextPod = await runtime.getPod(s, { session, signal: request.signal })
+      if (!request.isCurrent()) return
       if (!nextPod) {
         if (sourcePreviewId && pod.value?.slug === s) {
           return
         }
-
-        pod.value = null
-        fixture.value = null
-        schema.value = null
-        formSchema.value = []
-        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
-        initialFormValues.value = {}
-        hydratedVariant.value = null
-        loadedSourcePreviewId.value = ''
+        request.commit(() => {
+          pod.value = null
+          fixture.value = null
+          schema.value = null
+          formSchema.value = []
+          formProjection.value = null
+          Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+          initialFormValues.value = {}
+          hydratedVariant.value = null
+          loadedSourcePreviewId.value = ''
+        })
         return
       }
 
-      if (!runtime.supportedModes.includes(mode.value)) {
-        mode.value = runtime.supportedModes[0] ?? 'sfc'
-      }
-
       const nextFixture =
-        nextPod.fixture ?? (runtime.getFixture ? await runtime.getFixture(s) : null) ?? null
+        nextPod.fixture ??
+        (runtime.getFixture
+          ? await runtime.getFixture(s, { session, signal: request.signal })
+          : null) ??
+        null
+      if (!request.isCurrent()) return
       const nextSchema =
-        nextPod.schema ?? (runtime.getSchema ? await runtime.getSchema(s) : null) ?? null
+        nextPod.schema ??
+        (runtime.getSchema
+          ? await runtime.getSchema(s, { session, signal: request.signal })
+          : null) ??
+        null
+      if (!request.isCurrent()) return
       let nextFormSchema = fieldsFromPod(nextPod)
 
       if (nextFormSchema.length === 0 && nextSchema) {
@@ -476,35 +417,53 @@ export function usePodPlayer(
       const nextFlatForm: Record<string, unknown> = {}
       let nextInitialFormValues: Record<string, unknown> = {}
       let nextHydratedVariant: string | null = null
+      let nextFormProjection: FormProjectionState | null = null
 
       if (nextFormSchema.length > 0) {
-        const flat = flatFromFixture(nextFormSchema, nextFixture || {})
-        Object.assign(nextFlatForm, flat)
+        nextFormProjection = hydrateFormProjection(nextFormSchema, nextFixture || {})
+        Object.assign(nextFlatForm, nextFormProjection.model)
         ensureVisibleFieldDefaults(nextFormSchema, nextFlatForm)
         // Saved values join the reset atomically AND become the clean
         // baseline: a reloaded draft is not "dirty" for showing what the
         // user saved.
         applySavedValuesOverlay(nextFlatForm)
+        nextFormProjection = reconcileFormProjectionModel(nextFormProjection, nextFlatForm)
         nextInitialFormValues = JSON.parse(JSON.stringify(nextFlatForm))
         nextHydratedVariant = typeof nextFlatForm.type === 'string' ? nextFlatForm.type : null
       }
 
-      fixture.value = nextFixture
-      schema.value = nextSchema
-      formSchema.value = nextFormSchema
-      Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
-      if (nextFormSchema.length > 0) {
-        Object.assign(flatForm, nextFlatForm)
-      }
-      initialFormValues.value = nextInitialFormValues
-      hydratedVariant.value = nextHydratedVariant
-      pod.value = nextPod
+      if (!request.isCurrent()) return
+      request.commit(() => {
+        mode.value = runtime.supportedModes.includes(preferredMode)
+          ? preferredMode
+          : (runtime.supportedModes[0] ?? 'sfc')
+        fixture.value = nextFixture
+        schema.value = nextSchema
+        formSchema.value = nextFormSchema
+        formProjection.value = nextFormProjection
+        Object.keys(flatForm).forEach((key) => Reflect.deleteProperty(flatForm, key))
+        if (nextFormSchema.length > 0) {
+          Object.assign(flatForm, nextFlatForm)
+        }
+        initialFormValues.value = nextInitialFormValues
+        hydratedVariant.value = nextHydratedVariant
+        pod.value = nextPod
+      })
       await nextTick()
-      loadedSourcePreviewId.value = sourcePreviewId
+      request.commit(() => {
+        loadedSourcePreviewId.value = sourcePreviewId
+      })
     } finally {
-      loading.value = false
+      request.commit(() => {
+        loading.value = false
+      })
     }
   }
+
+  onBeforeUnmount(() => {
+    podRequests.dispose()
+    runtimeSessions.dispose()
+  })
 
   watch(
     () =>
@@ -558,6 +517,13 @@ export function usePodPlayer(
 
   function applyFormUpdate(payload: { field: string; value: unknown }) {
     flatForm[payload.field] = payload.value
+    if (formProjection.value) {
+      formProjection.value = applyFormModelOperation(formProjection.value, {
+        type: 'set',
+        path: payload.field,
+        value: payload.value,
+      })
+    }
   }
 
   return {

@@ -17,7 +17,7 @@ export interface FormField {
   aliases?: string[]
   children?: FormField[]
   fields?: FormField[]
-  fixture?: Record<string, unknown>
+  fixture?: unknown
   default?: unknown
   responsive?: boolean
   value?: { desktop?: unknown; tablet?: unknown; phone?: unknown }
@@ -244,6 +244,8 @@ export function flatFromFixture(
       const value = fieldValue(field, fixture, rootFixture, path, explicitPathsAreAbsolute)
       if (value !== undefined && isRecord(value)) {
         flat[field.name] = value
+      } else if (isRecord(field.fixture)) {
+        flat[field.name] = field.fixture
       } else if (field.value) {
         flat[field.name] = field.value
       } else {
@@ -261,6 +263,8 @@ export function flatFromFixture(
 
     if (value !== undefined) {
       flat[field.name] = field.type === 'number' ? Number(value) : value
+    } else if (field.fixture !== undefined) {
+      flat[field.name] = field.type === 'number' ? Number(field.fixture) : field.fixture
     } else if (field.default !== undefined) {
       flat[field.name] = field.type === 'number' ? Number(field.default) : field.default
     } else if (field.type === 'toggle') {

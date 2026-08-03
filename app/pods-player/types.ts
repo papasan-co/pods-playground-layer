@@ -10,6 +10,21 @@
  * Host apps provide the implementation via `usePodsPlayerRuntime()`.
  */
 
+import type {
+  PodRuntimeContentRevisions,
+  PodRuntimeIdentity,
+  PodRuntimeSession,
+  RuntimeAssetSet,
+} from './runtime/isolation'
+import type { PodStyleOwnershipManifest } from './runtime/styleOwnership'
+
+export type {
+  PodRuntimeContentRevisions,
+  PodRuntimeIdentity,
+  PodRuntimeSession,
+  RuntimeAssetSet,
+} from './runtime/isolation'
+
 export type PodsPlayerMode = 'sfc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
 
@@ -57,6 +72,18 @@ export interface PodDetails extends PodListItem {
    * When provided, the player can derive `fields` from it.
    */
   compiledContract?: Record<string, unknown> | null
+
+  /**
+   * Canonical style-owner registry emitted with current pod artifacts.
+   * Historical artifacts may omit it and enter the explicit compatibility path.
+   */
+  styleOwnership?: PodStyleOwnershipManifest | null
+
+  /**
+   * Identity-bearing dense-scene target-skeleton revision. Historical and
+   * ordinary pods omit it and resolve to the canonical non-recomposed value.
+   */
+  recompositionRevision?: string | null
 }
 
 export interface PodsPlayerCanvasTarget {
@@ -86,6 +113,20 @@ export interface PodsPlayerEnsureResult {
    * (Prevents setting props before the element definition exists.)
    */
   ready: boolean
+
+  /** Immutable semantic identity used for registry lookup and asset ownership. */
+  runtimeIdentity?: Readonly<PodRuntimeIdentity>
+  runtimeArtifactKey?: string
+  runtimeBoundaryKey?: string
+  runtimeAssets?: RuntimeAssetSet
+  runtimeContentRevisions?: Readonly<PodRuntimeContentRevisions>
+  packCssAssetSetVersion?: string
+  legacyRuntime?: boolean
+}
+
+export interface PodsPlayerRuntimeRequest {
+  session?: PodRuntimeSession
+  signal?: AbortSignal
 }
 
 export interface PodsPlayerRuntime {
@@ -99,27 +140,30 @@ export interface PodsPlayerRuntime {
   /**
    * Host-provided list for browse views (cards/grids).
    */
-  listPods(): Promise<PodListItem[]>
+  listPods(options?: PodsPlayerRuntimeRequest): Promise<PodListItem[]>
 
   /**
    * Host-provided pod lookup (metadata, plus optionally schema/yaml/fixture).
    */
-  getPod(slug: string): Promise<PodDetails | null>
+  getPod(slug: string, options?: PodsPlayerRuntimeRequest): Promise<PodDetails | null>
 
   /**
    * Optional: load the raw JSON schema for the pod.
    */
-  getSchema?(slug: string): Promise<unknown | null>
+  getSchema?(slug: string, options?: PodsPlayerRuntimeRequest): Promise<unknown | null>
 
   /**
    * Optional: load the YAML definition (used to build the Form tab).
    */
-  getYaml?(slug: string): Promise<string | null>
+  getYaml?(slug: string, options?: PodsPlayerRuntimeRequest): Promise<string | null>
 
   /**
    * Optional: load a default fixture for initial preview.
    */
-  getFixture?(slug: string): Promise<Record<string, unknown> | null>
+  getFixture?(
+    slug: string,
+    options?: PodsPlayerRuntimeRequest,
+  ): Promise<Record<string, unknown> | null>
 
   /**
    * Optional: CSS custom properties applied to preview roots/iframes.
@@ -142,10 +186,20 @@ export interface PodsPlayerRuntime {
     podSlug: string
     sourcePreviewId: string
     draftPackId?: string | null
-  }): Promise<{ prepared: boolean; transport?: string | null; fallbackReason?: string | null }>
+  }): Promise<{
+    prepared: boolean
+    transport?: string | null
+    fallbackReason?: string | null
+  }>
 
   /**
    * Vue runtime mode: provide the ESM runtime bundle URL(s) and/or perform any preloading.
+   *
+   * `parentStylesInert` keeps pack stylesheets out of the host document for
+   * iframe previews, which load their declared styles directly.
    */
-  ensureRuntimeLoaded?(pod: PodDetails): Promise<PodsPlayerEnsureResult>
+  ensureRuntimeLoaded?(
+    pod: PodDetails,
+    options?: PodsPlayerRuntimeRequest & { parentStylesInert?: boolean },
+  ): Promise<PodsPlayerEnsureResult>
 }
