@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PodListItem } from '#pods-player/types'
+import type { PodListItem } from "#pods-player/types";
 
 /**
  * pods-playground-layer.app.components.pods-player.PodGrid
@@ -13,63 +13,81 @@ import type { PodListItem } from '#pods-player/types'
  */
 
 const props = defineProps<{
-  pods: PodListItem[]
-  toForSlug: (slug: string) => string
-  title?: string
-  subtitle?: string
-}>()
+  pods: PodListItem[];
+  toForSlug: (slug: string) => string;
+  title?: string;
+  subtitle?: string;
+}>();
 
-const search = ref('')
+const search = ref("");
 
 const categoryLabels: Record<string, string> = {
-  hero: 'Hero',
-  maps: 'Maps',
-  metrics: 'Metrics',
-  stories: 'Stories',
-  media: 'Media',
-  layout: 'Layout',
-  visuals: 'Visuals',
-}
+  hero: "Hero",
+  maps: "Maps",
+  metrics: "Metrics",
+  stories: "Stories",
+  media: "Media",
+  layout: "Layout",
+  visuals: "Visuals",
+  site_chrome: "Site chrome",
+  actions: "Actions",
+  collections: "Collections",
+  content: "Content",
+  proof: "Proof",
+};
 
 const podsByCategory = computed(() => {
-  const categories = new Map<string, PodListItem[]>()
+  const categories = new Map<string, PodListItem[]>();
 
   props.pods.forEach((pod) => {
-    const cat = pod.category || 'visuals'
-    if (!categories.has(cat)) categories.set(cat, [])
-    categories.get(cat)!.push(pod)
-  })
+    const cat = pod.category || "visuals";
+    if (!categories.has(cat)) categories.set(cat, []);
+    categories.get(cat)!.push(pod);
+  });
 
-  const filtered = new Map<string, PodListItem[]>()
+  const filtered = new Map<string, PodListItem[]>();
   categories.forEach((categoryPods, category) => {
     const filteredPods = search.value
       ? categoryPods.filter((p) => {
-          const q = search.value.toLowerCase()
+          const q = search.value.toLowerCase();
           return (
             p.label.toLowerCase().includes(q) ||
             p.slug.toLowerCase().includes(q) ||
-            (p.description || '').toLowerCase().includes(q)
-          )
+            (p.description || "").toLowerCase().includes(q)
+          );
         })
-      : categoryPods
+      : categoryPods;
 
-    if (filteredPods.length > 0) filtered.set(category, filteredPods)
-  })
+    if (filteredPods.length > 0) filtered.set(category, filteredPods);
+  });
 
-  return filtered
-})
+  return filtered;
+});
 
 const sortedCategories = computed(() => {
-  const order = ['hero', 'maps', 'metrics', 'stories', 'media', 'layout', 'visuals']
+  const order = [
+    "site_chrome",
+    "hero",
+    "content",
+    "actions",
+    "collections",
+    "proof",
+    "maps",
+    "metrics",
+    "stories",
+    "media",
+    "layout",
+    "visuals",
+  ];
   return Array.from(podsByCategory.value.keys()).sort((a, b) => {
-    const aIndex = order.indexOf(a)
-    const bIndex = order.indexOf(b)
-    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b)
-    if (aIndex === -1) return 1
-    if (bIndex === -1) return -1
-    return aIndex - bIndex
-  })
-})
+    const aIndex = order.indexOf(a);
+    const bIndex = order.indexOf(b);
+    if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  });
+});
 </script>
 
 <template>
@@ -77,7 +95,9 @@ const sortedCategories = computed(() => {
     <div class="max-w-7xl mx-auto">
       <div class="mb-8">
         <h1 v-if="title" class="text-3xl font-bold mb-2">{{ title }}</h1>
-        <p v-if="subtitle" class="text-gray-600 dark:text-gray-400">{{ subtitle }}</p>
+        <p v-if="subtitle" class="text-gray-600 dark:text-gray-400">
+          {{ subtitle }}
+        </p>
       </div>
 
       <div class="mb-6">
@@ -95,13 +115,19 @@ const sortedCategories = computed(() => {
       </div>
 
       <div v-else class="space-y-8">
-        <div v-for="category in sortedCategories" :key="category" class="space-y-4">
+        <div
+          v-for="category in sortedCategories"
+          :key="category"
+          class="space-y-4"
+        >
           <div class="border-b border-gray-200 dark:border-gray-700 pb-2">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
               {{ categoryLabels[category] || category }}
             </h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {{ podsByCategory.get(category)?.length }} pod{{ podsByCategory.get(category)?.length !== 1 ? 's' : '' }}
+              {{ podsByCategory.get(category)?.length }} pod{{
+                podsByCategory.get(category)?.length !== 1 ? "s" : ""
+              }}
             </p>
           </div>
 
@@ -118,4 +144,3 @@ const sortedCategories = computed(() => {
     </div>
   </div>
 </template>
-
