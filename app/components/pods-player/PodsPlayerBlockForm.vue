@@ -5,6 +5,7 @@ import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
 import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
+import PodsPlayerLinkPicker from './PodsPlayerLinkPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
@@ -32,6 +33,12 @@ const props = defineProps<{
   storyMediaItems?: Array<Record<string, unknown>>
   libraryMediaItems?: Array<Record<string, unknown>>
   mediaSourceMode?: 'cms' | 'playground'
+  /**
+   * What a `link` field may point at on this site — pages, addressable
+   * collection entries, forms. The form has no notion of a site, so the host
+   * supplies these the same way it supplies the media catalogue.
+   */
+  linkTargets?: Array<Record<string, unknown>>
   readOnly?: boolean
   /**
    * Field-anchored notes (e.g. accessibility auto-adjustments) rendered under
@@ -629,6 +636,12 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :viewport="viewport"
                 :composite-field-updates="true"
                 :field-notes="fieldNotes"
+                :link-targets="linkTargets || []"
+                :media-items="mediaItems || []"
+                :story-media-items="storyMediaItems || []"
+                :library-media-items="libraryMediaItems || []"
+                :media-source-mode="mediaSourceMode || 'playground'"
+                :read-only="readOnly"
                 @update:model-value="
                   ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
                 "
@@ -655,6 +668,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :story-media-items="storyMediaItems || []"
           :library-media-items="libraryMediaItems || []"
           :media-source-mode="mediaSourceMode || 'playground'"
+          :link-targets="linkTargets || []"
           @update:model-value="
             ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
           "
@@ -758,6 +772,14 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :contrast-against="getA11yConfig(child)?.againstField ? (modelValue[getA11yConfig(child)?.againstField as string] as string) : undefined"
               :enforce-aa-for-text="getA11yConfig(child)?.kind === 'text-aa'"
               policy="disableTokens"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <PodsPlayerLinkPicker
+              v-else-if="child.type === 'link'"
+              :model-value="modelValue[child.name as string] as any"
+              :targets="(linkTargets || []) as any"
+              :read-only="readOnly"
+              :placeholder="(child as any).placeholder"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerMediaPicker
@@ -946,6 +968,14 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :source-mode="mediaSourceMode || 'playground'"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
+      <PodsPlayerLinkPicker
+        v-else-if="field.type === 'link'"
+        :model-value="modelValue[field.name] as any"
+        :targets="(linkTargets || []) as any"
+        :read-only="readOnly"
+        :placeholder="(field as any).placeholder"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
       <PodsPlayerGeoPointPicker
         v-else-if="field.type === 'geopoint'"
         :model-value="modelValue[field.name] as any"
@@ -1042,6 +1072,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                     :story-media-items="storyMediaItems || []"
                     :library-media-items="libraryMediaItems || []"
                     :media-source-mode="mediaSourceMode || 'playground'"
+          :link-targets="linkTargets || []"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
