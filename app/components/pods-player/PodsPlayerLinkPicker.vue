@@ -190,18 +190,18 @@ function indexOf(item: LinkTarget): number {
       class="flex items-center gap-2 rounded-md border px-2 py-1.5"
       :class="isBroken
         ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
-        : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/40'"
+        : 'border-default bg-elevated'"
     >
       <span
         class="grid h-5 w-5 flex-none place-items-center rounded border text-[10px] font-bold"
         :class="isBroken
           ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400'
-          : 'border-gray-300 text-gray-500 dark:border-gray-600 dark:text-gray-400'"
+          : 'border-accented text-muted'"
       >{{ display?.glyph }}</span>
 
       <span class="flex min-w-0 flex-1 flex-col">
-        <span class="truncate text-xs font-medium text-gray-900 dark:text-gray-100">{{ display?.title }}</span>
-        <span class="truncate font-mono text-[10px] text-gray-500 dark:text-gray-400">{{ display?.detail }}</span>
+        <span class="truncate text-xs font-medium text-default">{{ display?.title }}</span>
+        <span class="truncate font-mono text-[10px] text-muted text-dimmed">{{ display?.detail }}</span>
       </span>
 
       <span
@@ -216,14 +216,14 @@ function indexOf(item: LinkTarget): number {
       <button
         v-if="!readOnly"
         type="button"
-        class="flex-none rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:text-gray-900 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-100"
+        class="flex-none rounded border border-accented px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-default text-dimmed"
         @click="beginReplace"
       >Change</button>
       <button
         v-if="!readOnly"
         type="button"
         aria-label="Remove destination"
-        class="flex-none rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:text-gray-900 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-100"
+        class="flex-none rounded border border-accented px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-default text-dimmed"
         @click="clear"
       >Remove</button>
     </div>
@@ -236,7 +236,7 @@ function indexOf(item: LinkTarget): number {
       :disabled="readOnly"
       :value="query"
       :placeholder="placeholder || 'Search pages and entries, or paste a URL…'"
-      class="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+      class="w-full rounded-md border border-accented px-2.5 py-1.5 text-xs text-default bg-default"
       @input="onInput(($event.target as HTMLInputElement).value)"
       @keydown="onKey"
       @focus="open = query.trim().length > 0"
@@ -246,31 +246,31 @@ function indexOf(item: LinkTarget): number {
     <button
       v-if="replacing && modelValue"
       type="button"
-      class="self-start text-[11px] text-gray-500 underline hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+      class="self-start text-[11px] text-muted underline hover:text-default text-dimmed"
       @click="cancelReplace"
     >Keep {{ display?.title }}</button>
 
     <!-- results -->
     <div
       v-if="open"
-      class="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-md border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-600 dark:bg-gray-900"
+      class="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-md border border-accented bg-white p-1 shadow-lg bg-default"
     >
       <button
         v-if="looksLikeUrl(query)"
         type="button"
-        class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-gray-100 dark:hover:bg-gray-800"
+        class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted hover:bg-elevated"
         @click="chooseUrl"
       >
-        <span class="grid h-5 w-5 flex-none place-items-center rounded border border-gray-300 text-[10px] font-bold text-gray-500 dark:border-gray-600 dark:text-gray-400">↗</span>
+        <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-[10px] font-bold text-muted text-dimmed">↗</span>
         <span class="flex min-w-0 flex-col">
-          <span class="truncate text-xs font-medium text-gray-900 dark:text-gray-100">Link to this address</span>
-          <span class="truncate font-mono text-[10px] text-gray-500 dark:text-gray-400">{{ query.trim() }}</span>
+          <span class="truncate text-xs font-medium text-default">Link to this address</span>
+          <span class="truncate font-mono text-[10px] text-muted text-dimmed">{{ query.trim() }}</span>
         </span>
       </button>
 
       <template v-else-if="groups.length">
         <template v-for="group in groups" :key="group.kind">
-          <div class="px-2 pb-1 pt-2 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+          <div class="px-2 pb-1 pt-2 text-[9px] font-bold uppercase tracking-wider text-dimmed text-muted">
             {{ group.label }}
           </div>
           <button
@@ -278,15 +278,15 @@ function indexOf(item: LinkTarget): number {
             :key="item.id"
             type="button"
             class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
-            :class="indexOf(item) === cursor ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-100 dark:hover:bg-gray-800'"
+            :class="indexOf(item) === cursor ? 'bg-accented' : 'hover:bg-accented'"
             @click="choose(item)"
           >
-            <span class="grid h-5 w-5 flex-none place-items-center rounded border border-gray-300 text-[10px] font-bold text-gray-500 dark:border-gray-600 dark:text-gray-400">
+            <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-[10px] font-bold text-muted text-dimmed">
               {{ item.kind === 'page' ? 'P' : item.kind === 'entry' ? 'E' : 'F' }}
             </span>
             <span class="flex min-w-0 flex-1 flex-col">
-              <span class="truncate text-xs font-medium text-gray-900 dark:text-gray-100">{{ item.title }}</span>
-              <span class="truncate font-mono text-[10px] text-gray-500 dark:text-gray-400">
+              <span class="truncate text-xs font-medium text-default">{{ item.title }}</span>
+              <span class="truncate font-mono text-[10px] text-muted text-dimmed">
                 {{ item.kind === 'form' ? 'Opens in place' : item.path }}
               </span>
             </span>
@@ -298,7 +298,7 @@ function indexOf(item: LinkTarget): number {
         </template>
       </template>
 
-      <div v-else class="px-2 py-3 text-[11px] text-gray-500 dark:text-gray-400">
+      <div v-else class="px-2 py-3 text-[11px] text-muted text-dimmed">
         Nothing matches “{{ query.trim() }}”. Paste a web address to link outside this site.
       </div>
     </div>
@@ -320,7 +320,7 @@ function indexOf(item: LinkTarget): number {
     <!-- jumping to a section on the chosen page -->
     <template v-if="modelValue?.kind === 'page' && !isBroken && !replacing">
       <label
-        class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-400"
+        class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
         :class="sections.length ? '' : 'opacity-60'"
       >
         <input
@@ -335,19 +335,19 @@ function indexOf(item: LinkTarget): number {
         v-if="wantsSection && sections.length"
         :value="modelValue.section || ''"
         :disabled="readOnly"
-        class="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+        class="w-full rounded-md border border-accented px-2.5 py-1.5 text-xs text-default bg-default"
         @change="setSection(($event.target as HTMLSelectElement).value)"
       >
         <option v-for="section in sections" :key="section.id" :value="section.id">{{ section.label }}</option>
       </select>
-      <p v-if="!sections.length" class="text-[11px] text-gray-500 dark:text-gray-400">
+      <p v-if="!sections.length" class="text-[11px] text-muted text-dimmed">
         This page has no headed sections to jump to.
       </p>
     </template>
 
     <label
       v-if="modelValue?.kind === 'url' && !replacing"
-      class="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-400"
+      class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
     >
       <input
         type="checkbox"

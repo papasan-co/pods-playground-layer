@@ -597,7 +597,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         v-if="isGroupCollapsible(field)"
         :default-open="groupDefaultOpen(field)"
         :unmount-on-hide="false"
-        class="rounded-md border border-gray-200 dark:border-gray-700"
+        class="rounded-md border border-default"
       >
         <template #default="{ open }">
           <UButton
@@ -606,7 +606,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             block
             class="w-full justify-between rounded-md px-4 py-3"
           >
-            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+            <span class="text-sm font-semibold text-toned text-default">
               {{ field.label }}
             </span>
             <svg
@@ -617,7 +617,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-300"
+              class="h-4 w-4 shrink-0 text-muted transition-transform text-dimmed"
               :class="{ 'rotate-180': open }"
               aria-hidden="true"
             >
@@ -651,8 +651,8 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           </div>
         </template>
       </UCollapsible>
-      <div v-else class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+      <div v-else class="rounded-md border border-default p-4 space-y-4">
+        <h3 class="text-sm font-semibold text-toned text-default">
           {{ field.label }}
         </h3>
 
@@ -698,7 +698,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             <template v-if="child.type === 'slider'" #label>
               <div class="flex items-center justify-between gap-2">
                 <span>{{ child.label }}</span>
-                <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(child as any) }}</span>
+                <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(child as any) }}</span>
               </div>
             </template>
             <UInput
@@ -845,7 +845,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       <template v-if="field.type === 'slider'" #label>
         <div class="flex items-center justify-between gap-2">
           <span>{{ field.label }}</span>
-          <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(field as any) }}</span>
+          <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(field as any) }}</span>
         </div>
       </template>
       <PodsPlayerPositionPicker
@@ -997,7 +997,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <div
             v-for="(item, idx) in listFor(field.name).value"
             :key="(item as any)._key || idx"
-            class="repeater-card rounded-md border border-gray-200 dark:border-gray-700 p-3 transition-opacity"
+            class="repeater-card rounded-md border border-default p-3 transition-opacity"
             :class="{ 'opacity-30': (item as any)._removing }"
           >
             <UCollapsible
@@ -1007,7 +1007,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             >
               <template #default="{ open }">
                 <div class="flex items-start justify-between gap-2">
-                  <span class="repeater-handle cursor-grab text-gray-400 pt-0.5" @click.stop>
+                  <span class="repeater-handle cursor-grab text-dimmed pt-0.5" @click.stop>
                     <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
                   </span>
                   <button
@@ -1016,10 +1016,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                   >
                     <div class="flex items-center gap-2 min-w-0">
                       <div class="min-w-0">
-                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                        <div class="text-xs font-semibold text-toned text-default">
                           {{ field.label }} #{{ idx + 1 }}
                         </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        <div class="text-xs text-muted text-dimmed truncate">
                           {{ summarizeRepeaterItem(item as any, idx) }}
                         </div>
                       </div>
@@ -1092,7 +1092,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         >
           Add {{ field.label }}
         </UButton>
-        <p v-if="!canAddRepeaterItem(field)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        <p v-if="!canAddRepeaterItem(field)" class="mt-2 text-xs text-muted text-dimmed">
           Maximum {{ repeaterMax(field) }} {{ field.label || 'items' }} reached.
         </p>
       </div>

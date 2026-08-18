@@ -151,7 +151,7 @@ function onIconifyValueChange(value: unknown) {
 </script>
 
 <template>
-  <div class="rounded-md border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+  <div class="rounded-md border border-default p-3 space-y-3">
     <USelect
       class="w-full"
       size="sm"
@@ -176,8 +176,8 @@ function onIconifyValueChange(value: unknown) {
           @update:model-value="onIconifyValueChange"
         />
 
-        <div class="rounded-md border border-gray-200 dark:border-gray-700 p-2 space-y-2">
-          <p class="text-[11px] text-gray-500 dark:text-gray-400">
+        <div class="rounded-md border border-default p-2 space-y-2">
+          <p class="text-[11px] text-muted text-dimmed">
             Curated lucide + phosphor duotone icons for presentation and sales stories.
           </p>
           <div class="max-h-52 overflow-y-auto space-y-1 pr-1">
@@ -185,13 +185,13 @@ function onIconifyValueChange(value: unknown) {
               v-for="icon in filteredIcons"
               :key="icon.token"
               type="button"
-              class="w-full text-left rounded-md border border-transparent hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 px-2 py-1.5 flex items-center gap-2"
+              class="w-full text-left rounded-md border border-transparent hover:border-default hover:bg-elevated px-2 py-1.5 flex items-center gap-2"
               :disabled="disabled"
               @click="selectIcon(icon.token)"
             >
-              <Icon :name="icon.token" class="w-4 h-4 text-gray-800 dark:text-gray-200 shrink-0" />
-              <span class="text-xs text-gray-800 dark:text-gray-100 truncate">{{ icon.label }}</span>
-              <span class="text-[11px] text-gray-500 dark:text-gray-400 truncate ml-auto">{{ icon.token }}</span>
+              <Icon :name="icon.token" class="w-4 h-4 text-default shrink-0" />
+              <span class="text-xs text-default truncate">{{ icon.label }}</span>
+              <span class="text-[11px] text-muted text-dimmed truncate ml-auto">{{ icon.token }}</span>
             </button>
           </div>
         </div>
@@ -222,14 +222,14 @@ function onIconifyValueChange(value: unknown) {
 
     <div
       v-if="source.type === 'svg' && source.value"
-      class="rounded-md border border-gray-200 dark:border-gray-700 p-2"
+      class="rounded-md border border-default p-2"
     >
       <div class="pods-player-icon-preview" v-html="source.value" />
     </div>
 
     <div
       v-if="source.type === 'iconify' && source.value"
-      class="rounded-md border border-gray-200 dark:border-gray-700 p-2 inline-flex"
+      class="rounded-md border border-default p-2 inline-flex"
     >
       <Icon :name="source.value" class="w-5 h-5" />
     </div>
@@ -238,7 +238,7 @@ function onIconifyValueChange(value: unknown) {
       <template #default="{ open }">
         <button
           type="button"
-          class="w-full text-left text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 flex items-center gap-1"
+          class="w-full text-left text-xs text-muted text-dimmed hover:text-default flex items-center gap-1"
         >
           <UIcon name="i-lucide-chevron-right" class="w-3 h-3 transition-transform" :class="{ 'rotate-90': open }" />
           Advanced icon fields

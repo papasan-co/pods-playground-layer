@@ -256,7 +256,7 @@ function handleScriptsLoaded() {
     >
       <template v-if="loading">
         <div class="w-full h-full flex items-center justify-center">
-          <div class="text-gray-500">Loading preview...</div>
+          <div class="text-muted">Loading preview...</div>
         </div>
       </template>
       <template v-else-if="error">
@@ -265,7 +265,7 @@ function handleScriptsLoaded() {
         </div>
       </template>
       <template v-else>
-        <div class="min-h-screen bg-white dark:bg-gray-950">
+        <div class="min-h-screen bg-white bg-default">
           <!-- StoryScrollyPage is provided by storytime-layer (host app extends it) -->
           <StoryScrollyPage :scenes="scenes" :controls="true">
             <template #visual="{ step }">
@@ -277,7 +277,7 @@ function handleScriptsLoaded() {
                   class="w-full h-full"
                 />
                 <template v-else-if="mode === 'vue'">
-                  <div v-if="!vueReady" class="w-full h-full grid place-items-center text-gray-500">Loading runtime…</div>
+                  <div v-if="!vueReady" class="w-full h-full grid place-items-center text-muted">Loading runtime…</div>
                   <VueRuntimeVisual
                     v-else
                     :slug="pod.slug"
@@ -286,7 +286,7 @@ function handleScriptsLoaded() {
                     :base-props="previewProps || {}"
                   />
                 </template>
-                <div v-else class="w-full h-full grid place-items-center text-gray-500">No preview available.</div>
+                <div v-else class="w-full h-full grid place-items-center text-muted">No preview available.</div>
               </div>
             </template>
           </StoryScrollyPage>

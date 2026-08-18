@@ -274,19 +274,19 @@ watch(customColor, (newValue) => {
 </script>
 
 <template>
-  <div class="rounded-md border border-gray-200 dark:border-gray-700">
+  <div class="rounded-md border border-default">
     <button
       type="button"
-      class="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+      class="w-full px-4 py-3 flex items-center justify-between hover:bg-elevated transition-colors"
       @click="isExpanded = !isExpanded"
     >
       <div class="flex items-center gap-2">
         <div
-          class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600"
+          class="w-8 h-8 rounded border border-accented"
           :style="{ backgroundColor: collapsedDisplayColor }"
         />
         <div class="min-w-0">
-          <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{{ collapsedDisplayLabel }}</div>
+          <div class="text-xs text-muted text-dimmed font-mono truncate">{{ collapsedDisplayLabel }}</div>
           <div
             v-if="isPreviewAdjusted"
             class="text-[11px] text-amber-600 dark:text-amber-400"
@@ -297,11 +297,11 @@ watch(customColor, (newValue) => {
       </div>
       <UIcon
         :name="isExpanded ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
-        class="w-5 h-5 text-gray-400"
+        class="w-5 h-5 text-dimmed"
       />
     </button>
 
-    <div v-if="isExpanded" class="p-4 space-y-3 border-t border-gray-200 dark:border-gray-700">
+    <div v-if="isExpanded" class="p-4 space-y-3 border-t border-default">
       <UTabs
         v-if="effectiveAllowCustom"
         :model-value="colorMode"
@@ -320,7 +320,7 @@ watch(customColor, (newValue) => {
             class="rounded-md border px-2.5 py-2 text-xs font-medium transition-colors"
             :class="selectedTokenKey === 'auto'
               ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300'
-              : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300'"
+              : 'border-accented text-muted hover:border-accented'"
             @click="selectedTokenKey = 'auto'"
           >
             {{ effectiveAutoLabel }}
@@ -339,21 +339,21 @@ watch(customColor, (newValue) => {
               class="w-8 h-8 rounded border transition-all"
               :class="{
                 'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
-                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': selectedTokenKey !== swatch.key,
+                'border-accented hover:border-accented': selectedTokenKey !== swatch.key,
                 'opacity-40 cursor-not-allowed': effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)
               }"
               :style="{ backgroundColor: swatch.color }"
             />
           </button>
         </div>
-        <p v-if="tokenSwatches.length === 0" class="text-xs text-gray-500">
+        <p v-if="tokenSwatches.length === 0" class="text-xs text-muted">
           No brand colors available.
         </p>
         <div
           v-if="effectivePreviewMode !== 'swatch'"
-          class="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-3"
+          class="rounded-md border border-default px-3 py-3"
         >
-          <div class="text-[11px] uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400 mb-2">
+          <div class="text-[11px] uppercase tracking-[0.16em] text-muted text-dimmed mb-2">
             CTA Preview
           </div>
           <button
@@ -375,16 +375,16 @@ watch(customColor, (newValue) => {
 
       <div v-else class="space-y-2">
         <label
-          class="relative block rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+          class="relative block rounded-md border border-default px-3 py-2 cursor-pointer hover:bg-elevated transition-colors"
         >
           <div class="flex items-center gap-2 min-w-0">
             <div
-              class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600 shrink-0"
+              class="w-8 h-8 rounded border border-accented shrink-0"
               :style="{ backgroundColor: customColor }"
             />
             <div class="min-w-0">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">Custom</div>
-              <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{{ customColor }}</div>
+              <div class="text-sm font-medium text-toned text-default">Custom</div>
+              <div class="text-xs text-muted text-dimmed font-mono truncate">{{ customColor }}</div>
             </div>
           </div>
 
@@ -397,9 +397,9 @@ watch(customColor, (newValue) => {
         </label>
         <div
           v-if="effectivePreviewMode !== 'swatch'"
-          class="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-3"
+          class="rounded-md border border-default px-3 py-3"
         >
-          <div class="text-[11px] uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400 mb-2">
+          <div class="text-[11px] uppercase tracking-[0.16em] text-muted text-dimmed mb-2">
             CTA Preview
           </div>
           <button

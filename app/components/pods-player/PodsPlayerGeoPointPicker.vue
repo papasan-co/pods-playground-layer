@@ -265,8 +265,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-    <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+  <div class="rounded-md border border-default overflow-hidden">
+    <div class="px-3 py-2 border-b border-default bg-elevated bg-default">
       <UTabs
         :model-value="tab"
         :items="tabItems as any"
@@ -281,7 +281,7 @@ onBeforeUnmount(() => {
       <!-- Pick (keep mounted to preserve MapLibre instance) -->
       <div v-show="tab === 'pick'" class="space-y-2">
         <div v-if="hasMaptilerKey" class="space-y-2">
-          <div class="text-xs text-gray-600 dark:text-gray-400">
+          <div class="text-xs text-muted text-dimmed">
             Search by address (optional), or click on the map to set the pin.
           </div>
           <div class="flex items-center gap-2">
@@ -295,36 +295,36 @@ onBeforeUnmount(() => {
             <UButton type="button" size="sm" color="primary" :loading="addressBusy" @click="searchAddress">Search</UButton>
           </div>
           <div v-if="addressError" class="text-xs text-red-600">{{ addressError }}</div>
-          <div v-if="addressResults.length" class="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div v-if="addressResults.length" class="rounded-md border border-default overflow-hidden">
             <button
               v-for="r in addressResults"
               :key="r.id"
               type="button"
-              class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 last:border-b-0"
+              class="w-full text-left px-3 py-2 text-sm hover:bg-elevated border-b border-default last:border-b-0"
               @click="chooseAddress(r)"
             >
-              <div class="text-gray-800 dark:text-gray-200 truncate">{{ r.label }}</div>
-              <div class="text-xs text-gray-600 dark:text-gray-400 font-mono">
+              <div class="text-default truncate">{{ r.label }}</div>
+              <div class="text-xs text-muted text-dimmed font-mono">
                 Lat: {{ toFixed6(r.lat) }} · Long: {{ toFixed6(r.lng) }}
               </div>
             </button>
           </div>
         </div>
-        <div v-else class="text-xs text-gray-600 dark:text-gray-400">
+        <div v-else class="text-xs text-muted text-dimmed">
           Click on the map to set the pin.
         </div>
         <div
           ref="mapEl"
-          class="w-full h-[280px] rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden bg-gray-100 dark:bg-gray-800"
+          class="w-full h-[280px] rounded-md border border-default overflow-hidden bg-muted bg-elevated"
         />
-        <div class="text-xs text-gray-600 dark:text-gray-400 font-mono">
+        <div class="text-xs text-muted text-dimmed font-mono">
           {{ hasValue ? `Lat: ${toFixed6(lat)}  Long: ${toFixed6(lng)}` : 'No location selected yet.' }}
         </div>
       </div>
 
       <!-- Link -->
       <div v-show="tab === 'link'" class="space-y-3">
-        <div class="text-xs text-gray-600 dark:text-gray-400">
+        <div class="text-xs text-muted text-dimmed">
           Enter a Google Maps link.
         </div>
         <UInput
@@ -336,12 +336,12 @@ onBeforeUnmount(() => {
         />
         <div class="flex gap-6">
           <div class="flex-1">
-            <div class="text-xs text-gray-500 dark:text-gray-400">Lat</div>
-            <div class="text-sm font-mono text-gray-800 dark:text-gray-200">{{ hasValue ? toFixed6(lat) : '—' }}</div>
+            <div class="text-xs text-muted text-dimmed">Lat</div>
+            <div class="text-sm font-mono text-default">{{ hasValue ? toFixed6(lat) : '—' }}</div>
           </div>
           <div class="flex-1">
-            <div class="text-xs text-gray-500 dark:text-gray-400">Long</div>
-            <div class="text-sm font-mono text-gray-800 dark:text-gray-200">{{ hasValue ? toFixed6(lng) : '—' }}</div>
+            <div class="text-xs text-muted text-dimmed">Long</div>
+            <div class="text-sm font-mono text-default">{{ hasValue ? toFixed6(lng) : '—' }}</div>
           </div>
         </div>
         <UButton type="button" size="sm" color="primary" class="w-full" @click="applyLink">Use location</UButton>
@@ -376,7 +376,7 @@ onBeforeUnmount(() => {
             />
           </UFormField>
         </div>
-        <div class="text-xs text-gray-600 dark:text-gray-400">
+        <div class="text-xs text-muted text-dimmed">
           Tip: you can still paste a Google Maps link in the Link tab.
         </div>
       </div>

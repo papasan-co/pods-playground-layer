@@ -37,13 +37,13 @@ const {
 <template>
   <div class="flex h-full overflow-hidden">
     <section class="flex-1 flex flex-col min-h-0 overflow-hidden">
-      <div class="border-b border-gray-200 dark:border-gray-800 p-4 flex items-center bg-white dark:bg-gray-900">
+      <div class="border-b border-default p-4 flex items-center bg-white bg-default">
         <div class="flex-1">
           <div class="text-sm font-semibold">
             {{ pod?.label || 'Pod' }}
-            <span v-if="pod?.slug" class="text-xs text-gray-500">({{ pod.slug }})</span>
+            <span v-if="pod?.slug" class="text-xs text-muted">({{ pod.slug }})</span>
           </div>
-          <p v-if="pod?.description" class="text-xs text-gray-500 mt-1">
+          <p v-if="pod?.description" class="text-xs text-muted mt-1">
             {{ pod.description }}
           </p>
         </div>
@@ -67,10 +67,10 @@ const {
       </div>
 
       <div v-if="loading" class="flex items-center justify-center h-full">
-        <div class="text-gray-500">Loading…</div>
+        <div class="text-muted">Loading…</div>
       </div>
       <div v-else-if="!pod" class="flex items-center justify-center h-full">
-        <div class="text-gray-500">Pod not found</div>
+        <div class="text-muted">Pod not found</div>
       </div>
       <slot
         v-else
@@ -91,7 +91,7 @@ const {
       </slot>
     </section>
 
-    <section class="w-96 border-l border-gray-200 dark:border-gray-800 flex flex-col bg-white dark:bg-gray-900">
+    <section class="w-96 border-l border-default flex flex-col bg-white bg-default">
       <slot
         name="rightPanel"
         :pod="pod"

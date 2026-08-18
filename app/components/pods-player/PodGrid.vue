@@ -95,7 +95,7 @@ const sortedCategories = computed(() => {
     <div class="max-w-7xl mx-auto">
       <div class="mb-8">
         <h1 v-if="title" class="text-3xl font-bold mb-2">{{ title }}</h1>
-        <p v-if="subtitle" class="text-gray-600 dark:text-gray-400">
+        <p v-if="subtitle" class="text-muted text-dimmed">
           {{ subtitle }}
         </p>
       </div>
@@ -111,7 +111,7 @@ const sortedCategories = computed(() => {
       </div>
 
       <div v-if="sortedCategories.length === 0" class="text-center py-12">
-        <p class="text-gray-500">No pods found</p>
+        <p class="text-muted">No pods found</p>
       </div>
 
       <div v-else class="space-y-8">
@@ -120,11 +120,11 @@ const sortedCategories = computed(() => {
           :key="category"
           class="space-y-4"
         >
-          <div class="border-b border-gray-200 dark:border-gray-700 pb-2">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
+          <div class="border-b border-default pb-2">
+            <h2 class="text-xl font-semibold text-default">
               {{ categoryLabels[category] || category }}
             </h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p class="text-sm text-muted text-dimmed mt-1">
               {{ podsByCategory.get(category)?.length }} pod{{
                 podsByCategory.get(category)?.length !== 1 ? "s" : ""
               }}
