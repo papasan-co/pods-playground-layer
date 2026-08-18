@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import type { LinkSection, LinkTarget, LinkValue } from '#pods-player/linkTarget'
 
 /**
  * pods-playground-layer.app.components.pods-player.PodsPlayerLinkPicker
@@ -15,27 +16,6 @@ import { computed, ref } from 'vue'
  * The form has no idea what a site is, so the candidates arrive by prop the
  * same way the media picker's catalogue does.
  */
-
-export type LinkSection = { id: string, label: string }
-
-export type LinkTarget = {
-  kind: 'page' | 'entry' | 'form'
-  id: string
-  title: string
-  /** Absent for a form, which opens in place and has no address. */
-  path?: string
-  status?: 'published' | 'draft'
-  /** Entry only: which collection it belongs to. */
-  collection?: string
-  /** Page only: the blocks on it that can be jumped to. */
-  sections?: LinkSection[]
-}
-
-export type LinkValue =
-  | { kind: 'page', page: string, section?: string }
-  | { kind: 'entry', collection: string, entry: string }
-  | { kind: 'form', form: string }
-  | { kind: 'url', url: string, newTab?: boolean }
 
 const props = defineProps<{
   modelValue?: LinkValue | null
