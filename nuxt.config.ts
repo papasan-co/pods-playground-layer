@@ -36,6 +36,16 @@ export default defineNuxtConfig({
     '#pods-player-runtime': fileURLToPath(
       new URL('./app/composables/pods-player/usePodsPlayerRuntime.ts', import.meta.url),
     ),
+    /**
+     * pods-playground-layer.alias.#pods-player-design-tokens
+     *
+     * Stable import path for the design-token bridge, so a host can state
+     * whose brand the pickers' "Brand Colors" are (provideDesignTokens)
+     * without reaching into the layer's file layout.
+     */
+    '#pods-player-design-tokens': fileURLToPath(
+      new URL('./app/composables/pods-player/useDesignTokens.ts', import.meta.url),
+    ),
   },
 
   // Ensure Vite sees the alias as well (import-analysis runs at Vite level).
@@ -45,6 +55,9 @@ export default defineNuxtConfig({
         '#pods-player': fileURLToPath(new URL('./app/pods-player/', import.meta.url)),
         '#pods-player-runtime': fileURLToPath(
           new URL('./app/composables/pods-player/usePodsPlayerRuntime.ts', import.meta.url),
+        ),
+        '#pods-player-design-tokens': fileURLToPath(
+          new URL('./app/composables/pods-player/useDesignTokens.ts', import.meta.url),
         ),
       },
     },
