@@ -46,6 +46,19 @@ export default defineNuxtConfig({
     '#pods-player-design-tokens': fileURLToPath(
       new URL('./app/composables/pods-player/useDesignTokens.ts', import.meta.url),
     ),
+    /**
+     * pods-playground-layer.alias.#pods-player-color-a11y
+     *
+     * The contrast maths, at a stable path so a host can re-export it rather
+     * than keep a copy. It was copied twice — once into this repo's own
+     * playground byte for byte, once into the CMS under different names — and
+     * the copies drifted on two points that matter: whether the returned hex
+     * is normalised, and whether an unparseable input yields black or NaN.
+     * Accessibility is the last thing that should have three answers.
+     */
+    '#pods-player-color-a11y': fileURLToPath(
+      new URL('./app/utils/colorA11y.ts', import.meta.url),
+    ),
   },
 
   // Ensure Vite sees the alias as well (import-analysis runs at Vite level).
@@ -58,6 +71,9 @@ export default defineNuxtConfig({
         ),
         '#pods-player-design-tokens': fileURLToPath(
           new URL('./app/composables/pods-player/useDesignTokens.ts', import.meta.url),
+        ),
+        '#pods-player-color-a11y': fileURLToPath(
+          new URL('./app/utils/colorA11y.ts', import.meta.url),
         ),
       },
     },
