@@ -203,7 +203,14 @@ function revealAddressedField(key: string): void {
 
   const openGroupsHolding = (fields: FormField[]): boolean => {
     for (const field of fields) {
-      if (String(field.name ?? '') === first) return true
+      if (String(field.name ?? '') === first) {
+        // The addressed field may BE a group — `cta.label` names the `cta`
+        // group and its child. Returning early without opening it left the
+        // control mounted but collapsed, which reads to an editor as the
+        // click having done nothing.
+        if (field.type === 'group') groupOpenOverrides[first] = true
+        return true
+      }
       if (field.type === 'group' && Array.isArray(field.children)) {
         if (openGroupsHolding(field.children as FormField[])) {
           groupOpenOverrides[String(field.name ?? '')] = true
