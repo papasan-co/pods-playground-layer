@@ -45,6 +45,16 @@ const props = defineProps<{
    * the matching control, keyed by the YAML field dot-path.
    */
   fieldNotes?: Array<{ fieldPath: string; message: string }>
+  /**
+   * A host's request to bring one field into view: open whichever collapsed
+   * group cards and repeater rows stand between the form's surface and the
+   * addressed field. The address is the payload path (`title`, `cta.label`,
+   * `stats.0.value`); the nonce distinguishes repeated requests for the same
+   * field. State-driven on purpose — a host clicking the form's own toggle
+   * buttons races the disclosure animation and the trigger wiring, which is
+   * exactly how this prop earned its existence.
+   */
+  revealField?: { key: string; nonce: number } | null
 }>()
 
 /**
@@ -164,6 +174,76 @@ function groupDefaultOpen(field: FormField): boolean {
   const configured = getGroupUiConfig(field)?.defaultOpen
   return typeof configured === 'boolean' ? configured : true
 }
+
+/**
+ * Group cards stay user-driven, but a reveal may open one on top of its
+ * default. The override map only ever grows for this form instance; a user
+ * closing the card afterwards writes `false` back through the same map.
+ */
+const groupOpenOverrides = reactive<Record<string, boolean>>({})
+
+function isGroupOpen(field: FormField): boolean {
+  const name = String(field.name ?? '')
+  return groupOpenOverrides[name] ?? groupDefaultOpen(field)
+}
+
+/**
+ * Open everything between this form's surface and the addressed field.
+ *
+ * The first address segment names a field this form may hold directly, hold
+ * inside a display group (a `__`-prefixed card is transparent for
+ * addressing, so `stats` lives visually inside `__figures`), or not hold at
+ * all (a nested form instance handles its own slice — the recursive
+ * `reveal-field` pass-through in the template carries the request down).
+ * A repeater address additionally opens the indexed row.
+ */
+function revealAddressedField(key: string): void {
+  const first = key.split('.')[0] ?? ''
+  if (!first) return
+
+  const openGroupsHolding = (fields: FormField[]): boolean => {
+    for (const field of fields) {
+      if (String(field.name ?? '') === first) return true
+      if (field.type === 'group' && Array.isArray(field.children)) {
+        if (openGroupsHolding(field.children as FormField[])) {
+          groupOpenOverrides[String(field.name ?? '')] = true
+          return true
+        }
+      }
+    }
+    return false
+  }
+  openGroupsHolding(props.fields)
+
+  const owner = props.fields.find(field => String(field.name ?? '') === first)
+    ?? findInGroups(props.fields, first)
+  if (owner?.type === 'repeater') {
+    const index = Number(key.split('.')[1])
+    if (Number.isInteger(index)) {
+      const row = listFor(first).value[index]
+      if (row) setItemOpen(first, itemKey(row as RepeaterItem, index), true)
+    }
+  }
+}
+
+function findInGroups(fields: FormField[], name: string): FormField | undefined {
+  for (const field of fields) {
+    if (field.type === 'group' && Array.isArray(field.children)) {
+      const hit = (field.children as FormField[]).find(child => String(child.name ?? '') === name)
+        ?? findInGroups(field.children as FormField[], name)
+      if (hit) return hit
+    }
+  }
+  return undefined
+}
+
+watch(
+  () => props.revealField,
+  (request) => {
+    if (request?.key) revealAddressedField(request.key)
+  },
+  { immediate: true, deep: true },
+)
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
   const dynamicItems = dynamicSelectItems(field)
@@ -599,9 +679,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
     >
       <UCollapsible
         v-if="isGroupCollapsible(field)"
-        :default-open="groupDefaultOpen(field)"
+        :open="isGroupOpen(field)"
         :unmount-on-hide="false"
         class="rounded-md border border-default"
+        @update:open="(value) => { groupOpenOverrides[String(field.name ?? '')] = Boolean(value) }"
       >
         <template #default="{ open }">
           <UButton
@@ -639,6 +720,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
+                :reveal-field="revealField"
                 :field-notes="fieldNotes"
                 :link-targets="linkTargets || []"
                 :media-items="mediaItems || []"
@@ -667,6 +749,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
+          :reveal-field="revealField"
           :field-notes="fieldNotes"
           :media-items="mediaItems || []"
           :story-media-items="storyMediaItems || []"
@@ -1075,6 +1158,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                     :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
                     :composite-field-updates="true"
+                    :reveal-field="revealField"
                     :media-items="mediaItems || []"
                     :story-media-items="storyMediaItems || []"
                     :library-media-items="libraryMediaItems || []"
