@@ -240,7 +240,13 @@ function findInGroups(fields: FormField[], name: string): FormField | undefined 
 watch(
   () => props.revealField,
   (request) => {
-    if (request?.key) revealAddressedField(request.key)
+    if (!request?.key) return
+    // Deferred a tick on purpose: with `immediate`, this first fires DURING
+    // setup — the form mounts with the request already in hand when the
+    // Fields tab opens from a preview click — and the repeater row state it
+    // reaches for (`listFor`) is declared later in setup. Running eagerly
+    // threw before initialization and silently cost the row its opening.
+    void nextTick(() => revealAddressedField(request.key))
   },
   { immediate: true, deep: true },
 )
