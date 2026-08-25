@@ -693,6 +693,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <UFormField
             v-else
             :label="child.type === 'slider' ? undefined : child.label"
+            :data-au-field-control="child.name || undefined"
             class="mb-2"
           >
             <template v-if="child.type === 'slider'" #label>
@@ -840,6 +841,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       v-else-if="!isHidden(field)"
       v-show="isVisible(field)"
       :label="field.type === 'slider' ? undefined : field.label"
+      :data-au-field-control="field.name || undefined"
       class="mb-4 last:mb-0"
     >
       <template v-if="field.type === 'slider'" #label>
