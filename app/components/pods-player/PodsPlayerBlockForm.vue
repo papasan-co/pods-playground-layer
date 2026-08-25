@@ -592,7 +592,11 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
 
 <template>
   <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
-    <div v-if="field.type === 'group' && isVisible(field) && !isHidden(field)" class="mb-4 last:mb-0">
+    <div
+      v-if="field.type === 'group' && isVisible(field) && !isHidden(field)"
+      class="mb-4 last:mb-0"
+      :data-au-field-group="field.name ? String(field.name) : undefined"
+    >
       <UCollapsible
         v-if="isGroupCollapsible(field)"
         :default-open="groupDefaultOpen(field)"
@@ -1001,6 +1005,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             :key="(item as any)._key || idx"
             class="repeater-card rounded-md border border-default p-3 transition-opacity"
             :class="{ 'opacity-30': (item as any)._removing }"
+            :data-au-field-row="`${field.name}.${idx}`"
           >
             <UCollapsible
               :open="isItemOpen(field.name, itemKey(item as any, idx))"
