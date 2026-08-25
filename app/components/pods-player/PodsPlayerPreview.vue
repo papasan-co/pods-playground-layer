@@ -1341,10 +1341,32 @@ watch(
   { deep: true, immediate: true },
 )
 
+let lastAckedRuntimeLoadKey = ''
+
+// Stable identities for device props: inline template literals mint a new
+// array every render, which reads as a prop change to the device's boot
+// effect and schedules needless iframe reboots.
+const RUNTIME_ROOT_CLASSES = ['autumn-runtime']
+const EMPTY_ASSET_LIST: string[] = []
+const deviceModuleScripts = computed(() =>
+  effectiveMode.value === 'vue' ? vueScripts.value : EMPTY_ASSET_LIST,
+)
+const deviceExtraStylesheets = computed(() =>
+  effectiveMode.value === 'vue' ? vueStylesheets.value : EMPTY_ASSET_LIST,
+)
+
 function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
   if (effectiveMode.value !== 'vue') return
   if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
   if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
+  // A re-boot of an already-acknowledged asset load must not restart the
+  // mount pipeline: rewriting previewState to 'mounting' re-renders the
+  // host, which can re-trigger the device boot effect and self-sustain
+  // (live: pod switches wedged the tab in a boot/emit/mount storm).
+  if (vueReady.value && vueRuntimeLoadKey.value && lastAckedRuntimeLoadKey === vueRuntimeLoadKey.value) {
+    return
+  }
+  lastAckedRuntimeLoadKey = vueRuntimeLoadKey.value
 
   const identity = vueRenderIdentity.value
   recordRuntimeAssetStages(identity, payload.timing)
@@ -1379,6 +1401,8 @@ function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknow
 }
 
 function failPreview(failure: unknown): void {
+  // A retry of the same asset load must be able to re-acknowledge.
+  lastAckedRuntimeLoadKey = ''
   readiness?.dispose()
   readiness = null
   const normalized = normalizeRuntimeFailure(failure)
@@ -1439,12 +1463,12 @@ watch(
       ref="previewDeviceRef"
       v-else
       :device="viewport"
-      :module-scripts="effectiveMode === 'vue' ? vueScripts : []"
-      :extra-stylesheets="effectiveMode === 'vue' ? vueStylesheets : []"
+      :module-scripts="deviceModuleScripts"
+      :extra-stylesheets="deviceExtraStylesheets"
       :runtime-owner="effectiveMode === 'vue' ? vueRuntimeArtifactKey : null"
       :ready="effectiveMode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
-      :root-classes="['autumn-runtime']"
+      :root-classes="RUNTIME_ROOT_CLASSES"
       :canvas-artifact-id="renderedCanvasArtifactId"
       :debug-fill="debugFill"
       :settle-layer-sequences="settleLayerSequencesForPreview"

@@ -679,27 +679,48 @@ function collectRuntimeAssetLoadTiming(
       }
 }
 
+// Boot decisions compare CONTENT, not identity. Hosts re-render for reasons
+// unrelated to the preview (progress polls, status writes), and each render
+// hands down fresh array/object identities. Rebooting on identity alone let a
+// host re-render schedule a boot whose own completion (scriptsLoaded → state
+// write) re-rendered the host again — a self-sustaining boot/emit/mount
+// microtask storm that starved timers and wedged the tab on pod switches.
+let lastBootSignature: string | null = null
+
+function currentBootSignature(): string {
+  // JSON.stringify doubles as dependency registration: it reads every nested
+  // key, so deep cssVars/bodyDataset changes still re-trigger the effect.
+  return JSON.stringify({
+    device: props.device,
+    scripts: props.scripts ?? [],
+    moduleScripts: props.moduleScripts ?? [],
+    ready: props.ready,
+    scrollable: props.scrollable,
+    cssVars: props.cssVars ?? null,
+    shellStylesheets: props.shellStylesheets ?? [],
+    extraStylesheets: props.extraStylesheets ?? [],
+    optionalStylesheets: props.optionalStylesheets ?? [],
+    runtimeOwner: props.runtimeOwner ?? null,
+    rootClasses: props.rootClasses ?? [],
+    bodyDataset: props.bodyDataset ?? null,
+    canvasArtifactId: props.canvasArtifactId ?? null,
+    debugFill: props.debugFill,
+    settleLayerSequences: props.settleLayerSequences,
+    settleLayerSequencesRevision: props.settleLayerSequencesRevision,
+    slotRevision: props.slotRevision,
+  })
+}
+
+function scheduleBootIfChanged(signature: string): void {
+  if (signature === lastBootSignature) return
+  lastBootSignature = signature
+  void nextTick().then(() => bootIframe())
+}
+
 watchEffect(() => {
-  void props.device
-  // Ensure script injection runs when the script list changes (WC mode).
-  void props.scripts
-  void props.moduleScripts
-  void props.ready
-  void props.scrollable
-  void props.cssVars
-  void props.shellStylesheets
-  void props.extraStylesheets
-  void props.optionalStylesheets
-  void props.runtimeOwner
-  void props.rootClasses
-  void props.bodyDataset
-  void props.canvasArtifactId
-  void props.debugFill
-  void props.settleLayerSequences
-  void props.settleLayerSequencesRevision
-  void props.slotRevision
+  const signature = currentBootSignature()
   if (props.ready === false && slotVNode.value) {
-    void nextTick().then(() => bootIframe())
+    scheduleBootIfChanged(signature)
     return
   }
 
@@ -735,7 +756,7 @@ watchEffect(() => {
           },
           slots.default?.(),
         )
-  void nextTick().then(() => bootIframe())
+  scheduleBootIfChanged(signature)
 })
 
 defineExpose({
