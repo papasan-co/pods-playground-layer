@@ -679,14 +679,17 @@ async function renderVueRuntimeIntoIframe() {
   if (!win || !identityIsCurrent()) return
 
   if (api.getPod && !api.getPod(props.pod.slug)) {
-    throw new PodRuntimeFailure(
-      'missing-pod',
-      `Pod "${props.pod.slug}" is not available in the selected runtime.`,
-      {
-        runtimeArtifactKey: vueRuntimeArtifactKey.value,
-        podSlug: props.pod.slug,
-      },
-    )
+    // Transient during pod switches: the runtime artifact has moved to the
+    // next pod while props.pod still names the previous one (or vice versa).
+    // Failing here rebooted the device, whose scriptsLoaded re-entered this
+    // render with the same mismatch — a storm that starved the pod fetch
+    // that would have resolved it. Wait: this watcher re-fires on pod.slug,
+    // and the readiness timeout still covers a genuinely missing pod.
+    recordPreviewTiming(currentCanvasArtifactId(), 'vue_runtime_pod_not_in_artifact', {
+      runtimeArtifactKey: vueRuntimeArtifactKey.value,
+      podSlug: props.pod.slug,
+    })
+    return
   }
 
   if (vueMountOwner && (vueMountOwner.api !== api || vueMountOwner.win !== win)) {
@@ -1048,7 +1051,12 @@ watch(
       props.contentReady,
       activeSourcePreviewRevision.value,
       props.viewport,
-      props.previewProps,
+      // Content fingerprint, NOT the object: hosts mint a fresh previewProps
+      // identity on unrelated re-renders (progress polls, status writes), and
+      // an identity-keyed source re-ran this whole pipeline per render. Each
+      // pass writes state that re-renders the host again — under poll load
+      // the cycle self-sustained and wedged the tab on pod switches.
+      JSON.stringify(props.previewProps ?? {}),
       brandPreviewRevision.value,
       mediaModeRevision.value,
     ] as const,
@@ -1058,6 +1066,7 @@ watch(
       `${slug || ''}:${mode}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
     )
     renderIdentityCommits.begin(selection.generation)
+    resetRenderFailureLatch()
     error.value = null
 
     if (!slug || !props.pod) {
@@ -1258,7 +1267,10 @@ watch(
       })
     }
   },
-  { immediate: true, deep: true },
+  // Sources are scalars (previewProps rides in as a JSON fingerprint), so no
+  // deep traversal is needed — and deep identity-sensitivity is exactly what
+  // let host re-renders re-run this pipeline.
+  { immediate: true },
 )
 
 // Resume a deferred SFC swap the moment its matching source-preview data
@@ -1315,11 +1327,15 @@ watch(brandPreviewRevision, async () => {
 })
 
 watch(
-  () => props.previewProps,
-  (nextPreviewProps) => {
+  // Content fingerprint, NOT the object: identity-only refreshes from host
+  // re-renders must not re-commit (each commit bumps the slot revision and
+  // reboots the preview device).
+  () => JSON.stringify(props.previewProps ?? {}),
+  () => {
     if (requestedEffectiveMode.value === 'vue') return
     if (loading.value && hasRenderablePreview.value) return
 
+    const nextPreviewProps = props.previewProps
     const previousText = previewBodyText(previewIframeWindow())
     const expectedTexts = visibleTextCandidates(nextPreviewProps || {}, previousText)
     commitRenderedPreviewProps(nextPreviewProps || {})
@@ -1338,7 +1354,7 @@ watch(
       })
     }
   },
-  { deep: true, immediate: true },
+  { immediate: true },
 )
 
 let lastAckedRuntimeLoadKey = ''
@@ -1366,6 +1382,7 @@ function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
   if (vueReady.value && vueRuntimeLoadKey.value && lastAckedRuntimeLoadKey === vueRuntimeLoadKey.value) {
     return
   }
+  if (renderFailureLatched) return
   lastAckedRuntimeLoadKey = vueRuntimeLoadKey.value
 
   const identity = vueRenderIdentity.value
@@ -1400,12 +1417,36 @@ function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknow
   )
 }
 
+let consecutiveRenderFailureKey = ''
+let consecutiveRenderFailureCount = 0
+let renderFailureLatched = false
+const RENDER_FAILURE_LATCH_THRESHOLD = 5
+
+function resetRenderFailureLatch(): void {
+  consecutiveRenderFailureKey = ''
+  consecutiveRenderFailureCount = 0
+  renderFailureLatched = false
+}
+
 function failPreview(failure: unknown): void {
   // A retry of the same asset load must be able to re-acknowledge.
   lastAckedRuntimeLoadKey = ''
   readiness?.dispose()
   readiness = null
   const normalized = normalizeRuntimeFailure(failure)
+  const failureKey = `${vueRuntimeLoadKey.value}:${normalized.message}`
+  if (failureKey === consecutiveRenderFailureKey) {
+    consecutiveRenderFailureCount += 1
+    if (consecutiveRenderFailureCount >= RENDER_FAILURE_LATCH_THRESHOLD) {
+      // The same failure keeps recurring for the same asset load: stop the
+      // boot/ack/render cycle instead of spinning the main thread. A new
+      // mode-watcher selection clears the latch.
+      renderFailureLatched = true
+    }
+  } else {
+    consecutiveRenderFailureKey = failureKey
+    consecutiveRenderFailureCount = 1
+  }
   const state = previewState.value
   previewState.value = {
     status: 'failed',
