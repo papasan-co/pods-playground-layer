@@ -155,7 +155,29 @@ function fieldByName(name: string): FormField | null {
 /** Transient "that did not fit" messages, keyed by field name. */
 const limitNotices = ref<Record<string, string>>({})
 
+/**
+ * What to say under a limited control.
+ *
+ * Two different messages. The transient one reports growth that was just
+ * refused, so a paste never loses its tail in silence — that is the everyday
+ * case.
+ *
+ * The standing one covers a value ALREADY over its ceiling. That state cannot
+ * be reached through any write path — all three refuse it — so it arises only
+ * when a later pack build LOWERS a ceiling under content that was legal when
+ * it was written. Rare, and worth saying out loud when it happens: the API
+ * will refuse a shortened-but-still-over edit, and someone who shortened it a
+ * little and hit save deserves to have been told rather than to meet a
+ * refusal with no warning.
+ */
 function noticeFor(field: FormField): string | null {
+  const ceiling = limitsOf(field)?.ceiling ?? null
+  const length = charCount(props.modelValue[String(field.name ?? '')])
+
+  if (ceiling !== null && length > ceiling) {
+    return `${length - ceiling} characters over the ${ceiling}-character limit. This will not save until it is shorter.`
+  }
+
   return limitNotices.value[String(field.name ?? '')] || null
 }
 
