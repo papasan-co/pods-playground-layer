@@ -93,11 +93,149 @@ const emit = defineEmits<{
   (e: 'update:viewport', value: PodsPlayerViewport): void
 }>()
 
+/** Field types whose value is text a person types, so length is meaningful. */
+const LENGTH_LIMITED_TYPES = new Set(['input', 'text', 'textarea'])
+
+/**
+ * The length limits the pack build compiled onto a field, if any.
+ *
+ * Two numbers doing different jobs. The ADVISORY is what this pod's design
+ * wants — a hero headline and a card title in a three-up grid want very
+ * different room — so passing it is a warning and never a wall. The CEILING
+ * comes from the field's role and catches the absurd: a five-hundred-character
+ * headline. A field the pack build left alone, or a pack built before limits
+ * existed, carries none, which reads as unlimited.
+ */
+function limitsOf(field: FormField): { advisory: number | null; ceiling: number | null } | null {
+  if (!LENGTH_LIMITED_TYPES.has(String(field.type ?? ''))) return null
+
+  const raw = (field as { limits?: unknown }).limits
+  if (!raw || typeof raw !== 'object') return null
+
+  const advisory = typeof (raw as Record<string, unknown>).advisory === 'number'
+    ? (raw as Record<string, number>).advisory
+    : null
+  const ceiling = typeof (raw as Record<string, unknown>).ceiling === 'number'
+    ? (raw as Record<string, number>).ceiling
+    : null
+
+  return advisory === null && ceiling === null ? null : { advisory, ceiling }
+}
+
+/**
+ * Count characters the way the API counts them.
+ *
+ * PHP's `mb_strlen` counts code points; JavaScript's `.length` counts UTF-16
+ * units, so an emoji is one character to the server and two to the form.
+ * Spreading iterates by code point, which keeps the counter, the cap and the
+ * API's refusal all agreeing about the same string.
+ */
+function charCount(value: unknown): number {
+  return typeof value === 'string' ? [...value].length : 0
+}
+
+/**
+ * Find an inline-rendered field by name.
+ *
+ * Groups and repeaters recurse into their own form instance, so each instance
+ * only has to look at its own fields and one level into a `row`, which renders
+ * its children inline rather than recursing.
+ */
+function fieldByName(name: string): FormField | null {
+  for (const field of props.fields) {
+    if (field.name === name) return field
+    if (field.type === 'row') {
+      const child = (field.fields || []).find((candidate) => candidate.name === name)
+      if (child) return child
+    }
+  }
+  return null
+}
+
+/** Transient "that did not fit" messages, keyed by field name. */
+const limitNotices = ref<Record<string, string>>({})
+
+function noticeFor(field: FormField): string | null {
+  return limitNotices.value[String(field.name ?? '')] || null
+}
+
+/**
+ * Hold the ceiling on an incoming value, and say what did not fit.
+ *
+ * Never trims a value already stored: a block written before a ceiling existed
+ * can still be shortened, because refusing every edit to it would leave the
+ * only over-limit content on the site permanently uneditable. Only GROWTH past
+ * the ceiling is refused, and the excess is reported rather than disappearing
+ * — a paste that silently loses its tail is the failure this guards against.
+ */
+function withinCeiling(field: FormField, next: unknown): string | null {
+  const ceiling = limitsOf(field)?.ceiling ?? null
+  const name = String(field.name ?? '')
+  if (ceiling === null || typeof next !== 'string') return null
+
+  const incoming = [...next]
+  const stored = [...(typeof props.modelValue[name] === 'string' ? props.modelValue[name] as string : '')]
+
+  if (incoming.length <= ceiling || incoming.length <= stored.length) {
+    if (limitNotices.value[name]) delete limitNotices.value[name]
+    return null
+  }
+
+  const kept = stored.length > ceiling ? stored : incoming.slice(0, ceiling)
+  const dropped = incoming.length - kept.length
+
+  limitNotices.value[name] = dropped === 1
+    ? `1 character over the ${ceiling}-character limit and was not added.`
+    : `${dropped} characters over the ${ceiling}-character limit and were not added.`
+
+  return kept.join('')
+}
+
 function updateField(name: string, value: unknown, type: string) {
   if (props.readOnly) return
 
-  const v = type === 'number' ? Number(value) : value
+  const field = fieldByName(name)
+  const held = field ? withinCeiling(field, value) : null
+
+  const v = type === 'number' ? Number(value) : (held ?? value)
   emit('update:modelValue', { field: name, value: v })
+}
+
+/**
+ * How close the ceiling is, when it is close enough to matter.
+ *
+ * A field whose pod declared no advisory gets no counter until it is nearly
+ * at its ceiling. Counting down from the ceiling all the way would present it
+ * as a writing budget — "653 characters left" under a section intro — and the
+ * ceiling is an absurdity guard, not an opinion about how long an intro should
+ * be. Advertising it as room to fill would make it the second design number
+ * the whole two-limit split exists to avoid.
+ *
+ * Near the ceiling that reverses: an editor about to be stopped should see it
+ * coming rather than watch a keystroke silently fail.
+ */
+const CEILING_VISIBLE_FROM = 0.8
+
+/** How much room is left, or how far past the design's advisory this is. */
+function limitCountLabel(field: FormField): string {
+  const limits = limitsOf(field)
+  if (!limits) return ''
+
+  const length = charCount(props.modelValue[String(field.name ?? '')])
+
+  if (limits.advisory === null) {
+    if (limits.ceiling === null || length < limits.ceiling * CEILING_VISIBLE_FROM) return ''
+    return `${limits.ceiling - length} left`
+  }
+
+  const remaining = limits.advisory - length
+  return remaining >= 0 ? `${remaining} left` : `${-remaining} over`
+}
+
+/** Past the advisory reads as a warning, never as an error: it still saves. */
+function isPastAdvisory(field: FormField): boolean {
+  const advisory = limitsOf(field)?.advisory ?? null
+  return advisory !== null && charCount(props.modelValue[String(field.name ?? '')]) > advisory
 }
 
 function isObjectLike(value: unknown): value is Record<string, unknown> {
@@ -796,6 +934,13 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             :data-au-field-control="child.name || undefined"
             class="mb-2"
           >
+            <template v-if="limitCountLabel(child)" #hint>
+              <span
+                class="text-[11px] tabular-nums"
+                :class="isPastAdvisory(child) ? 'font-semibold text-amber-600' : 'text-muted'"
+                data-au-field-count
+              >{{ limitCountLabel(child) }}</span>
+            </template>
             <template v-if="child.type === 'slider'" #label>
               <div class="flex items-center justify-between gap-2">
                 <span>{{ child.label }}</span>
@@ -913,6 +1058,11 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <p
+              v-if="noticeFor(child)"
+              class="mt-1 text-xs text-amber-600"
+              data-au-field-limit-notice
+            >{{ noticeFor(child) }}</p>
+            <p
               v-if="noteFor(child)"
               class="mt-1 flex items-start gap-1 text-xs"
               style="color: var(--pg-fg-meta, #6b7280)"
@@ -944,6 +1094,13 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       :data-au-field-control="field.name || undefined"
       class="mb-4 last:mb-0"
     >
+      <template v-if="limitCountLabel(field)" #hint>
+        <span
+          class="text-[11px] tabular-nums"
+          :class="isPastAdvisory(field) ? 'font-semibold text-amber-600' : 'text-muted'"
+          data-au-field-count
+        >{{ limitCountLabel(field) }}</span>
+      </template>
       <template v-if="field.type === 'slider'" #label>
         <div class="flex items-center justify-between gap-2">
           <span>{{ field.label }}</span>
@@ -1200,6 +1357,11 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           Maximum {{ repeaterMax(field) }} {{ field.label || 'items' }} reached.
         </p>
       </div>
+      <p
+        v-if="noticeFor(field)"
+        class="mt-1 text-xs text-amber-600"
+        data-au-field-limit-notice
+      >{{ noticeFor(field) }}</p>
       <p
         v-if="noteFor(field)"
         class="mt-1 flex items-start gap-1 text-xs"
