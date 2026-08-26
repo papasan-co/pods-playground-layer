@@ -40,6 +40,8 @@ const props = defineProps<{
   savedFieldValues?: Record<string, unknown> | null;
   /** Show the "New pod" affordance in the pod list (editable draft packs). */
   canCreatePod?: boolean;
+  /** Show the "Play" affordance in the pod list (packs with a playable reel). */
+  canPlayPack?: boolean;
   selectedCanvasTargetKey?: string | null;
   fieldPanelActiveTab?: FieldPanelTab | null;
   /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
@@ -58,6 +60,7 @@ const emit = defineEmits<{
   formValuesChanged: [values: Record<string, unknown>];
   // "New pod" clicked in the pod list (Track 5 scaffolding entry point).
   newPod: [];
+  playPack: [];
 }>();
 
 const slugRef = toRef(props, "slug");
@@ -386,10 +389,12 @@ function targetDisplayValue(value: unknown): string {
       :active-slug="slug"
       :collapsed="podListCollapsed"
       :can-create-pod="canCreatePod"
+      :can-play-pack="canPlayPack"
       @select-pod="emit('selectPod', $event)"
       @back="emit('backToPacks')"
       @expand="togglePodList()"
       @new-pod="emit('newPod')"
+      @play-pack="emit('playPack')"
     />
 
     <div

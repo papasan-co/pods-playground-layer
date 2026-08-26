@@ -150,6 +150,19 @@ const renderIdentityCommits = createRenderIdentityCommitGate((diagnostic) => {
 })
 let frameGeneration = 0
 let renderGeneration = 0
+// Render-failure latch + ack state. Declared BEFORE the immediate mode
+// watcher below, which calls resetRenderFailureLatch during component setup.
+let lastAckedRuntimeLoadKey = ''
+let consecutiveRenderFailureKey = ''
+let consecutiveRenderFailureCount = 0
+let renderFailureLatched = false
+const RENDER_FAILURE_LATCH_THRESHOLD = 5
+
+function resetRenderFailureLatch(): void {
+  consecutiveRenderFailureKey = ''
+  consecutiveRenderFailureCount = 0
+  renderFailureLatched = false
+}
 const PREVIEW_READINESS_TIMEOUT_MS = 10_000
 let vueMountOwner: {
   api: PodRuntimeApi
@@ -1357,7 +1370,6 @@ watch(
   { immediate: true },
 )
 
-let lastAckedRuntimeLoadKey = ''
 
 // Stable identities for device props: inline template literals mint a new
 // array every render, which reads as a prop change to the device's boot
@@ -1415,17 +1427,6 @@ function handleScriptsFailed(payload: RuntimeAssetLoadIdentity & { error: unknow
       },
     ),
   )
-}
-
-let consecutiveRenderFailureKey = ''
-let consecutiveRenderFailureCount = 0
-let renderFailureLatched = false
-const RENDER_FAILURE_LATCH_THRESHOLD = 5
-
-function resetRenderFailureLatch(): void {
-  consecutiveRenderFailureKey = ''
-  consecutiveRenderFailureCount = 0
-  renderFailureLatched = false
 }
 
 function failPreview(failure: unknown): void {
