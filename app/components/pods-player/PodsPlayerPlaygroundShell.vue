@@ -389,12 +389,10 @@ function targetDisplayValue(value: unknown): string {
       :active-slug="slug"
       :collapsed="podListCollapsed"
       :can-create-pod="canCreatePod"
-      :can-play-pack="canPlayPack"
       @select-pod="emit('selectPod', $event)"
       @back="emit('backToPacks')"
       @expand="togglePodList()"
       @new-pod="emit('newPod')"
-      @play-pack="emit('playPack')"
     />
 
     <div
@@ -413,6 +411,8 @@ function targetDisplayValue(value: unknown): string {
         :show-fixtures="showFixtures"
         :show-props-tab="showPropsTab"
         :show-yaml-tab="showYamlTab"
+        :can-play-pack="canPlayPack"
+        @play-pack="emit('playPack')"
         @update:viewport="setViewport"
         @update:mode="setMode"
         @toggle-pod-list="togglePodList()"

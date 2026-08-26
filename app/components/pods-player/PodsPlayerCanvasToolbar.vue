@@ -14,6 +14,8 @@ const props = defineProps<{
   showFixtures: boolean
   showPropsTab: boolean
   showYamlTab: boolean
+  /** Show the "Play" affordance (packs with a playable reel). */
+  canPlayPack?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -26,6 +28,7 @@ const emit = defineEmits<{
   'update:showFixtures': [value: boolean]
   'update:showPropsTab': [value: boolean]
   'update:showYamlTab': [value: boolean]
+  playPack: []
 }>()
 
 const devices: { key: PodsPlayerViewport; icon: string }[] = [
@@ -98,6 +101,19 @@ const showYamlProxy = computed({
     </div>
 
     <div class="ml-auto flex items-center gap-0.5">
+      <button
+        v-if="canPlayPack"
+        type="button"
+        data-testid="playground-play-pack"
+        class="mr-1 inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold transition-colors duration-[var(--pg-duration-quick)]"
+        style="background: var(--pg-fg-primary); color: var(--pg-bg)"
+        title="Play this pack"
+        @click="emit('playPack')"
+      >
+        <UIcon name="i-lucide-play" class="h-3 w-3" />
+        Play
+      </button>
+
       <button
         type="button"
         class="flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-[var(--pg-duration-quick)] hover:bg-[var(--pg-hover-surface)]"

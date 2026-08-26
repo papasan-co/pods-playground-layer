@@ -9,8 +9,6 @@ defineProps<{
   collapsed: boolean
   /** Show the "New pod" affordance (editable draft packs only). */
   canCreatePod?: boolean
-  /** Show the "Play" affordance (packs with a playable reel). */
-  canPlayPack?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -18,7 +16,6 @@ const emit = defineEmits<{
   back: []
   expand: []
   newPod: []
-  playPack: []
 }>()
 </script>
 
@@ -52,17 +49,6 @@ const emit = defineEmits<{
       <div v-if="packMeta" class="mt-0.5 text-[11.5px]" style="color: var(--pg-fg-muted-warm)">
         {{ packMeta }}
       </div>
-      <button
-        v-if="canPlayPack"
-        type="button"
-        data-testid="playground-play-pack"
-        class="mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-[var(--pg-duration-quick)]"
-        style="background: var(--pg-fg-primary); color: var(--pg-bg)"
-        @click="emit('playPack')"
-      >
-        <UIcon name="i-lucide-play" class="h-3 w-3" />
-        Play
-      </button>
     </div>
 
     <div class="min-h-0 flex-1 space-y-px overflow-y-auto px-1.5">
