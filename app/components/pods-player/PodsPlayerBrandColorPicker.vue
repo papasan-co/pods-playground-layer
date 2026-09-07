@@ -120,8 +120,10 @@ function resolveInputToHex(input: string | undefined): string | null {
   const value = String(input).trim()
   if (!value) return null
   if (isHexColor(value)) return value.toUpperCase()
-  const fromRgb = rgbToHex(value)
-  if (fromRgb) return fromRgb
+  // A computed colour is an rgb()/rgba() string or `transparent`: it is that colour or no colour — never a
+  // token name, so it must not fall through to the token lookup (whose unknown-token answer is black, and
+  // black as the contrast background would "adjust" a dark text preview to white).
+  if (/^rgba?\(/i.test(value) || value === 'transparent') return rgbToHex(value)
   const tokenHex = getGroupColor500(value)
   return isHexColor(tokenHex) ? tokenHex.toUpperCase() : null
 }
