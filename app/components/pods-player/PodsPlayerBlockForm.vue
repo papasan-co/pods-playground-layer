@@ -55,6 +55,13 @@ const props = defineProps<{
    * exactly how this prop earned its existence.
    */
   revealField?: { key: string; nonce: number } | null
+  /**
+   * What the host actually renders for each colour field when it is unset,
+   * keyed by field name, as a CSS colour or `transparent`. The colour picker
+   * shows this for its "default" choice, and a text colour's contrast check
+   * uses the rendered background when no background was chosen.
+   */
+  autoColors?: Record<string, string>
 }>()
 
 /**
@@ -274,10 +281,21 @@ interface Condition {
 }
 
 function isVisible(field: FormField) {
+  // A pod may tie a field to another's value: `x-ui.showWhen: { field, equals }`.
+  const shownWhen = (field as any)?.['x-ui']?.showWhen
+  if (shownWhen && typeof shownWhen === 'object' && typeof shownWhen.field === 'string' && dotGet(props.modelValue, shownWhen.field) !== shownWhen.equals) return false
   const cond = (field as { when?: Condition | Condition[] }).when
   if (!cond) return true
   const conditions = Array.isArray(cond) ? cond : [cond]
   return conditions.every((c) => dotGet(props.modelValue, c.field) === c.equals)
+}
+
+/** What a text colour is checked against: the chosen background, else the background the host renders. */
+function contrastAgainstFor(field: FormField): string | undefined {
+  const against = getA11yConfig(field)?.againstField
+  if (!against) return undefined
+  const chosen = props.modelValue[against]
+  return typeof chosen === 'string' && chosen ? chosen : props.autoColors?.[against]
 }
 
 function shouldEmitMediaObject(field: FormField): boolean {
@@ -888,6 +906,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <div class="px-4 pb-4 space-y-4">
             <div class="space-y-4">
               <PodsPlayerBlockForm
+                :auto-colors="autoColors"
                 :fields="field.children"
                 :model-value="groupModelValue(field.name as string | undefined)"
                 :root-model-value="rootModelValue || modelValue"
@@ -917,6 +936,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
 
         <PodsPlayerBlockForm
           v-if="field.children?.length"
+          :auto-colors="autoColors"
           :fields="field.children"
           :model-value="groupModelValue(field.name as string | undefined)"
           :root-model-value="rootModelValue || modelValue"
@@ -1037,8 +1057,14 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string] as string"
               :output-mode="child.type === 'color-select' ? 'token' : (((child as any)['x-ui']?.outputMode as any) || 'hex')"
               :token-options="child.type === 'color-select' ? colorSelectKeys(child as any) : undefined"
-              :contrast-against="getA11yConfig(child)?.againstField ? (modelValue[getA11yConfig(child)?.againstField as string] as string) : undefined"
+              :contrast-against="contrastAgainstFor(child)"
               :enforce-aa-for-text="getA11yConfig(child)?.kind === 'text-aa'"
+              :allow-auto="Boolean((child as any)['x-ui']?.allowAuto)"
+              :allow-custom="(child as any)['x-ui']?.allowCustom !== false"
+              :auto-label="((child as any)['x-ui']?.autoLabel as string) || undefined"
+              :auto-color="autoColors?.[child.name as string]"
+              :preview-mode="((child as any)['x-ui']?.previewMode as any) || 'swatch'"
+              :preview-text="((child as any)['x-ui']?.previewText as string) || undefined"
               policy="disableTokens"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
@@ -1228,11 +1254,12 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name] as string"
         :output-mode="((field as any)['x-ui']?.outputMode as any) || 'hex'"
         :token-options="((field as any)['x-ui']?.tokenOptions as string[]) || undefined"
-        :contrast-against="getA11yConfig(field)?.againstField ? (modelValue[getA11yConfig(field)?.againstField as string] as string) : undefined"
+        :contrast-against="contrastAgainstFor(field)"
         :enforce-aa-for-text="getA11yConfig(field)?.kind === 'text-aa'"
         :allow-auto="Boolean((field as any)['x-ui']?.allowAuto)"
         :allow-custom="(field as any)['x-ui']?.allowCustom !== false"
         :auto-label="((field as any)['x-ui']?.autoLabel as string) || undefined"
+        :auto-color="autoColors?.[field.name]"
         :preview-mode="((field as any)['x-ui']?.previewMode as any) || 'swatch'"
         :preview-text="((field as any)['x-ui']?.previewText as string) || undefined"
         policy="disableTokens"

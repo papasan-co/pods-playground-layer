@@ -16,6 +16,13 @@ const props = defineProps<{
   allowAuto?: boolean
   allowCustom?: boolean
   autoLabel?: string
+  /**
+   * The colour the host actually paints when the value is unset — what the
+   * auto choice ("Pod default") means here — as any CSS colour, or
+   * `transparent`. Without it the auto swatch falls back to the pack's CTA
+   * accent, which is right for a button field and wrong for anything else.
+   */
+  autoColor?: string
   previewMode?: PreviewMode
   previewText?: string
 }>()
@@ -94,11 +101,27 @@ const tokenSwatches = computed(() => {
     .filter((swatch): swatch is { key: string; label: string; color: string } => Boolean(swatch.color))
 })
 
+/** `rgb(...)`/`rgba(...)` as a browser reports a computed colour → `#RRGGBB`; a fully transparent rgba is no colour. */
+function rgbToHex(value: string): string | null {
+  const match = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i)
+  if (!match) return null
+  if (match[4] !== undefined && Number(match[4]) === 0) return null
+  return `#${[match[1], match[2], match[3]].map((channel) => Number(channel).toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+}
+
+function isTransparentColor(value: string | undefined): boolean {
+  if (!value) return false
+  const trimmed = value.trim()
+  return trimmed === 'transparent' || /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(?:\.0+)?\s*\)$/i.test(trimmed)
+}
+
 function resolveInputToHex(input: string | undefined): string | null {
   if (!input) return null
   const value = String(input).trim()
   if (!value) return null
   if (isHexColor(value)) return value.toUpperCase()
+  const fromRgb = rgbToHex(value)
+  if (fromRgb) return fromRgb
   const tokenHex = getGroupColor500(value)
   return isHexColor(tokenHex) ? tokenHex.toUpperCase() : null
 }
@@ -109,7 +132,16 @@ function swatchLabel(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1)
 }
 
+const autoIsTransparent = computed(() => isTransparentColor(props.autoColor))
+
+/** Drawn for an auto swatch whose host paints nothing: a white tile with a red stroke through it. */
+const NO_FILL_STYLE = {
+  backgroundColor: '#FFFFFF',
+  backgroundImage: 'linear-gradient(135deg, transparent 45%, #DC2626 45%, #DC2626 55%, transparent 55%)',
+}
+
 function resolveAutoPreviewColor(): string {
+  if (props.autoColor) return autoIsTransparent.value ? 'transparent' : props.autoColor
   return effectivePreviewMode.value === 'cta-secondary'
     ? 'var(--pods-cta-btn-secondary-text,var(--pods-v2-accent,#4F46E5))'
     : 'var(--pods-cta-btn-primary-bg,var(--pods-v2-accent,#4F46E5))'
@@ -201,11 +233,17 @@ const isPreviewAdjusted = computed(() => {
 })
 
 const collapsedDisplayColor = computed(() => effectivePreviewMode.value === 'swatch' ? effectivePreviewColor.value : currentColor.value)
+const isAuto = computed(() => colorMode.value === 'token' && selectedTokenKey.value === 'auto')
 const collapsedDisplayLabel = computed(() =>
-  colorMode.value === 'token' && selectedTokenKey.value === 'auto'
-    ? effectiveAutoLabel.value
+  isAuto.value
+    ? (autoIsTransparent.value ? `${effectiveAutoLabel.value} · transparent` : effectiveAutoLabel.value)
     : collapsedDisplayColor.value,
 )
+/** The auto tile: the host's colour, the no-fill tile when it paints nothing. */
+const autoSwatchStyle = computed<Record<string, string>>(() =>
+  autoIsTransparent.value ? NO_FILL_STYLE : { backgroundColor: resolveAutoPreviewColor() })
+const collapsedSwatchStyle = computed<Record<string, string>>(() =>
+  isAuto.value && autoIsTransparent.value ? NO_FILL_STYLE : { backgroundColor: collapsedDisplayColor.value })
 
 watch(
   () => props.modelValue,
@@ -259,8 +297,11 @@ watch(
 )
 
 watch([colorMode, selectedTokenKey], () => {
+  // The auto choice stores nothing: the host paints its own default. (It used
+  // to store the auto preview colour — a `var(...)` string — which no host
+  // accepted as a colour.)
   const nextValue = colorMode.value === 'token'
-    ? (effectiveOutputMode.value === 'hex' ? currentColor.value : selectedTokenKey.value)
+    ? (effectiveOutputMode.value === 'hex' ? (selectedTokenKey.value === 'auto' ? '' : currentColor.value) : selectedTokenKey.value)
     : customColor.value
 
   if (nextValue !== props.modelValue) emit('update:modelValue', nextValue)
@@ -283,7 +324,9 @@ watch(customColor, (newValue) => {
       <div class="flex items-center gap-2">
         <div
           class="w-8 h-8 rounded border border-accented"
-          :style="{ backgroundColor: collapsedDisplayColor }"
+          :style="collapsedSwatchStyle"
+          data-au-color-swatch
+          :data-au-color-auto="isAuto ? 'true' : 'false'"
         />
         <div class="min-w-0">
           <div class="text-xs text-muted text-dimmed font-mono truncate">{{ collapsedDisplayLabel }}</div>
@@ -323,7 +366,11 @@ watch(customColor, (newValue) => {
               : 'border-accented text-muted hover:border-accented'"
             @click="selectedTokenKey = 'auto'"
           >
-            {{ effectiveAutoLabel }}
+            <span
+              class="inline-block w-3.5 h-3.5 rounded border border-accented mr-1.5 align-[-2px]"
+              :style="autoSwatchStyle"
+              aria-hidden="true"
+            />{{ effectiveAutoLabel }}
           </button>
           <button
             v-for="swatch in tokenSwatches"
