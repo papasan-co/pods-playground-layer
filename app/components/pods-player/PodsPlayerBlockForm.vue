@@ -5,6 +5,7 @@ import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
 import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
+import PodsPlayerOptionCards from './PodsPlayerOptionCards.vue'
 import PodsPlayerLinkPicker from './PodsPlayerLinkPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
@@ -435,6 +436,17 @@ watch(
   },
   { immediate: true, deep: true },
 )
+
+/** A select the pod asks to be drawn as option cards (`x-ui.presentation: cards`). */
+function isOptionCards(field: FormField): boolean {
+  return (field as any)?.['x-ui']?.presentation === 'cards'
+}
+
+/** The cards' items: the select's options with the pod's one-line descriptions (`x-ui.descriptions`). */
+function optionCardItems(field: FormField & { options?: Record<string, string> | string[] }) {
+  const descriptions = ((field as any)?.['x-ui']?.descriptions ?? {}) as Record<string, string>
+  return selectItems(field).map((item) => ({ ...item, description: descriptions[item.value] }))
+}
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
   const dynamicItems = dynamicSelectItems(field)
@@ -1010,6 +1022,13 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :placeholder="child.placeholder as string"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
+            <PodsPlayerOptionCards
+              v-else-if="child.type === 'select' && isOptionCards(child)"
+              :model-value="modelValue[child.name as string]"
+              :items="optionCardItems(child as any)"
+              :default-value="(child as any).default as string | undefined"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
             <USelect
               v-else-if="child.type === 'select'"
               class="w-full"
@@ -1185,6 +1204,14 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name] as string"
         :disabled="isReadOnly(field)"
         :placeholder="field.placeholder as string"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
+      <PodsPlayerOptionCards
+        v-else-if="field.type === 'select' && isOptionCards(field)"
+        :model-value="modelValue[field.name]"
+        :items="optionCardItems(field as any)"
+        :default-value="(field as any).default as string | undefined"
+        :disabled="isReadOnly(field)"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <USelect
