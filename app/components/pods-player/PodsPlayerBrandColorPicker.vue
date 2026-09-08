@@ -158,12 +158,43 @@ const selectedColorHex = computed(() => {
   return resolveInputToHex(customColor.value)
 })
 
+/** A swatch's contrast against the background it would sit on, when both are known. */
+function swatchContrast(tokenKey: string): number | null {
+  if (!contrastBackgroundHex.value) return null
+  const candidate = resolveInputToHex(tokenKey)
+  return candidate ? contrastRatio(contrastBackgroundHex.value, candidate) : null
+}
+
 function tokenPassesContrast(tokenKey: string): boolean {
   if (!props.enforceAaForText) return true
-  if (!contrastBackgroundHex.value) return true
-  const candidate = resolveInputToHex(tokenKey)
-  if (!candidate) return true
-  return contrastRatio(contrastBackgroundHex.value, candidate) >= effectiveMinRatio.value
+  const ratio = swatchContrast(tokenKey)
+  if (ratio === null) return true
+  return ratio >= effectiveMinRatio.value
+}
+
+/** Blocked: the policy disables swatches that fail contrast rather than warning about them. */
+function isBlocked(tokenKey: string): boolean {
+  return effectivePolicy.value === 'disableTokens' && !tokenPassesContrast(tokenKey)
+}
+
+/**
+ * Why a swatch is greyed, or what it measures: a blocked swatch names its
+ * contrast and the threshold it misses, so a person knows it is the colour
+ * and not the control that is at fault.
+ */
+function swatchTooltip(tokenKey: string): string {
+  const label = swatchLabel(tokenKey)
+  const ratio = swatchContrast(tokenKey)
+  if (isBlocked(tokenKey) && ratio !== null) {
+    return `${label}: ${ratio.toFixed(1)}:1 against the background — text needs at least ${effectiveMinRatio.value}:1 to stay readable, so it cannot be chosen here.`
+  }
+  if (ratio !== null && props.enforceAaForText) return `${label} — ${ratio.toFixed(1)}:1 against the background`
+  return label
+}
+
+function chooseSwatch(tokenKey: string) {
+  if (isBlocked(tokenKey)) return
+  selectedTokenKey.value = tokenKey
 }
 
 const currentColor = computed(() => {
@@ -374,26 +405,36 @@ watch(customColor, (newValue) => {
               aria-hidden="true"
             />{{ effectiveAutoLabel }}
           </button>
-          <button
+          <!--
+            A blocked swatch stays hoverable and focusable (aria-disabled, not
+            disabled) so its tooltip can say why it is greyed; clicking it does
+            nothing.
+          -->
+          <UTooltip
             v-for="swatch in tokenSwatches"
             :key="swatch.key"
-            type="button"
-            class="flex flex-col items-center gap-1 group"
-            :aria-label="swatch.label"
-            :title="swatchLabel(swatch.key)"
-            :disabled="effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)"
-            @click="selectedTokenKey = swatch.key"
+            :text="swatchTooltip(swatch.key)"
+            :delay-duration="0"
           >
-            <div
-              class="w-8 h-8 rounded border transition-all"
-              :class="{
-                'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
-                'border-accented hover:border-accented': selectedTokenKey !== swatch.key,
-                'opacity-40 cursor-not-allowed': effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)
-              }"
-              :style="{ backgroundColor: swatch.color }"
-            />
-          </button>
+            <button
+              type="button"
+              class="flex flex-col items-center gap-1 group"
+              :aria-label="swatch.label"
+              :aria-disabled="isBlocked(swatch.key) ? 'true' : 'false'"
+              :data-au-swatch-blocked="isBlocked(swatch.key) ? 'true' : undefined"
+              @click="chooseSwatch(swatch.key)"
+            >
+              <div
+                class="w-8 h-8 rounded border transition-all"
+                :class="{
+                  'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
+                  'border-accented hover:border-accented': selectedTokenKey !== swatch.key,
+                  'opacity-40 cursor-not-allowed': isBlocked(swatch.key)
+                }"
+                :style="{ backgroundColor: swatch.color }"
+              />
+            </button>
+          </UTooltip>
         </div>
         <p v-if="tokenSwatches.length === 0" class="text-xs text-muted">
           No brand colors available.
