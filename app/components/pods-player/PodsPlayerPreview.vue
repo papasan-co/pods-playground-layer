@@ -95,6 +95,7 @@ const runtimeLoadRequests = createLatestRequestController()
 const previewModeRequests = createLatestRequestController()
 
 const Comp = shallowRef<any>(null)
+const renderedSfcStylesheetSource = ref<string | null>(null)
 const renderedPreviewProps = shallowRef<Record<string, unknown>>({})
 const renderedSfcArtifactId = ref<string | null>(null)
 const renderedSfcPodSlug = ref<string | null>(null)
@@ -865,6 +866,14 @@ function shouldSettleLayerSequencesForSourcePreview(sourcePreviewId: string | nu
   return isActiveHmrSourcePreview(sourcePreviewId)
 }
 
+function sfcStylesheetSource(component: unknown): string | null {
+  if (!component || typeof component !== 'object') return null
+
+  const source = (component as Record<string, unknown>).__file
+
+  return typeof source === 'string' && source.trim() ? source : null
+}
+
 async function settleLayerSequencesForSourcePreview(
   sourcePreviewId: string | null,
   source: string,
@@ -896,6 +905,7 @@ async function stageSfcComponentSwap(
     visibleTextSample: visibleTextCandidates(nextPreviewProps).slice(0, 16),
   })
   Comp.value = nextComp
+  renderedSfcStylesheetSource.value = sfcStylesheetSource(nextComp)
   renderedMode.value = 'sfc'
   renderedSfcArtifactId.value = sourcePreviewId
   renderedSfcPodSlug.value = props.pod?.slug || null
@@ -1084,6 +1094,7 @@ watch(
 
     if (!slug || !props.pod) {
       Comp.value = null
+      renderedSfcStylesheetSource.value = null
       renderedSfcArtifactId.value = null
       renderedSfcPodSlug.value = null
       settledLayerSequenceSourcePreviewId.value = null
@@ -1191,6 +1202,7 @@ watch(
           if (!selection.isCurrent()) return
           commitRenderedPreviewProps(props.previewProps || {})
           Comp.value = null
+          renderedSfcStylesheetSource.value = null
           renderedSfcArtifactId.value = null
           renderedSfcPodSlug.value = null
           renderedMode.value = 'vue'
@@ -1248,6 +1260,7 @@ watch(
         if (!selection.isCurrent()) return
         commitRenderedPreviewProps(props.previewProps || {})
         Comp.value = null
+        renderedSfcStylesheetSource.value = null
         renderedSfcArtifactId.value = null
         renderedSfcPodSlug.value = null
         renderedMode.value = 'vue'
@@ -1507,11 +1520,14 @@ watch(
       :device="viewport"
       :module-scripts="deviceModuleScripts"
       :extra-stylesheets="deviceExtraStylesheets"
-      :runtime-owner="effectiveMode === 'vue' ? vueRuntimeArtifactKey : null"
+      :runtime-owner="effectiveMode === 'vue'
+        ? vueRuntimeArtifactKey
+        : vueRuntimeArtifactKey || renderedCanvasArtifactId"
       :ready="effectiveMode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
       :root-classes="RUNTIME_ROOT_CLASSES"
       :canvas-artifact-id="renderedCanvasArtifactId"
+      :sfc-stylesheet-source="effectiveMode === 'sfc' ? renderedSfcStylesheetSource : null"
       :debug-fill="debugFill"
       :settle-layer-sequences="settleLayerSequencesForPreview"
       :settle-layer-sequences-revision="layerSequenceSettleRevision"
