@@ -1095,6 +1095,10 @@ watch(
       props.contentReady,
       activeSourcePreviewRevision.value,
       props.viewport,
+      // A server-owned document profile can arrive after the static runtime.
+      // Rebuild the render transaction so its signed viewport matches the
+      // reactively resized iframe before any new readiness acknowledgement.
+      props.documentFlowPresentation?.profileHash ?? null,
       // Content fingerprint, NOT the object: hosts mint a fresh previewProps
       // identity on unrelated re-renders (progress polls, status writes), and
       // an identity-keyed source re-ran this whole pipeline per render. Each
