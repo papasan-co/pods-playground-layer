@@ -8,6 +8,10 @@ import type {
 } from '#pods-player/types'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import {
+  injectPodsPlayerSourcePreviewActivation,
+  sourcePreviewIdForSubject,
+} from '#pods-player/sourcePreviewActivation'
+import {
   PodRuntimeFailure,
   PodRenderIdentityFailure,
   captureLegacyRuntime,
@@ -74,19 +78,7 @@ const emit = defineEmits<{
 
 const runtime = usePodsPlayerRuntime()
 const route = useRoute()
-const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
-const activeSourcePreviewPodSlug = useState<string>(
-  'pod-studio.activeSourcePreviewPodSlug',
-  () => '',
-)
-const activeSourcePreviewDraftPackId = useState<string>(
-  'pod-studio.activeSourcePreviewDraftPackId',
-  () => '',
-)
-const activeSourcePreviewRevision = useState<number>(
-  'pod-studio.activeSourcePreviewRevision',
-  () => 0,
-)
+const sourcePreviewActivation = injectPodsPlayerSourcePreviewActivation()
 const brandPreviewRevision = useState('pod-studio.brand.previewRevision', () => 0)
 const config = useRuntimeConfig()
 
@@ -250,13 +242,12 @@ function handleCanvasClick(event: MouseEvent): void {
 }
 
 function currentSourcePreviewId(): string | null {
-  if (
-    activeSourcePreviewId.value &&
-    activeSourcePreviewPodSlug.value === props.pod?.slug &&
-    activeSourcePreviewDraftPackId.value === currentDraftPackId()
-  ) {
-    return activeSourcePreviewId.value
-  }
+  const activeId = sourcePreviewIdForSubject(
+    sourcePreviewActivation,
+    props.pod?.slug,
+    currentDraftPackId(),
+  )
+  if (activeId) return activeId
 
   if (typeof route.query.sourcePreview === 'string' && route.query.sourcePreview) {
     return route.query.sourcePreview
@@ -482,9 +473,9 @@ function sourcePreviewExpectedTexts(sourcePreviewId: string | null, previousText
 
 function isActiveHmrSourcePreview(sourcePreviewId: string | null): boolean {
   if (!sourcePreviewId) return false
-  if (activeSourcePreviewId.value !== sourcePreviewId) return false
-  if (activeSourcePreviewPodSlug.value !== props.pod?.slug) return false
-  if (activeSourcePreviewDraftPackId.value !== currentDraftPackId()) return false
+  if (sourcePreviewActivation?.id.value !== sourcePreviewId) return false
+  if (sourcePreviewActivation.podSlug.value !== props.pod?.slug) return false
+  if (sourcePreviewActivation.draftPackId.value !== currentDraftPackId()) return false
 
   return true
 }
@@ -979,7 +970,7 @@ async function loadVueRuntimePreview(
     throw new Error('Vue runtime mode is not supported by this host.')
   }
   const request = runtimeLoadRequests.begin(
-    `${props.pod?.slug || ''}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
+    `${props.pod?.slug || ''}:${currentCanvasArtifactId() || ''}:${sourcePreviewActivation?.revision.value ?? 0}`,
   )
   const provisionalSessionKey = `${request.key}:${request.generation}`
   previewState.value = {
@@ -1093,7 +1084,7 @@ watch(
       currentCanvasArtifactId(),
       props.contentSourcePreviewId,
       props.contentReady,
-      activeSourcePreviewRevision.value,
+      sourcePreviewActivation?.revision.value ?? 0,
       props.viewport,
       // A server-owned document profile can arrive after the static runtime.
       // Rebuild the render transaction so its signed viewport matches the
@@ -1111,7 +1102,7 @@ watch(
   async ([slug, mode]) => {
     const selectionAcceptedAt = import.meta.client ? performance.now() : 0
     const selection = previewModeRequests.begin(
-      `${slug || ''}:${mode}:${currentCanvasArtifactId() || ''}:${activeSourcePreviewRevision.value}`,
+      `${slug || ''}:${mode}:${currentCanvasArtifactId() || ''}:${sourcePreviewActivation?.revision.value ?? 0}`,
     )
     renderIdentityCommits.begin(selection.generation)
     resetRenderFailureLatch()
@@ -1140,20 +1131,20 @@ watch(
     loading.value = true
     try {
       const requestedSourcePreviewId = currentCanvasArtifactId()
-      if (requestedSourcePreviewId || activeSourcePreviewId.value) {
+      if (requestedSourcePreviewId || sourcePreviewActivation?.id.value) {
         const timingKey = [
           slug,
           requestedSourcePreviewId || 'none',
           mode,
           props.mode,
-          activeSourcePreviewRevision.value,
+          sourcePreviewActivation?.revision.value ?? 0,
           props.contentSourcePreviewId || 'none',
           props.contentReady === false ? 'not-ready' : 'ready',
         ].join(':')
         if (!resolvedRenderModeTimingKeys.has(timingKey)) {
           resolvedRenderModeTimingKeys.add(timingKey)
           recordPreviewTiming(
-            requestedSourcePreviewId || activeSourcePreviewId.value || null,
+            requestedSourcePreviewId || sourcePreviewActivation?.id.value || null,
             'hmr_preview_render_mode_resolved',
             {
               podSlug: slug,
@@ -1161,11 +1152,12 @@ watch(
               requestedMode: mode,
               renderedMode: renderedMode.value,
               requestedSourcePreviewId,
-              activeSourcePreviewId: activeSourcePreviewId.value || null,
-              activeSourcePreviewPodSlug: activeSourcePreviewPodSlug.value || null,
-              activeSourcePreviewDraftPackId: activeSourcePreviewDraftPackId.value || null,
+              activeSourcePreviewId: sourcePreviewActivation?.id.value || null,
+              activeSourcePreviewPodSlug: sourcePreviewActivation?.podSlug.value || null,
+              activeSourcePreviewDraftPackId:
+                sourcePreviewActivation?.draftPackId.value || null,
               currentDraftPackId: currentDraftPackId() || null,
-              activeSourcePreviewRevision: activeSourcePreviewRevision.value,
+              activeSourcePreviewRevision: sourcePreviewActivation?.revision.value ?? 0,
               contentSourcePreviewId: props.contentSourcePreviewId || null,
               contentReady: props.contentReady !== false,
               isActiveHmrSourcePreview: isActiveHmrSourcePreview(requestedSourcePreviewId),

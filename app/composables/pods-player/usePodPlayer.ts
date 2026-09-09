@@ -20,6 +20,10 @@ import {
 import { schemaToFields } from '#pods-player/schemaToFields'
 import { usePodsPlayerRuntime } from '#pods-player-runtime'
 import {
+  injectPodsPlayerSourcePreviewActivation,
+  sourcePreviewIdForSubject,
+} from '#pods-player/sourcePreviewActivation'
+import {
   createLatestRequestController,
   createPodRuntimeSessionController,
 } from '../../pods-player/runtime/isolation'
@@ -47,19 +51,7 @@ export function usePodPlayer(
   const route = useRoute()
   const podRequests = createLatestRequestController()
   const runtimeSessions = createPodRuntimeSessionController()
-  const activeSourcePreviewId = useState<string>('pod-studio.activeSourcePreviewId', () => '')
-  const activeSourcePreviewPodSlug = useState<string>(
-    'pod-studio.activeSourcePreviewPodSlug',
-    () => '',
-  )
-  const activeSourcePreviewDraftPackId = useState<string>(
-    'pod-studio.activeSourcePreviewDraftPackId',
-    () => '',
-  )
-  const activeSourcePreviewRevision = useState<number>(
-    'pod-studio.activeSourcePreviewRevision',
-    () => 0,
-  )
+  const sourcePreviewActivation = injectPodsPlayerSourcePreviewActivation()
 
   function requestedModeFromRoute(): PodsPlayerMode | null {
     const requested = route.query.mode
@@ -70,13 +62,12 @@ export function usePodPlayer(
   }
 
   function requestedSourcePreviewFromRoute(): string {
-    if (
-      activeSourcePreviewId.value &&
-      activeSourcePreviewPodSlug.value === toValue(slug) &&
-      activeSourcePreviewDraftPackId.value === requestedDraftPackFromRoute()
-    ) {
-      return activeSourcePreviewId.value
-    }
+    const activeId = sourcePreviewIdForSubject(
+      sourcePreviewActivation,
+      toValue(slug),
+      requestedDraftPackFromRoute(),
+    )
+    if (activeId) return activeId
 
     if (typeof route.query.sourcePreview === 'string') return route.query.sourcePreview
     if (typeof route.query.sourcePreviewId === 'string') return route.query.sourcePreviewId
@@ -348,7 +339,7 @@ export function usePodPlayer(
         sourcePreviewId,
         requestedDraftPackFromRoute(),
         typeof route.query.draftArtifact === 'string' ? route.query.draftArtifact : '',
-        String(activeSourcePreviewRevision.value),
+        String(sourcePreviewActivation?.revision.value ?? 0),
       ].join(':'),
     )
     const draftPackId = requestedDraftPackFromRoute()
@@ -472,7 +463,7 @@ export function usePodPlayer(
         requestedSourcePreviewFromRoute(),
         route.query.draftPack,
         route.query.draftArtifact,
-        activeSourcePreviewRevision.value,
+        sourcePreviewActivation?.revision.value ?? 0,
         route.query.fixtureVariant,
       ] as const,
     async () => {
