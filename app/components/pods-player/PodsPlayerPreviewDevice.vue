@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { createApp, h } from 'vue'
 import type { PodsPlayerViewport } from '#pods-player/types'
+import { copyPreviewHostRuntime } from '#pods-player/runtime/previewHostRuntime'
 import {
   createPreviewStylesheetPlan,
   hasRuntimeAssetScripts,
@@ -237,12 +238,7 @@ function syncRuntime(fromWin: Window, toWin: Window) {
   try {
     const rt = (fromWin as any).__AUTUMN_RUNTIME__
     if (!rt || typeof rt !== 'object') return
-    // Copy-by-value so the iframe can't accidentally mutate the parent runtime config.
-    const cloned =
-      typeof (fromWin as any).structuredClone === 'function'
-        ? (fromWin as any).structuredClone(rt)
-        : JSON.parse(JSON.stringify(rt))
-    ;(toWin as any).__AUTUMN_RUNTIME__ = cloned
+    ;(toWin as any).__AUTUMN_RUNTIME__ = copyPreviewHostRuntime(rt)
   } catch {
     // ignore
   }
