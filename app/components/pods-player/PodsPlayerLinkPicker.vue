@@ -67,8 +67,14 @@ const flat = computed(() => groups.value.flatMap(g => g.items))
 const target = computed<LinkTarget | undefined>(() => {
   const v = props.modelValue
   if (!v || v.kind === 'url') return undefined
-  const id = v.kind === 'page' ? v.page : v.kind === 'entry' ? v.entry : v.form
-  return targets.value.find(t => t.id === id)
+  if (v.kind === 'form') {
+    // A form by the zone that draws it, or by its own id.
+    return v.zone
+      ? targets.value.find(t => t.kind === 'form' && t.zone === v.zone)
+      : targets.value.find(t => t.kind === 'form' && !t.zone && t.id === v.form)
+  }
+  const id = v.kind === 'page' ? v.page : v.entry
+  return targets.value.find(t => t.kind === v.kind && t.id === id)
 })
 
 const isBroken = computed(() =>
@@ -84,7 +90,9 @@ const display = computed(() => {
   const t = target.value!
   return {
     title: t.title,
-    detail: t.kind === 'form' ? 'Opens in place' : (t.path ?? ''),
+    detail: t.kind === 'form'
+      ? (v.kind === 'form' && v.presentation === 'modal' ? 'Opens as a dialog' : 'Opens in place')
+      : (t.path ?? ''),
     glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : 'F',
   }
 })
@@ -97,7 +105,15 @@ function choose(t: LinkTarget) {
   replacing.value = false
   if (t.kind === 'page') emit('update:modelValue', { kind: 'page', page: t.id })
   else if (t.kind === 'entry') emit('update:modelValue', { kind: 'entry', collection: t.collection ?? '', entry: t.id })
+  else if (t.zone) emit('update:modelValue', { kind: 'form', zone: t.zone })
   else emit('update:modelValue', { kind: 'form', form: t.id })
+}
+/** A form opens in place, or as a dialog over the page. */
+function setModal(on: boolean) {
+  const v = props.modelValue
+  if (!v || v.kind !== 'form' || props.readOnly) return
+  const { presentation: _previous, ...rest } = v
+  emit('update:modelValue', on ? { ...rest, presentation: 'modal' } : rest)
 }
 
 function chooseUrl() {
@@ -287,7 +303,7 @@ function indexOf(item: LinkTarget): number {
             <span class="flex min-w-0 flex-1 flex-col">
               <span class="truncate text-xs font-medium text-default">{{ item.title }}</span>
               <span class="truncate font-mono text-[10px] text-muted text-dimmed">
-                {{ item.kind === 'form' ? 'Opens in place' : item.path }}
+                {{ item.detail ?? (item.kind === 'form' ? 'Opens in place' : item.path) }}
               </span>
             </span>
             <span
@@ -316,6 +332,21 @@ function indexOf(item: LinkTarget): number {
     >
       What this pointed at no longer exists. Choose a new destination, or this link will not render.
     </p>
+
+    <!-- a form: in place, or as a dialog over the page -->
+    <label
+      v-if="modelValue?.kind === 'form' && !isBroken && !replacing"
+      class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
+      data-testid="link-form-modal"
+    >
+      <input
+        type="checkbox"
+        :checked="modelValue.presentation === 'modal'"
+        :disabled="readOnly"
+        @change="setModal(($event.target as HTMLInputElement).checked)"
+      >
+      Open as a dialog instead of scrolling to it
+    </label>
 
     <!-- jumping to a section on the chosen page -->
     <template v-if="modelValue?.kind === 'page' && !isBroken && !replacing">

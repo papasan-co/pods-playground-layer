@@ -30,6 +30,14 @@ export type LinkTarget = {
   collection?: string
   /** Page only: the bands on it a link can jump to. */
   sections?: LinkSection[]
+  /**
+   * Form only: the chrome zone of the band being edited that draws this form
+   * ("this footer's contact form"). A link to a zone follows whatever form the
+   * zone binds; a link to a form by id follows that form wherever it is drawn.
+   */
+  zone?: string
+  /** A line under the title in the list and the chosen card (a form's field count, say). */
+  detail?: string
 }
 
 /**
@@ -41,5 +49,10 @@ export type LinkTarget = {
 export type LinkValue =
   | { kind: 'page', page: string, section?: string }
   | { kind: 'entry', collection: string, entry: string }
-  | { kind: 'form', form: string }
+  /**
+   * A form: by id, or by the zone of the band that draws it. `presentation`
+   * says whether the visitor reaches it in place (the page scrolls to it) or
+   * in a dialog. Absent means in place.
+   */
+  | { kind: 'form', form?: string, zone?: string, presentation?: 'inline' | 'modal' }
   | { kind: 'url', url: string, newTab?: boolean }
