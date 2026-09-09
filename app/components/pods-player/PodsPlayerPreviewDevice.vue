@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { createApp, h } from 'vue'
-import type { PodsPlayerViewport } from '#pods-player/types'
+import type { PodsPlayerViewport, PodsPlayerViewportSize } from '#pods-player/types'
 import {
   createPreviewStylesheetPlan,
   hasRuntimeAssetScripts,
@@ -22,6 +22,7 @@ import {
 
 const props = defineProps<{
   device: PodsPlayerViewport
+  viewportSize?: PodsPlayerViewportSize
   /**
    * Scripts to inject into the iframe.
    * The component dedupes by URL and awaits load before emitting `scriptsLoaded`.
@@ -100,7 +101,7 @@ const emit = defineEmits<{
 
 const frameSize = computed(
   () =>
-    ({
+    props.viewportSize ?? ({
       laptop: { width: 1662, height: 1066 },
       tablet: { width: 900, height: 1200 },
       phone: { width: 440, height: 860 },

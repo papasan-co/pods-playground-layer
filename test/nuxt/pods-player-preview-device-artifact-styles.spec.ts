@@ -14,6 +14,74 @@ async function iframeDocument(wrapper: ReturnType<typeof mount>): Promise<Docume
 }
 
 describe('PodsPlayerPreviewDevice artifact stylesheet ownership', () => {
+  it('uses an explicit Website viewport and enables natural iframe document flow', async () => {
+    const wrapper = mount(PodsPlayerPreviewDevice, {
+      attachTo: document.body,
+      props: {
+        device: 'phone',
+        viewportSize: { width: 390, height: 844 },
+        scrollable: true,
+        ready: true,
+      },
+      slots: { default: () => h('main', { style: 'height: 1600px' }, 'Website') },
+    })
+    const doc = await iframeDocument(wrapper)
+
+    expect(wrapper.get('.preview-device').attributes('style')).toContain('width: 390px')
+    expect(wrapper.get('.preview-device').attributes('style')).toContain('height: 844px')
+    expect(doc.documentElement.style.overflow).not.toBe('hidden')
+    expect(doc.body.style.overflow).not.toBe('hidden')
+
+    wrapper.unmount()
+  })
+
+  it('retains the generic Story frame and fixed overflow when no presentation is supplied', async () => {
+    const wrapper = mount(PodsPlayerPreviewDevice, {
+      attachTo: document.body,
+      props: { device: 'phone', ready: true },
+    })
+    const doc = await iframeDocument(wrapper)
+
+    expect(wrapper.get('.preview-device').attributes('style')).toContain('width: 440px')
+    expect(wrapper.get('.preview-device').attributes('style')).toContain('height: 860px')
+    await vi.waitFor(() => {
+      expect(doc.documentElement.style.overflow).toBe('hidden')
+      expect(doc.body.style.overflow).toBe('hidden')
+    })
+
+    wrapper.unmount()
+  })
+
+  it('applies a late Website profile without replacing the mounted preview document', async () => {
+    const Child = defineComponent({
+      setup: () => () => h('main', { 'data-testid': 'late-profile-child' }, 'Website'),
+    })
+    const wrapper = mount(PodsPlayerPreviewDevice, {
+      attachTo: document.body,
+      props: { device: 'laptop', ready: true },
+      slots: { default: () => h(Child) },
+    })
+    const originalDocument = await iframeDocument(wrapper)
+    await vi.waitFor(() => {
+      expect(originalDocument.querySelector('[data-testid="late-profile-child"]')).not.toBeNull()
+    })
+
+    await wrapper.setProps({
+      viewportSize: { width: 1440, height: 900 },
+      scrollable: true,
+    })
+
+    expect((wrapper.get('iframe').element as HTMLIFrameElement).contentDocument).toBe(originalDocument)
+    expect(wrapper.get('.preview-device').attributes('style')).toContain('width: 1440px')
+    expect(wrapper.get('.preview-device').attributes('style')).toContain('height: 900px')
+    await vi.waitFor(() => {
+      expect(originalDocument.documentElement.style.overflow).not.toBe('hidden')
+      expect(originalDocument.querySelector('[data-testid="late-profile-child"]')).not.toBeNull()
+    })
+
+    wrapper.unmount()
+  })
+
   it('installs exact artifact CSS before mounting iframe slot children', async () => {
     const source = '/workspace/cms-story-pods/.tmp/source-previews/initial/components/Pod.vue'
     const style = document.createElement('style')

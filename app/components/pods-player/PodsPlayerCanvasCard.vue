@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { PodsPlayerViewport } from '#pods-player/types'
+import type { PodsPlayerViewport, PodsPlayerViewportSize } from '#pods-player/types'
 
 const props = defineProps<{
   artifactReady?: boolean
   viewport?: PodsPlayerViewport
+  viewportSize?: PodsPlayerViewportSize
 }>()
 
 const hostRef = ref<HTMLDivElement | null>(null)
@@ -11,7 +12,7 @@ const hostSize = ref({ width: 0, height: 0 })
 
 let resizeObserver: ResizeObserver | null = null
 
-const frameSize = computed(() => ({
+const frameSize = computed(() => props.viewportSize ?? ({
   laptop: { width: 1662, height: 1066 },
   tablet: { width: 900, height: 1200 },
   phone: { width: 440, height: 860 },

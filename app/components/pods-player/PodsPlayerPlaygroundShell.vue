@@ -7,7 +7,11 @@
 
 import { usePodPlayer } from "../../composables/pods-player/usePodPlayer";
 import { usePlaygroundLayout } from "../../composables/pods-player/usePlaygroundLayout";
-import type { PodsPlayerCanvasTarget, PodListItem } from "#pods-player/types";
+import type {
+  PodsPlayerCanvasTarget,
+  PodsPlayerDocumentFlowPresentation,
+  PodListItem,
+} from "#pods-player/types";
 import PodsPlayerWorkspaceRail from "./PodsPlayerWorkspaceRail.vue";
 import PodsPlayerPodList from "./PodsPlayerPodList.vue";
 import PodsPlayerCanvasToolbar from "./PodsPlayerCanvasToolbar.vue";
@@ -46,6 +50,8 @@ const props = defineProps<{
   fieldPanelActiveTab?: FieldPanelTab | null;
   /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
   fieldNotes?: Array<{ fieldPath: string; message: string }>;
+  /** Server-authenticated document-flow presentation for the active imported pack. */
+  documentFlowPresentation?: PodsPlayerDocumentFlowPresentation | null;
 }>();
 
 const emit = defineEmits<{
@@ -434,6 +440,7 @@ function targetDisplayValue(value: unknown): string {
       <PodsPlayerCanvasCard
         :artifact-ready="artifactReady !== false"
         :viewport="viewport"
+        :viewport-size="documentFlowPresentation?.viewports[viewport]"
       >
         <div
           v-if="loading && !pod"
@@ -450,7 +457,7 @@ function targetDisplayValue(value: unknown): string {
           Pod not found
         </div>
         <PodsPlayerStoryPreview
-          v-else-if="scrollMode"
+          v-else-if="scrollMode && !documentFlowPresentation"
           :pod="pod"
           :mode="mode"
           :viewport="viewport"
@@ -470,6 +477,7 @@ function targetDisplayValue(value: unknown): string {
           :selected-target-key="selectedCanvasTargetKey"
           :content-ready="!loading"
           :content-source-preview-id="loadedSourcePreviewId"
+          :document-flow-presentation="documentFlowPresentation"
           @select-target="emit('selectCanvasTarget', $event)"
           @ready="emit('previewReady', $event)"
         />

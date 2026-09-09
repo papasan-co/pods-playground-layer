@@ -2,6 +2,7 @@
 import type {
   PodDetails,
   PodsPlayerCanvasTarget,
+  PodsPlayerDocumentFlowPresentation,
   PodsPlayerMode,
   PodsPlayerViewport,
 } from '#pods-player/types'
@@ -34,6 +35,10 @@ import {
 } from '#pods-player/runtime/isolation'
 import { createHostResolvedStyleProjection } from '#pods-player/runtime/styleOwnership'
 import {
+  replayAcknowledgedRuntimeMount,
+  unmountReplacedRuntimeOwner,
+} from '#pods-player/runtime/acknowledgedRuntimeMount'
+import {
   findPodSwitchTimingMark,
   recordPodSwitchTimingMark,
   type PodSwitchTimingIdentity,
@@ -59,6 +64,7 @@ const props = defineProps<{
   selectedTargetKey?: string | null
   contentReady?: boolean
   contentSourcePreviewId?: string | null
+  documentFlowPresentation?: PodsPlayerDocumentFlowPresentation | null
 }>()
 
 const emit = defineEmits<{
@@ -182,11 +188,14 @@ const requestedEffectiveMode = computed(() => {
   return shouldUseHmrSfc ? 'sfc' : props.mode
 })
 const effectiveMode = computed(() => renderedMode.value || requestedEffectiveMode.value)
-const previewFrameKey = computed(() =>
-  effectiveMode.value === 'vue'
+const previewFrameKey = computed(() => {
+  const runtimeKey = effectiveMode.value === 'vue'
     ? `artifact:${vueRuntimeBoundaryKey.value || 'resolving'}`
-    : `source:${currentDraftPackId()}:${currentCanvasArtifactId() || 'local'}`,
-)
+    : `source:${currentDraftPackId()}:${currentCanvasArtifactId() || 'local'}`
+  return props.documentFlowPresentation
+    ? `${props.documentFlowPresentation.profileHash}:${runtimeKey}`
+    : runtimeKey
+})
 const renderedCanvasArtifactId = computed(() =>
   effectiveMode.value === 'sfc' ? renderedSfcArtifactId.value : currentCanvasArtifactId(),
 )
@@ -293,6 +302,13 @@ function configuredIdentityEnforcement(): RuntimeLayerIdentityEnforcement {
 }
 
 function renderViewport() {
+  const configured = props.documentFlowPresentation?.viewports[props.viewport]
+  if (configured) {
+    return {
+      name: props.viewport === 'phone' ? 'mobile' : props.viewport === 'laptop' ? 'desktop' : 'tablet',
+      ...configured,
+    }
+  }
   if (props.viewport === 'tablet') return { name: 'tablet', width: 900, height: 1200 }
   if (props.viewport === 'phone') return { name: 'mobile', width: 440, height: 860 }
   return { name: 'desktop', width: 1662, height: 1066 }
@@ -706,8 +722,13 @@ async function renderVueRuntimeIntoIframe() {
     return
   }
 
-  if (vueMountOwner && (vueMountOwner.api !== api || vueMountOwner.win !== win)) {
-    vueMountOwner.api.unmount?.({ mountSelector: '[data-pods-vue-mount="1"]' })
+  if (vueMountOwner && unmountReplacedRuntimeOwner({
+    ownerApi: vueMountOwner.api,
+    ownerWindow: vueMountOwner.win,
+    currentApi: api,
+    currentWindow: win,
+    mountSelector: '[data-pods-vue-mount="1"]',
+  })) {
     vueMountOwner = null
   }
 
@@ -1397,14 +1418,32 @@ const deviceExtraStylesheets = computed(() =>
 )
 
 function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
-  if (effectiveMode.value !== 'vue') return
-  if (runtimeAssetLoadKey(payload) !== vueRuntimeLoadKey.value) return
-  if (!vueRenderIdentity.value || !renderIdentityCommits.isCurrent(vueRenderIdentity.value)) return
+  const payloadIsCurrent = runtimeAssetLoadKey(payload) === vueRuntimeLoadKey.value
+  const renderIdentityIsCurrent = Boolean(
+    vueRenderIdentity.value && renderIdentityCommits.isCurrent(vueRenderIdentity.value),
+  )
+  if (effectiveMode.value !== 'vue' || !payloadIsCurrent || !renderIdentityIsCurrent) return
   // A re-boot of an already-acknowledged asset load must not restart the
   // mount pipeline: rewriting previewState to 'mounting' re-renders the
   // host, which can re-trigger the device boot effect and self-sustain
   // (live: pod switches wedged the tab in a boot/emit/mount storm).
-  if (vueReady.value && vueRuntimeLoadKey.value && lastAckedRuntimeLoadKey === vueRuntimeLoadKey.value) {
+  if (replayAcknowledgedRuntimeMount({
+    ready: vueReady.value,
+    currentLoadKey: vueRuntimeLoadKey.value,
+    acknowledgedLoadKey: lastAckedRuntimeLoadKey,
+    payloadIsCurrent,
+    renderIdentityIsCurrent,
+    mount: previewDeviceRef.value
+      ?.iframeElement()
+      ?.contentDocument?.querySelector('[data-pods-vue-mount="1"]') ?? null,
+    replay: () => {
+      // A presentation-profile arrival can replace the iframe without
+      // changing the already-acknowledged runtime asset identity. The new
+      // document has loaded the same scripts but has never received the pod;
+      // replay the existing identity-gated render without cycling readiness.
+      void renderVueRuntimeIntoIframe().catch(failPreview)
+    },
+  })) {
     return
   }
   if (renderFailureLatched) return
@@ -1518,6 +1557,8 @@ watch(
       ref="previewDeviceRef"
       v-else
       :device="viewport"
+      :viewport-size="documentFlowPresentation?.viewports[viewport]"
+      :scrollable="documentFlowPresentation?.canvas === 'document_flow'"
       :module-scripts="deviceModuleScripts"
       :extra-stylesheets="deviceExtraStylesheets"
       :runtime-owner="effectiveMode === 'vue'
