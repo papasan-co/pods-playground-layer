@@ -18,6 +18,7 @@ export const RENDERABLE_FIELD_PRIMITIVE_TYPES = [
   "icon-source",
   "input",
   "input-number",
+  "link",
   "medias",
   "multiselect",
   "number",

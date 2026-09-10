@@ -113,7 +113,7 @@ function handleTabChange(value: string | number) {
 <template>
   <div class="space-y-2">
     <div class="flex items-center justify-between">
-      <label class="text-sm font-medium text-gray-700 dark:text-gray-200">
+      <label class="text-sm font-medium text-toned text-default">
         {{ field.label }}
       </label>
       <UTabs
@@ -133,7 +133,7 @@ function handleTabChange(value: string | number) {
     <div>
       <div v-if="field.type === 'slider'" class="space-y-2">
         <div class="flex justify-end">
-          <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(currentValue) }}</span>
+          <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(currentValue) }}</span>
         </div>
         <USlider
           class="w-full"

@@ -100,7 +100,7 @@ function choose(option: PositionOption) {
         <span class="sr-only">{{ optionLabel(option) }}</span>
         <span
           class="relative block h-5 w-5 rounded-[4px] border"
-          :class="selectedKey === option.key ? 'border-white/45' : 'border-gray-300 dark:border-gray-600'"
+          :class="selectedKey === option.key ? 'border-white/45' : 'border-accented'"
         >
           <span
             class="absolute transition-all"
@@ -110,18 +110,18 @@ function choose(option: PositionOption) {
               v-if="markerMode === 'text'"
               :name="alignmentIcon(option)"
               class="block h-3 w-3"
-              :class="selectedKey === option.key ? 'text-white' : 'text-gray-500 dark:text-gray-300'"
+              :class="selectedKey === option.key ? 'text-white' : 'text-muted'"
             />
             <span
               v-else
               class="block h-2.5 w-2.5 rounded-[3px]"
-              :class="selectedKey === option.key ? 'bg-white' : 'bg-gray-500 dark:bg-gray-300'"
+              :class="selectedKey === option.key ? 'bg-white' : 'bg-accented'"
             />
           </span>
         </span>
       </UButton>
     </div>
-    <p class="text-[11px] leading-none text-gray-500 dark:text-gray-400">
+    <p class="text-[11px] leading-none text-muted text-dimmed">
       {{ selectedLabel }}
     </p>
   </div>

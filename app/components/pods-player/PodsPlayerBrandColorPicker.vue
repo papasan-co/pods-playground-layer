@@ -16,6 +16,13 @@ const props = defineProps<{
   allowAuto?: boolean
   allowCustom?: boolean
   autoLabel?: string
+  /**
+   * The colour the host actually paints when the value is unset — what the
+   * auto choice ("Pod default") means here — as any CSS colour, or
+   * `transparent`. Without it the auto swatch falls back to the pack's CTA
+   * accent, which is right for a button field and wrong for anything else.
+   */
+  autoColor?: string
   previewMode?: PreviewMode
   previewText?: string
 }>()
@@ -94,11 +101,29 @@ const tokenSwatches = computed(() => {
     .filter((swatch): swatch is { key: string; label: string; color: string } => Boolean(swatch.color))
 })
 
+/** `rgb(...)`/`rgba(...)` as a browser reports a computed colour → `#RRGGBB`; a fully transparent rgba is no colour. */
+function rgbToHex(value: string): string | null {
+  const match = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i)
+  if (!match) return null
+  if (match[4] !== undefined && Number(match[4]) === 0) return null
+  return `#${[match[1], match[2], match[3]].map((channel) => Number(channel).toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+}
+
+function isTransparentColor(value: string | undefined): boolean {
+  if (!value) return false
+  const trimmed = value.trim()
+  return trimmed === 'transparent' || /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(?:\.0+)?\s*\)$/i.test(trimmed)
+}
+
 function resolveInputToHex(input: string | undefined): string | null {
   if (!input) return null
   const value = String(input).trim()
   if (!value) return null
   if (isHexColor(value)) return value.toUpperCase()
+  // A computed colour is an rgb()/rgba() string or `transparent`: it is that colour or no colour — never a
+  // token name, so it must not fall through to the token lookup (whose unknown-token answer is black, and
+  // black as the contrast background would "adjust" a dark text preview to white).
+  if (/^rgba?\(/i.test(value) || value === 'transparent') return rgbToHex(value)
   const tokenHex = getGroupColor500(value)
   return isHexColor(tokenHex) ? tokenHex.toUpperCase() : null
 }
@@ -109,7 +134,16 @@ function swatchLabel(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1)
 }
 
+const autoIsTransparent = computed(() => isTransparentColor(props.autoColor))
+
+/** Drawn for an auto swatch whose host paints nothing: a white tile with a red stroke through it. */
+const NO_FILL_STYLE = {
+  backgroundColor: '#FFFFFF',
+  backgroundImage: 'linear-gradient(135deg, transparent 45%, #DC2626 45%, #DC2626 55%, transparent 55%)',
+}
+
 function resolveAutoPreviewColor(): string {
+  if (props.autoColor) return autoIsTransparent.value ? 'transparent' : props.autoColor
   return effectivePreviewMode.value === 'cta-secondary'
     ? 'var(--pods-cta-btn-secondary-text,var(--pods-v2-accent,#4F46E5))'
     : 'var(--pods-cta-btn-primary-bg,var(--pods-v2-accent,#4F46E5))'
@@ -124,12 +158,43 @@ const selectedColorHex = computed(() => {
   return resolveInputToHex(customColor.value)
 })
 
+/** A swatch's contrast against the background it would sit on, when both are known. */
+function swatchContrast(tokenKey: string): number | null {
+  if (!contrastBackgroundHex.value) return null
+  const candidate = resolveInputToHex(tokenKey)
+  return candidate ? contrastRatio(contrastBackgroundHex.value, candidate) : null
+}
+
 function tokenPassesContrast(tokenKey: string): boolean {
   if (!props.enforceAaForText) return true
-  if (!contrastBackgroundHex.value) return true
-  const candidate = resolveInputToHex(tokenKey)
-  if (!candidate) return true
-  return contrastRatio(contrastBackgroundHex.value, candidate) >= effectiveMinRatio.value
+  const ratio = swatchContrast(tokenKey)
+  if (ratio === null) return true
+  return ratio >= effectiveMinRatio.value
+}
+
+/** Blocked: the policy disables swatches that fail contrast rather than warning about them. */
+function isBlocked(tokenKey: string): boolean {
+  return effectivePolicy.value === 'disableTokens' && !tokenPassesContrast(tokenKey)
+}
+
+/**
+ * Why a swatch is greyed, or what it measures: a blocked swatch names its
+ * contrast and the threshold it misses, so a person knows it is the colour
+ * and not the control that is at fault.
+ */
+function swatchTooltip(tokenKey: string): string {
+  const label = swatchLabel(tokenKey)
+  const ratio = swatchContrast(tokenKey)
+  if (isBlocked(tokenKey) && ratio !== null) {
+    return `${label}: ${ratio.toFixed(1)}:1 against the background — text needs at least ${effectiveMinRatio.value}:1 to stay readable, so it cannot be chosen here.`
+  }
+  if (ratio !== null && props.enforceAaForText) return `${label} — ${ratio.toFixed(1)}:1 against the background`
+  return label
+}
+
+function chooseSwatch(tokenKey: string) {
+  if (isBlocked(tokenKey)) return
+  selectedTokenKey.value = tokenKey
 }
 
 const currentColor = computed(() => {
@@ -201,11 +266,17 @@ const isPreviewAdjusted = computed(() => {
 })
 
 const collapsedDisplayColor = computed(() => effectivePreviewMode.value === 'swatch' ? effectivePreviewColor.value : currentColor.value)
+const isAuto = computed(() => colorMode.value === 'token' && selectedTokenKey.value === 'auto')
 const collapsedDisplayLabel = computed(() =>
-  colorMode.value === 'token' && selectedTokenKey.value === 'auto'
-    ? effectiveAutoLabel.value
+  isAuto.value
+    ? (autoIsTransparent.value ? `${effectiveAutoLabel.value} · transparent` : effectiveAutoLabel.value)
     : collapsedDisplayColor.value,
 )
+/** The auto tile: the host's colour, the no-fill tile when it paints nothing. */
+const autoSwatchStyle = computed<Record<string, string>>(() =>
+  autoIsTransparent.value ? NO_FILL_STYLE : { backgroundColor: resolveAutoPreviewColor() })
+const collapsedSwatchStyle = computed<Record<string, string>>(() =>
+  isAuto.value && autoIsTransparent.value ? NO_FILL_STYLE : { backgroundColor: collapsedDisplayColor.value })
 
 watch(
   () => props.modelValue,
@@ -259,8 +330,11 @@ watch(
 )
 
 watch([colorMode, selectedTokenKey], () => {
+  // The auto choice stores nothing: the host paints its own default. (It used
+  // to store the auto preview colour — a `var(...)` string — which no host
+  // accepted as a colour.)
   const nextValue = colorMode.value === 'token'
-    ? (effectiveOutputMode.value === 'hex' ? currentColor.value : selectedTokenKey.value)
+    ? (effectiveOutputMode.value === 'hex' ? (selectedTokenKey.value === 'auto' ? '' : currentColor.value) : selectedTokenKey.value)
     : customColor.value
 
   if (nextValue !== props.modelValue) emit('update:modelValue', nextValue)
@@ -274,19 +348,21 @@ watch(customColor, (newValue) => {
 </script>
 
 <template>
-  <div class="rounded-md border border-gray-200 dark:border-gray-700">
+  <div class="rounded-md border border-default">
     <button
       type="button"
-      class="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+      class="w-full px-4 py-3 flex items-center justify-between hover:bg-elevated transition-colors"
       @click="isExpanded = !isExpanded"
     >
       <div class="flex items-center gap-2">
         <div
-          class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600"
-          :style="{ backgroundColor: collapsedDisplayColor }"
+          class="w-8 h-8 rounded border border-accented"
+          :style="collapsedSwatchStyle"
+          data-au-color-swatch
+          :data-au-color-auto="isAuto ? 'true' : 'false'"
         />
         <div class="min-w-0">
-          <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{{ collapsedDisplayLabel }}</div>
+          <div class="text-xs text-muted text-dimmed font-mono truncate">{{ collapsedDisplayLabel }}</div>
           <div
             v-if="isPreviewAdjusted"
             class="text-[11px] text-amber-600 dark:text-amber-400"
@@ -297,11 +373,11 @@ watch(customColor, (newValue) => {
       </div>
       <UIcon
         :name="isExpanded ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'"
-        class="w-5 h-5 text-gray-400"
+        class="w-5 h-5 text-dimmed"
       />
     </button>
 
-    <div v-if="isExpanded" class="p-4 space-y-3 border-t border-gray-200 dark:border-gray-700">
+    <div v-if="isExpanded" class="p-4 space-y-3 border-t border-default">
       <UTabs
         v-if="effectiveAllowCustom"
         :model-value="colorMode"
@@ -320,40 +396,54 @@ watch(customColor, (newValue) => {
             class="rounded-md border px-2.5 py-2 text-xs font-medium transition-colors"
             :class="selectedTokenKey === 'auto'
               ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300'
-              : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300'"
+              : 'border-accented text-muted hover:border-accented'"
             @click="selectedTokenKey = 'auto'"
           >
-            {{ effectiveAutoLabel }}
+            <span
+              class="inline-block w-3.5 h-3.5 rounded border border-accented mr-1.5 align-[-2px]"
+              :style="autoSwatchStyle"
+              aria-hidden="true"
+            />{{ effectiveAutoLabel }}
           </button>
-          <button
+          <!--
+            A blocked swatch stays hoverable and focusable (aria-disabled, not
+            disabled) so its tooltip can say why it is greyed; clicking it does
+            nothing.
+          -->
+          <UTooltip
             v-for="swatch in tokenSwatches"
             :key="swatch.key"
-            type="button"
-            class="flex flex-col items-center gap-1 group"
-            :aria-label="swatch.label"
-            :title="swatchLabel(swatch.key)"
-            :disabled="effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)"
-            @click="selectedTokenKey = swatch.key"
+            :text="swatchTooltip(swatch.key)"
+            :delay-duration="0"
           >
-            <div
-              class="w-8 h-8 rounded border transition-all"
-              :class="{
-                'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
-                'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500': selectedTokenKey !== swatch.key,
-                'opacity-40 cursor-not-allowed': effectivePolicy === 'disableTokens' && !tokenPassesContrast(swatch.key)
-              }"
-              :style="{ backgroundColor: swatch.color }"
-            />
-          </button>
+            <button
+              type="button"
+              class="flex flex-col items-center gap-1 group"
+              :aria-label="swatch.label"
+              :aria-disabled="isBlocked(swatch.key) ? 'true' : 'false'"
+              :data-au-swatch-blocked="isBlocked(swatch.key) ? 'true' : undefined"
+              @click="chooseSwatch(swatch.key)"
+            >
+              <div
+                class="w-8 h-8 rounded border transition-all"
+                :class="{
+                  'border-blue-500 ring-2 ring-blue-500': selectedTokenKey === swatch.key,
+                  'border-accented hover:border-accented': selectedTokenKey !== swatch.key,
+                  'opacity-40 cursor-not-allowed': isBlocked(swatch.key)
+                }"
+                :style="{ backgroundColor: swatch.color }"
+              />
+            </button>
+          </UTooltip>
         </div>
-        <p v-if="tokenSwatches.length === 0" class="text-xs text-gray-500">
+        <p v-if="tokenSwatches.length === 0" class="text-xs text-muted">
           No brand colors available.
         </p>
         <div
           v-if="effectivePreviewMode !== 'swatch'"
-          class="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-3"
+          class="rounded-md border border-default px-3 py-3"
         >
-          <div class="text-[11px] uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400 mb-2">
+          <div class="text-[11px] uppercase tracking-[0.16em] text-muted text-dimmed mb-2">
             CTA Preview
           </div>
           <button
@@ -375,16 +465,16 @@ watch(customColor, (newValue) => {
 
       <div v-else class="space-y-2">
         <label
-          class="relative block rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+          class="relative block rounded-md border border-default px-3 py-2 cursor-pointer hover:bg-elevated transition-colors"
         >
           <div class="flex items-center gap-2 min-w-0">
             <div
-              class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600 shrink-0"
+              class="w-8 h-8 rounded border border-accented shrink-0"
               :style="{ backgroundColor: customColor }"
             />
             <div class="min-w-0">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">Custom</div>
-              <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate">{{ customColor }}</div>
+              <div class="text-sm font-medium text-toned text-default">Custom</div>
+              <div class="text-xs text-muted text-dimmed font-mono truncate">{{ customColor }}</div>
             </div>
           </div>
 
@@ -397,9 +487,9 @@ watch(customColor, (newValue) => {
         </label>
         <div
           v-if="effectivePreviewMode !== 'swatch'"
-          class="rounded-md border border-gray-200 dark:border-gray-700 px-3 py-3"
+          class="rounded-md border border-default px-3 py-3"
         >
-          <div class="text-[11px] uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400 mb-2">
+          <div class="text-[11px] uppercase tracking-[0.16em] text-muted text-dimmed mb-2">
             CTA Preview
           </div>
           <button

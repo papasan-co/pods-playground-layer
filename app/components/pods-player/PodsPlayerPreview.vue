@@ -1540,7 +1540,7 @@ watch(
       v-if="loading && !hasRenderablePreview && !hasMountedPreviewSurface"
       class="w-full h-full flex items-center justify-center"
     >
-      <div class="text-gray-500">Loading preview...</div>
+      <div class="text-muted">Loading preview...</div>
     </div>
     <div
       v-else-if="error && !hasRenderablePreview"
@@ -1600,7 +1600,7 @@ watch(
       </template>
       <template v-else>
         <div class="w-full h-full flex items-center justify-center">
-          <div class="text-gray-500">No preview available</div>
+          <div class="text-muted">No preview available</div>
         </div>
       </template>
     </PodsPlayerPreviewDevice>

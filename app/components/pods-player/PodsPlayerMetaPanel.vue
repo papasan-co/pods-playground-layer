@@ -90,11 +90,11 @@ watch(
 
 <template>
   <div class="h-full flex flex-col">
-    <div class="border-b border-gray-200 dark:border-gray-800 p-4">
+    <div class="border-b border-default p-4">
       <h3 class="text-sm font-semibold mb-1">
         {{ pod?.label || 'Pod' }}
       </h3>
-      <div v-if="pod" class="text-xs text-gray-500 space-y-1">
+      <div v-if="pod" class="text-xs text-muted space-y-1">
         <div>Slug: {{ pod.slug }}</div>
         <div v-if="pod.version">Version: {{ pod.version }}</div>
         <div v-if="pod.category">Category: {{ pod.category }}</div>
@@ -114,7 +114,7 @@ watch(
 
       <div class="flex-1 overflow-auto p-4">
         <div v-if="activeTab === 'form'">
-          <div v-if="loadingYaml" class="text-sm text-gray-500">Loading form fields...</div>
+          <div v-if="loadingYaml" class="text-sm text-muted">Loading form fields...</div>
           <div v-else-if="formFields.length > 0">
             <PodsPlayerBlockForm
               :fields="formFields"
@@ -124,24 +124,24 @@ watch(
               @update:viewport="(val) => emit('update:viewport', val)"
             />
           </div>
-          <div v-else class="text-sm text-gray-500">
+          <div v-else class="text-sm text-muted">
             No form fields available. Pod may not have a YAML file with fields defined.
           </div>
         </div>
 
         <div v-else-if="activeTab === 'props'">
-          <div v-if="fixture" class="bg-gray-50 dark:bg-gray-800 rounded p-3 overflow-auto">
-            <pre class="text-xs font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap"><code>{{ JSON.stringify(fixture, null, 2) }}</code></pre>
+          <div v-if="fixture" class="bg-elevated rounded p-3 overflow-auto">
+            <pre class="text-xs font-mono text-default whitespace-pre-wrap"><code>{{ JSON.stringify(fixture, null, 2) }}</code></pre>
           </div>
-          <div v-else class="text-sm text-gray-500">No fixture data available</div>
+          <div v-else class="text-sm text-muted">No fixture data available</div>
         </div>
 
         <div v-else-if="activeTab === 'yaml'">
-          <div v-if="loadingYaml" class="text-sm text-gray-500">Loading YAML...</div>
-          <div v-else-if="yamlContent" class="bg-gray-50 dark:bg-gray-800 rounded p-3 overflow-auto">
-            <pre class="text-xs font-mono text-gray-800 dark:text-gray-200 whitespace-pre-wrap"><code>{{ yamlContent }}</code></pre>
+          <div v-if="loadingYaml" class="text-sm text-muted">Loading YAML...</div>
+          <div v-else-if="yamlContent" class="bg-elevated rounded p-3 overflow-auto">
+            <pre class="text-xs font-mono text-default whitespace-pre-wrap"><code>{{ yamlContent }}</code></pre>
           </div>
-          <div v-else class="text-sm text-gray-500">YAML not available</div>
+          <div v-else class="text-sm text-muted">YAML not available</div>
         </div>
       </div>
     </div>

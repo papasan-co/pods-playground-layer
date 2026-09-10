@@ -1,3 +1,24 @@
+/**
+ * pods-playground-layer.app.utils.colorA11y
+ *
+ * The contrast maths every colour control in this system measures with.
+ *
+ * One implementation on purpose. It was copied twice — byte for byte into
+ * this repo's playground, and under different names into the CMS — and the
+ * copies drifted on two points that matter: whether the returned hex is
+ * normalised, and whether an unparseable input (a token key, a gradient)
+ * yields black or NaN. Same function name, two answers, in one running app,
+ * because Nuxt auto-import shadows one with the other.
+ *
+ * Hosts re-export from here through `#pods-player-color-a11y` rather than
+ * keeping a copy. Accessibility is the last thing that should have three
+ * answers.
+ *
+ * Both entry points are defensive by design: an input that is not a hex is
+ * read as black rather than propagated as NaN, because a wrong colour is
+ * visible and a NaN comparison silently returns false — which reads as "this
+ * passes" everywhere a threshold is checked.
+ */
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
 function normalizeHex(input: string): string | null {
