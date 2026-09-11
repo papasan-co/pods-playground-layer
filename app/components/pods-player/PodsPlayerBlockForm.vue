@@ -30,6 +30,8 @@ const props = defineProps<{
   rootModelValue?: Record<string, unknown>
   viewport?: PodsPlayerViewport
   compositeFieldUpdates?: boolean
+  /** Payload address owned by this recursive form; display groups add no segment. */
+  fieldPrefix?: string
   mediaItems?: Array<Record<string, unknown>>
   storyMediaItems?: Array<Record<string, unknown>>
   libraryMediaItems?: Array<Record<string, unknown>>
@@ -377,6 +379,10 @@ function isGroupOpen(field: FormField): boolean {
  * A repeater address additionally opens the indexed row.
  */
 function revealAddressedField(key: string): void {
+  if (props.fieldPrefix) {
+    if (!key.startsWith(`${props.fieldPrefix}.`)) return
+    key = key.slice(props.fieldPrefix.length + 1)
+  }
   const first = key.split('.')[0] ?? ''
   if (!first) return
 
@@ -816,6 +822,12 @@ function mergeGroupValue(groupName: string, child: string, value: unknown) {
   updateField(groupName, next, 'group')
 }
 
+/** Keep control identities and recursive reveal requests on the same payload path. */
+function fieldAddress(name: string | undefined, group = false): string | undefined {
+  if (!name || (group && isUiOnlyMergeField(name))) return props.fieldPrefix
+  return props.fieldPrefix ? `${props.fieldPrefix}.${name}` : name
+}
+
 function groupModelValue(groupName: string | undefined): Record<string, unknown> {
   if (!groupName || isUiOnlyMergeField(groupName)) return props.modelValue
   return (props.modelValue[groupName] as Record<string, unknown>) ?? {}
@@ -878,7 +890,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
     <div
       v-if="field.type === 'group' && isVisible(field) && !isHidden(field)"
       class="mb-4 last:mb-0"
-      :data-au-field-group="field.name ? String(field.name) : undefined"
+      :data-au-field-group="fieldAddress(field.name)"
     >
       <UCollapsible
         v-if="isGroupCollapsible(field)"
@@ -921,6 +933,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                 :auto-colors="autoColors"
                 :fields="field.children"
                 :model-value="groupModelValue(field.name as string | undefined)"
+                :field-prefix="fieldAddress(field.name, true)"
                 :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
@@ -951,6 +964,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           :auto-colors="autoColors"
           :fields="field.children"
           :model-value="groupModelValue(field.name as string | undefined)"
+          :field-prefix="fieldAddress(field.name, true)"
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
@@ -985,7 +999,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <UFormField
             v-else
             :label="child.type === 'slider' ? undefined : child.label"
-            :data-au-field-control="child.name || undefined"
+            :data-au-field-control="fieldAddress(child.name)"
             class="mb-2"
           >
             <template v-if="limitCountLabel(child)" #hint>
@@ -1158,7 +1172,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       v-else-if="!isHidden(field)"
       v-show="isVisible(field)"
       :label="field.type === 'slider' ? undefined : field.label"
-      :data-au-field-control="field.name || undefined"
+      :data-au-field-control="fieldAddress(field.name)"
       class="mb-4 last:mb-0"
     >
       <template v-if="limitCountLabel(field)" #hint>
@@ -1334,7 +1348,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             :key="(item as any)._key || idx"
             class="repeater-card rounded-md border border-default p-3 transition-opacity"
             :class="{ 'opacity-30': (item as any)._removing }"
-            :data-au-field-row="`${field.name}.${idx}`"
+            :data-au-field-row="`${fieldAddress(field.name)}.${idx}`"
           >
             <UCollapsible
               :open="isItemOpen(field.name, itemKey(item as any, idx))"
@@ -1401,6 +1415,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                   <PodsPlayerBlockForm
                     :fields="(field.fields || []) as any"
                     :model-value="(item as any)"
+                    :field-prefix="`${fieldAddress(field.name)}.${idx}`"
                     :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
                     :composite-field-updates="true"
