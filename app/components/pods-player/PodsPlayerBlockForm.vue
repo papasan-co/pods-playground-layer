@@ -348,12 +348,12 @@ function getPositionGridConfig(field: FormField): { verticalField?: string; hori
 }
 
 function isGroupCollapsible(field: FormField): boolean {
-  return getGroupUiConfig(field)?.collapsible === true
+  return getGroupUiConfig(field)?.collapsible !== false
 }
 
 function groupDefaultOpen(field: FormField): boolean {
   const configured = getGroupUiConfig(field)?.defaultOpen
-  return typeof configured === 'boolean' ? configured : true
+  return typeof configured === 'boolean' ? configured : false
 }
 
 /**
