@@ -280,6 +280,8 @@ watch(
   () => [currentUrl.value, items.value.length, kind.value, defaultUrl.value] as const,
   () => {
     if (currentUrl.value) return
+    // Opening a field must not replace an existing malformed value with unrelated media.
+    if (props.modelValue != null && props.modelValue !== '') return
     if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
     if (defaultUrl.value) {
       emit('update:modelValue', toEmittedValue(defaultUrl.value))
