@@ -14,7 +14,7 @@
  * keeping a copy. Accessibility is the last thing that should have three
  * answers.
  *
- * Both entry points are defensive by design: an input that is not a hex is
+ * Both entry points are defensive by design: an unsupported colour is
  * read as black rather than propagated as NaN, because a wrong colour is
  * visible and a NaN comparison silently returns false — which reads as "this
  * passes" everywhere a threshold is checked.
@@ -23,11 +23,42 @@ const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
 function normalizeHex(input: string): string | null {
   const value = String(input ?? '').trim()
+  const rgb = computedRgb(value)
+  if (rgb?.alpha === 1) return `#${rgb.channels.map(channel => Math.round(channel).toString(16).padStart(2, '0')).join('')}`.toUpperCase()
   if (!HEX_RE.test(value)) return null
   if (value.length === 4) {
     return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`.toUpperCase()
   }
   return value.toUpperCase()
+}
+
+function computedRgb(input: string): { channels: number[]; alpha: number } | null {
+  const hex = input.trim()
+  if (/^#(?:[0-9a-f]{4}|[0-9a-f]{8})$/i.test(hex)) {
+    const expanded = hex.length === 5 ? hex.slice(1).split('').map(value => value + value).join('') : hex.slice(1)
+    return {
+      channels: [0, 2, 4].map(offset => Number.parseInt(expanded.slice(offset, offset + 2), 16)),
+      alpha: Number.parseInt(expanded.slice(6), 16) / 255,
+    }
+  }
+  const match = input.trim().match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i)
+  if (!match) return null
+  const channels = match.slice(1, 4).map(Number)
+  const alpha = match[4] === undefined ? 1 : Number(match[4])
+  return channels.every(value => Number.isFinite(value) && value >= 0 && value <= 255)
+    && Number.isFinite(alpha) && alpha >= 0 && alpha <= 1 ? { channels, alpha } : null
+}
+
+function luminanceRange(color: string): [number, number] {
+  const rgb = computedRgb(color)
+  if (!rgb || rgb.alpha === 1) {
+    const value = luminance(color)
+    return [value, value]
+  }
+  const over = (floor: number) => luminance(`#${rgb.channels.map(channel =>
+    Math.round(channel * rgb.alpha + floor * (1 - rgb.alpha)).toString(16).padStart(2, '0'),
+  ).join('')}`)
+  return [over(0), over(255)]
 }
 
 function luminance(hex: string): number {
@@ -67,11 +98,11 @@ export function isHexColor(value: string): boolean {
 }
 
 export function contrastRatio(aHex: string, bHex: string): number {
-  const a = luminance(aHex)
-  const b = luminance(bHex)
-  const top = Math.max(a, b)
-  const bottom = Math.min(a, b)
-  return (top + 0.05) / (bottom + 0.05)
+  const [aMin, aMax] = luminanceRange(aHex)
+  const [bMin, bMax] = luminanceRange(bHex)
+  if (aMax < bMin) return (bMin + 0.05) / (aMax + 0.05)
+  if (bMax < aMin) return (aMin + 0.05) / (bMax + 0.05)
+  return 1
 }
 
 export function ensureAaTextOnBackground(backgroundHex: string, preferredTextHex: string): string {
