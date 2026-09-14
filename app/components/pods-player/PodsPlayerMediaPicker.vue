@@ -85,6 +85,17 @@ function toEmittedValue(entryOrUrl: string | PickerEntry, alt?: string) {
   const value = typeof entryOrUrl === 'string' ? entryOrUrl : (entryOrUrl.s3Key || entryOrUrl.url)
   const label = typeof entryOrUrl === 'string' ? alt : (entryOrUrl.alt || entryOrUrl.title)
   if (props.emitObject) {
+    if (typeof entryOrUrl !== 'string' && entryOrUrl.source === 'runtime') {
+      return {
+        mediaId: entryOrUrl.id,
+        s3Key: entryOrUrl.s3Key,
+        // Preview URLs can be signed and short-lived. Persist the same stable
+        // storage value as existing media fields, plus its owned media identity.
+        src: value,
+        url: value,
+        ...(label ? { alt: label } : {}),
+      }
+    }
     return { src: value, url: value, ...(label ? { alt: label } : {}) }
   }
   return value
@@ -145,7 +156,7 @@ function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
         kind: runtimeKind(item),
         roles: Array.isArray(item.roles) ? item.roles.map((role) => String(role).toLowerCase().trim()).filter(Boolean) : [],
         tags: Array.isArray(item.tags) ? item.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
-        url: src,
+        url: url || src,
         s3Key: s3Key || undefined,
         mediaType: String(item.mediaType || '').trim() || undefined,
       } satisfies PickerEntry
@@ -247,7 +258,11 @@ const items = computed<PickerEntry[]>(() => {
   const query = String(q.value || '').trim().toLowerCase()
 
   return runtimeSource.filter((entry) => {
-    if (kind.value !== 'any' && entry.kind && entry.kind !== kind.value) return false
+    // An ordinary library image has no logo/illustration classification. It
+    // remains eligible for those image controls; videos and files do not.
+    const unclassifiedImage = entry.source === 'runtime' && entry.mediaType === 'image'
+      && !entry.roles?.length && ['photo', 'logo', 'illustration'].includes(kind.value)
+    if (kind.value !== 'any' && entry.kind && entry.kind !== kind.value && !unclassifiedImage) return false
     if (orientation.value !== 'any' && entry.orientation && entry.orientation !== orientation.value) return false
     if (!runtimeMatchesRoles(entry, requestedRoles)) return false
 
@@ -265,6 +280,8 @@ watch(
   () => [currentUrl.value, items.value.length, kind.value, defaultUrl.value] as const,
   () => {
     if (currentUrl.value) return
+    // Opening a field must not replace an existing malformed value with unrelated media.
+    if (props.modelValue != null && props.modelValue !== '') return
     if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
     if (defaultUrl.value) {
       emit('update:modelValue', toEmittedValue(defaultUrl.value))
@@ -460,4 +477,3 @@ function choose(it: PickerEntry) {
     </div>
   </div>
 </template>
-

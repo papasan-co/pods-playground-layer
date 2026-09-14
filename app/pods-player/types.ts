@@ -28,6 +28,19 @@ export type {
 export type PodsPlayerMode = 'sfc' | 'vue'
 export type PodsPlayerViewport = 'laptop' | 'tablet' | 'phone'
 
+export type PodsPlayerViewportSize = Readonly<{
+  width: number
+  height: number
+}>
+
+export type PodsPlayerDocumentFlowPresentation = Readonly<{
+  profileId: 'website'
+  profileVersion: string
+  profileHash: string
+  canvas: 'document_flow'
+  viewports: Readonly<Record<PodsPlayerViewport, PodsPlayerViewportSize>>
+}>
+
 export interface PodListItem {
   slug: string
   label: string
