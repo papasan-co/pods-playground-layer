@@ -31,8 +31,16 @@ function normalizeHex(input: string): string | null {
   return value.toUpperCase()
 }
 
-/** Browser-computed RGB/RGBA; unsupported CSS keeps the existing invalid-color policy. */
+/** Parse computed RGB/RGBA and CMS alpha hex; unsupported CSS keeps the invalid-color policy. */
 function computedRgb(input: string): { channels: number[]; alpha: number } | null {
+  const hex = input.trim()
+  if (/^#(?:[0-9a-f]{4}|[0-9a-f]{8})$/i.test(hex)) {
+    const expanded = hex.length === 5 ? hex.slice(1).split('').map(value => value + value).join('') : hex.slice(1)
+    return {
+      channels: [0, 2, 4].map(offset => Number.parseInt(expanded.slice(offset, offset + 2), 16)),
+      alpha: Number.parseInt(expanded.slice(6), 16) / 255,
+    }
+  }
   const match = input.trim().match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i)
   if (!match) return null
   const channels = match.slice(1, 4).map(Number)
