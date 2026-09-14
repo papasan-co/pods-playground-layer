@@ -54,5 +54,8 @@ export type LinkValue =
    * says whether the visitor reaches it in place (the page scrolls to it) or
    * in a dialog. Absent means in place.
    */
-  | { kind: 'form', form?: string, zone?: string, presentation?: 'inline' | 'modal' }
+  | ({ kind: 'form', presentation?: 'inline' | 'modal' } & (
+      | { form: string, zone?: never }
+      | { zone: string, form?: never }
+    ))
   | { kind: 'url', url: string, newTab?: boolean }
