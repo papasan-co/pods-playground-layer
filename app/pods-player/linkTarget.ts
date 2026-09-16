@@ -20,7 +20,7 @@ export type LinkSection = {
 
 /** Something on the site a link may point at. */
 export type LinkTarget = {
-  kind: 'page' | 'entry' | 'form'
+  kind: 'page' | 'entry' | 'form' | 'modal'
   id: string
   title: string
   /** Absent for a form, which opens in place and has no address. */
@@ -37,6 +37,7 @@ export type LinkTarget = {
    */
   zone?: string
   /** A line under the title in the list and the chosen card (a form's field count, say). */
+  fallbackUrl?: string
   detail?: string
 }
 
@@ -55,4 +56,5 @@ export type LinkValue =
    * in a dialog. Absent means in place.
    */
   | { kind: 'form', form?: string, zone?: string, presentation?: 'inline' | 'modal' }
+  | { kind: 'modal', modalUuid: string, fallback: { kind: 'url', url: string } }
   | { kind: 'url', url: string, newTab?: boolean, presentation?: 'booking-modal' }
