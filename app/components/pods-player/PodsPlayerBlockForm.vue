@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Sortable from 'sortablejs'
+import { calBookingPath } from '@papasan-co/autumn-web-primitives'
 import { get as dotGet } from 'lodash-es'
 import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
@@ -286,7 +287,14 @@ interface Condition {
 function isVisible(field: FormField) {
   // A pod may tie a field to another's value: `x-ui.showWhen: { field, equals }`.
   const shownWhen = (field as any)?.['x-ui']?.showWhen
-  if (shownWhen && typeof shownWhen === 'object' && typeof shownWhen.field === 'string' && dotGet(props.modelValue, shownWhen.field) !== shownWhen.equals) return false
+  if (shownWhen && typeof shownWhen === 'object' && typeof shownWhen.field === 'string') {
+    const value = dotGet(props.rootModelValue ?? props.modelValue, shownWhen.field)
+    if (shownWhen.matches === 'booking-url') {
+      if (typeof value !== 'string' || !calBookingPath(value)) return false
+    } else if ('notEquals' in shownWhen) {
+      if (value === shownWhen.notEquals) return false
+    } else if (dotGet(props.modelValue, shownWhen.field) !== shownWhen.equals) return false
+  }
   const cond = (field as { when?: Condition | Condition[] }).when
   if (!cond) return true
   const conditions = Array.isArray(cond) ? cond : [cond]
@@ -819,6 +827,10 @@ function mergeGroupValue(groupName: string, child: string, value: unknown) {
     isUiOnlyMergeField(child) && isObjectLike(value)
       ? { ...current, ...value }
       : { ...current, [child]: value }
+  if (next.presentation === 'booking-modal' && typeof next.url === 'string' && !calBookingPath(next.url)) {
+    next.presentation = ''
+  }
+  if (next.presentation === 'booking-modal') next.openInNewTab = false
   updateField(groupName, next, 'group')
 }
 

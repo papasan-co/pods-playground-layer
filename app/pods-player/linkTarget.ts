@@ -55,4 +55,4 @@ export type LinkValue =
    * in a dialog. Absent means in place.
    */
   | { kind: 'form', form?: string, zone?: string, presentation?: 'inline' | 'modal' }
-  | { kind: 'url', url: string, newTab?: boolean }
+  | { kind: 'url', url: string, newTab?: boolean, presentation?: 'booking-modal' }
