@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { calBookingPath } from '@papasan-co/autumn-web-primitives'
 import type { LinkSection, LinkTarget, LinkValue } from '#pods-player/linkTarget'
 
 /**
@@ -96,6 +97,13 @@ const display = computed(() => {
     glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : 'F',
   }
 })
+
+function setBookingPopup(on: boolean) {
+  const value = props.modelValue
+  if (value?.kind !== 'url' || props.readOnly) return
+  const { presentation: _previous, ...rest } = value
+  emit('update:modelValue', on ? { ...rest, newTab: false, presentation: 'booking-modal' } : rest)
+}
 
 function choose(t: LinkTarget) {
   if (props.readOnly) return
@@ -377,7 +385,7 @@ function indexOf(item: LinkTarget): number {
     </template>
 
     <label
-      v-if="modelValue?.kind === 'url' && !replacing"
+      v-if="modelValue?.kind === 'url' && !replacing && !modelValue.presentation"
       class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
     >
       <input
@@ -387,6 +395,10 @@ function indexOf(item: LinkTarget): number {
         @change="setNewTab(($event.target as HTMLInputElement).checked)"
       >
       Open in a new tab
+    </label>
+    <label v-if="modelValue?.kind === 'url' && !replacing && calBookingPath(modelValue.url)" class="flex items-center gap-2 text-[11px] text-muted text-dimmed">
+      <input type="checkbox" :checked="modelValue.presentation === 'booking-modal'" :disabled="readOnly" @change="setBookingPopup(($event.target as HTMLInputElement).checked)">
+      Open booking popup
     </label>
   </div>
 </template>
