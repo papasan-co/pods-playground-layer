@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "@papasan-co/autumn-web-primitives": "^0.1.2"
   }
 }
-
