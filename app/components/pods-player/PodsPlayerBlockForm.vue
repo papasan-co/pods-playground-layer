@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import Sortable from 'sortablejs'
+import { calBookingPath } from '@papasan-co/autumn-web-primitives'
 import { get as dotGet } from 'lodash-es'
 import type { FormField } from '#pods-player/formMapper'
 import type { PodsPlayerViewport } from '#pods-player/types'
 import PodsPlayerResponsiveField from './PodsPlayerResponsiveField.vue'
 import PodsPlayerBrandColorPicker from './PodsPlayerBrandColorPicker.vue'
+import PodsPlayerOptionCards from './PodsPlayerOptionCards.vue'
+import PodsPlayerLinkPicker from './PodsPlayerLinkPicker.vue'
 import PodsPlayerMediaPicker from './PodsPlayerMediaPicker.vue'
 import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
@@ -28,16 +31,41 @@ const props = defineProps<{
   rootModelValue?: Record<string, unknown>
   viewport?: PodsPlayerViewport
   compositeFieldUpdates?: boolean
+  /** Payload address owned by this recursive form; display groups add no segment. */
+  fieldPrefix?: string
   mediaItems?: Array<Record<string, unknown>>
   storyMediaItems?: Array<Record<string, unknown>>
   libraryMediaItems?: Array<Record<string, unknown>>
   mediaSourceMode?: 'cms' | 'playground'
+  /**
+   * What a `link` field may point at on this site — pages, addressable
+   * collection entries, forms. The form has no notion of a site, so the host
+   * supplies these the same way it supplies the media catalogue.
+   */
+  linkTargets?: Array<Record<string, unknown>>
   readOnly?: boolean
   /**
    * Field-anchored notes (e.g. accessibility auto-adjustments) rendered under
    * the matching control, keyed by the YAML field dot-path.
    */
   fieldNotes?: Array<{ fieldPath: string; message: string }>
+  /**
+   * A host's request to bring one field into view: open whichever collapsed
+   * group cards and repeater rows stand between the form's surface and the
+   * addressed field. The address is the payload path (`title`, `cta.label`,
+   * `stats.0.value`); the nonce distinguishes repeated requests for the same
+   * field. State-driven on purpose — a host clicking the form's own toggle
+   * buttons races the disclosure animation and the trigger wiring, which is
+   * exactly how this prop earned its existence.
+   */
+  revealField?: { key: string; nonce: number } | null
+  /**
+   * What the host actually renders for each colour field when it is unset,
+   * keyed by field name, as a CSS colour or `transparent`. The colour picker
+   * shows this for its "default" choice, and a text colour's contrast check
+   * uses the rendered background when no background was chosen.
+   */
+  autoColors?: Record<string, string>
 }>()
 
 /**
@@ -76,11 +104,171 @@ const emit = defineEmits<{
   (e: 'update:viewport', value: PodsPlayerViewport): void
 }>()
 
+/** Field types whose value is text a person types, so length is meaningful. */
+const LENGTH_LIMITED_TYPES = new Set(['input', 'text', 'textarea'])
+
+/**
+ * The length limits the pack build compiled onto a field, if any.
+ *
+ * Two numbers doing different jobs. The ADVISORY is what this pod's design
+ * wants — a hero headline and a card title in a three-up grid want very
+ * different room — so passing it is a warning and never a wall. The CEILING
+ * comes from the field's role and catches the absurd: a five-hundred-character
+ * headline. A field the pack build left alone, or a pack built before limits
+ * existed, carries none, which reads as unlimited.
+ */
+function limitsOf(field: FormField): { advisory: number | null; ceiling: number | null } | null {
+  if (!LENGTH_LIMITED_TYPES.has(String(field.type ?? ''))) return null
+
+  const raw = (field as { limits?: unknown }).limits
+  if (!raw || typeof raw !== 'object') return null
+
+  const advisory = typeof (raw as Record<string, unknown>).advisory === 'number'
+    ? (raw as Record<string, number>).advisory
+    : null
+  const ceiling = typeof (raw as Record<string, unknown>).ceiling === 'number'
+    ? (raw as Record<string, number>).ceiling
+    : null
+
+  return advisory === null && ceiling === null ? null : { advisory, ceiling }
+}
+
+/**
+ * Count characters the way the API counts them.
+ *
+ * PHP's `mb_strlen` counts code points; JavaScript's `.length` counts UTF-16
+ * units, so an emoji is one character to the server and two to the form.
+ * Spreading iterates by code point, which keeps the counter, the cap and the
+ * API's refusal all agreeing about the same string.
+ */
+function charCount(value: unknown): number {
+  return typeof value === 'string' ? [...value].length : 0
+}
+
+/**
+ * Find an inline-rendered field by name.
+ *
+ * Groups and repeaters recurse into their own form instance, so each instance
+ * only has to look at its own fields and one level into a `row`, which renders
+ * its children inline rather than recursing.
+ */
+function fieldByName(name: string): FormField | null {
+  for (const field of props.fields) {
+    if (field.name === name) return field
+    if (field.type === 'row') {
+      const child = (field.fields || []).find((candidate) => candidate.name === name)
+      if (child) return child
+    }
+  }
+  return null
+}
+
+/** Transient "that did not fit" messages, keyed by field name. */
+const limitNotices = ref<Record<string, string>>({})
+
+/**
+ * What to say under a limited control.
+ *
+ * Two different messages. The transient one reports growth that was just
+ * refused, so a paste never loses its tail in silence — that is the everyday
+ * case.
+ *
+ * The standing one covers a value ALREADY over its ceiling. That state cannot
+ * be reached through any write path — all three refuse it — so it arises only
+ * when a later pack build LOWERS a ceiling under content that was legal when
+ * it was written. Rare, and worth saying out loud when it happens: the API
+ * will refuse a shortened-but-still-over edit, and someone who shortened it a
+ * little and hit save deserves to have been told rather than to meet a
+ * refusal with no warning.
+ */
+function noticeFor(field: FormField): string | null {
+  const ceiling = limitsOf(field)?.ceiling ?? null
+  const length = charCount(props.modelValue[String(field.name ?? '')])
+
+  if (ceiling !== null && length > ceiling) {
+    return `${length - ceiling} characters over the ${ceiling}-character limit. This will not save until it is shorter.`
+  }
+
+  return limitNotices.value[String(field.name ?? '')] || null
+}
+
+/**
+ * Hold the ceiling on an incoming value, and say what did not fit.
+ *
+ * Never trims a value already stored: a block written before a ceiling existed
+ * can still be shortened, because refusing every edit to it would leave the
+ * only over-limit content on the site permanently uneditable. Only GROWTH past
+ * the ceiling is refused, and the excess is reported rather than disappearing
+ * — a paste that silently loses its tail is the failure this guards against.
+ */
+function withinCeiling(field: FormField, next: unknown): string | null {
+  const ceiling = limitsOf(field)?.ceiling ?? null
+  const name = String(field.name ?? '')
+  if (ceiling === null || typeof next !== 'string') return null
+
+  const incoming = [...next]
+  const stored = [...(typeof props.modelValue[name] === 'string' ? props.modelValue[name] as string : '')]
+
+  if (incoming.length <= ceiling || incoming.length <= stored.length) {
+    if (limitNotices.value[name]) delete limitNotices.value[name]
+    return null
+  }
+
+  const kept = stored.length > ceiling ? stored : incoming.slice(0, ceiling)
+  const dropped = incoming.length - kept.length
+
+  limitNotices.value[name] = dropped === 1
+    ? `1 character over the ${ceiling}-character limit and was not added.`
+    : `${dropped} characters over the ${ceiling}-character limit and were not added.`
+
+  return kept.join('')
+}
+
 function updateField(name: string, value: unknown, type: string) {
   if (props.readOnly) return
 
-  const v = type === 'number' ? Number(value) : value
+  const field = fieldByName(name)
+  const held = field ? withinCeiling(field, value) : null
+
+  const v = type === 'number' ? Number(value) : (held ?? value)
   emit('update:modelValue', { field: name, value: v })
+}
+
+/**
+ * How close the ceiling is, when it is close enough to matter.
+ *
+ * A field whose pod declared no advisory gets no counter until it is nearly
+ * at its ceiling. Counting down from the ceiling all the way would present it
+ * as a writing budget — "653 characters left" under a section intro — and the
+ * ceiling is an absurdity guard, not an opinion about how long an intro should
+ * be. Advertising it as room to fill would make it the second design number
+ * the whole two-limit split exists to avoid.
+ *
+ * Near the ceiling that reverses: an editor about to be stopped should see it
+ * coming rather than watch a keystroke silently fail.
+ */
+const CEILING_VISIBLE_FROM = 0.8
+
+/** How much room is left, or how far past the design's advisory this is. */
+function limitCountLabel(field: FormField): string {
+  const limits = limitsOf(field)
+  if (!limits) return ''
+
+  const length = charCount(props.modelValue[String(field.name ?? '')])
+
+  if (limits.advisory === null) {
+    if (limits.ceiling === null || length < limits.ceiling * CEILING_VISIBLE_FROM) return ''
+    return `${limits.ceiling - length} left`
+  }
+
+  const remaining = limits.advisory - length
+  return remaining >= 0 ? `${remaining} left` : `${-remaining} over`
+}
+
+/** Past the advisory reads as a warning, never as an error: it still saves. */
+function isPastAdvisory(field: FormField): boolean {
+  const advisory = limitsOf(field)?.advisory ?? null
+  return advisory !== null && charCount(props.modelValue[String(field.name ?? '')]) > advisory
 }
 
 function isObjectLike(value: unknown): value is Record<string, unknown> {
@@ -97,10 +285,28 @@ interface Condition {
 }
 
 function isVisible(field: FormField) {
+  // A pod may tie a field to another's value: `x-ui.showWhen: { field, equals }`.
+  const shownWhen = (field as any)?.['x-ui']?.showWhen
+  if (shownWhen && typeof shownWhen === 'object' && typeof shownWhen.field === 'string') {
+    const value = dotGet(props.rootModelValue ?? props.modelValue, shownWhen.field)
+    if (shownWhen.matches === 'booking-url') {
+      if (typeof value !== 'string' || !calBookingPath(value)) return false
+    } else if ('notEquals' in shownWhen) {
+      if (value === shownWhen.notEquals) return false
+    } else if (dotGet(props.modelValue, shownWhen.field) !== shownWhen.equals) return false
+  }
   const cond = (field as { when?: Condition | Condition[] }).when
   if (!cond) return true
   const conditions = Array.isArray(cond) ? cond : [cond]
   return conditions.every((c) => dotGet(props.modelValue, c.field) === c.equals)
+}
+
+/** What a text colour is checked against: the chosen background, else the background the host renders. */
+function contrastAgainstFor(field: FormField): string | undefined {
+  const against = getA11yConfig(field)?.againstField
+  if (!against) return undefined
+  const chosen = props.modelValue[against]
+  return typeof chosen === 'string' && chosen ? chosen : props.autoColors?.[against]
 }
 
 function shouldEmitMediaObject(field: FormField): boolean {
@@ -150,12 +356,110 @@ function getPositionGridConfig(field: FormField): { verticalField?: string; hori
 }
 
 function isGroupCollapsible(field: FormField): boolean {
-  return getGroupUiConfig(field)?.collapsible === true
+  return getGroupUiConfig(field)?.collapsible !== false
 }
 
 function groupDefaultOpen(field: FormField): boolean {
   const configured = getGroupUiConfig(field)?.defaultOpen
-  return typeof configured === 'boolean' ? configured : true
+  return typeof configured === 'boolean' ? configured : false
+}
+
+/**
+ * Group cards stay user-driven, but a reveal may open one on top of its
+ * default. The override map only ever grows for this form instance; a user
+ * closing the card afterwards writes `false` back through the same map.
+ */
+const groupOpenOverrides = reactive<Record<string, boolean>>({})
+
+function isGroupOpen(field: FormField): boolean {
+  const name = String(field.name ?? '')
+  return groupOpenOverrides[name] ?? groupDefaultOpen(field)
+}
+
+/**
+ * Open everything between this form's surface and the addressed field.
+ *
+ * The first address segment names a field this form may hold directly, hold
+ * inside a display group (a `__`-prefixed card is transparent for
+ * addressing, so `stats` lives visually inside `__figures`), or not hold at
+ * all (a nested form instance handles its own slice — the recursive
+ * `reveal-field` pass-through in the template carries the request down).
+ * A repeater address additionally opens the indexed row.
+ */
+function revealAddressedField(key: string): void {
+  if (props.fieldPrefix) {
+    if (!key.startsWith(`${props.fieldPrefix}.`)) return
+    key = key.slice(props.fieldPrefix.length + 1)
+  }
+  const first = key.split('.')[0] ?? ''
+  if (!first) return
+
+  const openGroupsHolding = (fields: FormField[]): boolean => {
+    for (const field of fields) {
+      if (String(field.name ?? '') === first) {
+        // The addressed field may BE a group — `cta.label` names the `cta`
+        // group and its child. Returning early without opening it left the
+        // control mounted but collapsed, which reads to an editor as the
+        // click having done nothing.
+        if (field.type === 'group') groupOpenOverrides[first] = true
+        return true
+      }
+      if (field.type === 'group' && Array.isArray(field.children)) {
+        if (openGroupsHolding(field.children as FormField[])) {
+          groupOpenOverrides[String(field.name ?? '')] = true
+          return true
+        }
+      }
+    }
+    return false
+  }
+  openGroupsHolding(props.fields)
+
+  const owner = props.fields.find(field => String(field.name ?? '') === first)
+    ?? findInGroups(props.fields, first)
+  if (owner?.type === 'repeater') {
+    const index = Number(key.split('.')[1])
+    if (Number.isInteger(index)) {
+      const row = listFor(first).value[index]
+      if (row) setItemOpen(first, itemKey(row as RepeaterItem, index), true)
+    }
+  }
+}
+
+function findInGroups(fields: FormField[], name: string): FormField | undefined {
+  for (const field of fields) {
+    if (field.type === 'group' && Array.isArray(field.children)) {
+      const hit = (field.children as FormField[]).find(child => String(child.name ?? '') === name)
+        ?? findInGroups(field.children as FormField[], name)
+      if (hit) return hit
+    }
+  }
+  return undefined
+}
+
+watch(
+  () => props.revealField,
+  (request) => {
+    if (!request?.key) return
+    // Deferred a tick on purpose: with `immediate`, this first fires DURING
+    // setup — the form mounts with the request already in hand when the
+    // Fields tab opens from a preview click — and the repeater row state it
+    // reaches for (`listFor`) is declared later in setup. Running eagerly
+    // threw before initialization and silently cost the row its opening.
+    void nextTick(() => revealAddressedField(request.key))
+  },
+  { immediate: true, deep: true },
+)
+
+/** A select the pod asks to be drawn as option cards (`x-ui.presentation: cards`). */
+function isOptionCards(field: FormField): boolean {
+  return (field as any)?.['x-ui']?.presentation === 'cards'
+}
+
+/** The cards' items: the select's options with the pod's one-line descriptions (`x-ui.descriptions`). */
+function optionCardItems(field: FormField & { options?: Record<string, string> | string[] }) {
+  const descriptions = ((field as any)?.['x-ui']?.descriptions ?? {}) as Record<string, string>
+  return selectItems(field).map((item) => ({ ...item, description: descriptions[item.value] }))
 }
 
 function selectItems(field: FormField & { options?: Record<string, string> | string[] }) {
@@ -523,7 +827,17 @@ function mergeGroupValue(groupName: string, child: string, value: unknown) {
     isUiOnlyMergeField(child) && isObjectLike(value)
       ? { ...current, ...value }
       : { ...current, [child]: value }
+  if (next.presentation === 'booking-modal' && typeof next.url === 'string' && !calBookingPath(next.url)) {
+    next.presentation = ''
+  }
+  if (next.presentation === 'booking-modal') next.openInNewTab = false
   updateField(groupName, next, 'group')
+}
+
+/** Keep control identities and recursive reveal requests on the same payload path. */
+function fieldAddress(name: string | undefined, group = false): string | undefined {
+  if (!name || (group && isUiOnlyMergeField(name))) return props.fieldPrefix
+  return props.fieldPrefix ? `${props.fieldPrefix}.${name}` : name
 }
 
 function groupModelValue(groupName: string | undefined): Record<string, unknown> {
@@ -585,12 +899,17 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
 
 <template>
   <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
-    <div v-if="field.type === 'group' && isVisible(field) && !isHidden(field)" class="mb-4 last:mb-0">
+    <div
+      v-if="field.type === 'group' && isVisible(field) && !isHidden(field)"
+      class="mb-4 last:mb-0"
+      :data-au-field-group="fieldAddress(field.name)"
+    >
       <UCollapsible
         v-if="isGroupCollapsible(field)"
-        :default-open="groupDefaultOpen(field)"
+        :open="isGroupOpen(field)"
         :unmount-on-hide="false"
-        class="rounded-md border border-gray-200 dark:border-gray-700"
+        class="rounded-md border border-default"
+        @update:open="(value) => { groupOpenOverrides[String(field.name ?? '')] = Boolean(value) }"
       >
         <template #default="{ open }">
           <UButton
@@ -599,7 +918,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             block
             class="w-full justify-between rounded-md px-4 py-3"
           >
-            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+            <span class="text-sm font-semibold text-toned text-default">
               {{ field.label }}
             </span>
             <svg
@@ -610,7 +929,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              class="h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-300"
+              class="h-4 w-4 shrink-0 text-muted transition-transform text-dimmed"
               :class="{ 'rotate-180': open }"
               aria-hidden="true"
             >
@@ -623,12 +942,21 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <div class="px-4 pb-4 space-y-4">
             <div class="space-y-4">
               <PodsPlayerBlockForm
+                :auto-colors="autoColors"
                 :fields="field.children"
                 :model-value="groupModelValue(field.name as string | undefined)"
+                :field-prefix="fieldAddress(field.name, true)"
                 :root-model-value="rootModelValue || modelValue"
                 :viewport="viewport"
                 :composite-field-updates="true"
+                :reveal-field="revealField"
                 :field-notes="fieldNotes"
+                :link-targets="linkTargets || []"
+                :media-items="mediaItems || []"
+                :story-media-items="storyMediaItems || []"
+                :library-media-items="libraryMediaItems || []"
+                :media-source-mode="mediaSourceMode || 'playground'"
+                :read-only="readOnly"
                 @update:model-value="
                   ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
                 "
@@ -638,23 +966,27 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           </div>
         </template>
       </UCollapsible>
-      <div v-else class="rounded-md border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200">
+      <div v-else class="rounded-md border border-default p-4 space-y-4">
+        <h3 class="text-sm font-semibold text-toned text-default">
           {{ field.label }}
         </h3>
 
         <PodsPlayerBlockForm
           v-if="field.children?.length"
+          :auto-colors="autoColors"
           :fields="field.children"
           :model-value="groupModelValue(field.name as string | undefined)"
+          :field-prefix="fieldAddress(field.name, true)"
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :composite-field-updates="true"
+          :reveal-field="revealField"
           :field-notes="fieldNotes"
           :media-items="mediaItems || []"
           :story-media-items="storyMediaItems || []"
           :library-media-items="libraryMediaItems || []"
           :media-source-mode="mediaSourceMode || 'playground'"
+          :link-targets="linkTargets || []"
           @update:model-value="
             ({ field: child, value }) => handleGroupUpdate(field.name as string | undefined, child, value)
           "
@@ -679,12 +1011,20 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <UFormField
             v-else
             :label="child.type === 'slider' ? undefined : child.label"
+            :data-au-field-control="fieldAddress(child.name)"
             class="mb-2"
           >
+            <template v-if="limitCountLabel(child)" #hint>
+              <span
+                class="text-[11px] tabular-nums"
+                :class="isPastAdvisory(child) ? 'font-semibold text-amber-600' : 'text-muted'"
+                data-au-field-count
+              >{{ limitCountLabel(child) }}</span>
+            </template>
             <template v-if="child.type === 'slider'" #label>
               <div class="flex items-center justify-between gap-2">
                 <span>{{ child.label }}</span>
-                <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(child as any) }}</span>
+                <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(child as any) }}</span>
               </div>
             </template>
             <UInput
@@ -706,6 +1046,13 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string] as string"
               :disabled="isReadOnly(child)"
               :placeholder="child.placeholder as string"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <PodsPlayerOptionCards
+              v-else-if="child.type === 'select' && isOptionCards(child)"
+              :model-value="modelValue[child.name as string]"
+              :items="optionCardItems(child as any)"
+              :default-value="(child as any).default as string | undefined"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <USelect
@@ -755,9 +1102,23 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               :model-value="modelValue[child.name as string] as string"
               :output-mode="child.type === 'color-select' ? 'token' : (((child as any)['x-ui']?.outputMode as any) || 'hex')"
               :token-options="child.type === 'color-select' ? colorSelectKeys(child as any) : undefined"
-              :contrast-against="getA11yConfig(child)?.againstField ? (modelValue[getA11yConfig(child)?.againstField as string] as string) : undefined"
+              :contrast-against="contrastAgainstFor(child)"
               :enforce-aa-for-text="getA11yConfig(child)?.kind === 'text-aa'"
+              :allow-auto="Boolean((child as any)['x-ui']?.allowAuto)"
+              :allow-custom="(child as any)['x-ui']?.allowCustom !== false"
+              :auto-label="((child as any)['x-ui']?.autoLabel as string) || undefined"
+              :auto-color="autoColors?.[child.name as string]"
+              :preview-mode="((child as any)['x-ui']?.previewMode as any) || 'swatch'"
+              :preview-text="((child as any)['x-ui']?.previewText as string) || undefined"
               policy="disableTokens"
+              @update:model-value="(val) => updateField(child.name as string, val, child.type)"
+            />
+            <PodsPlayerLinkPicker
+              v-else-if="child.type === 'link'"
+              :model-value="modelValue[child.name as string] as any"
+              :targets="(linkTargets || []) as any"
+              :read-only="readOnly"
+              :placeholder="(child as any).placeholder"
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <PodsPlayerMediaPicker
@@ -790,6 +1151,11 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
               @update:model-value="(val) => updateField(child.name as string, val, child.type)"
             />
             <p
+              v-if="noticeFor(child)"
+              class="mt-1 text-xs text-amber-600"
+              data-au-field-limit-notice
+            >{{ noticeFor(child) }}</p>
+            <p
               v-if="noteFor(child)"
               class="mt-1 flex items-start gap-1 text-xs"
               style="color: var(--pg-fg-meta, #6b7280)"
@@ -818,12 +1184,20 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       v-else-if="!isHidden(field)"
       v-show="isVisible(field)"
       :label="field.type === 'slider' ? undefined : field.label"
+      :data-au-field-control="fieldAddress(field.name)"
       class="mb-4 last:mb-0"
     >
+      <template v-if="limitCountLabel(field)" #hint>
+        <span
+          class="text-[11px] tabular-nums"
+          :class="isPastAdvisory(field) ? 'font-semibold text-amber-600' : 'text-muted'"
+          data-au-field-count
+        >{{ limitCountLabel(field) }}</span>
+      </template>
       <template v-if="field.type === 'slider'" #label>
         <div class="flex items-center justify-between gap-2">
           <span>{{ field.label }}</span>
-          <span class="text-xs text-gray-500 tabular-nums">{{ formatSliderValue(field as any) }}</span>
+          <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(field as any) }}</span>
         </div>
       </template>
       <PodsPlayerPositionPicker
@@ -856,6 +1230,14 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name] as string"
         :disabled="isReadOnly(field)"
         :placeholder="field.placeholder as string"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
+      <PodsPlayerOptionCards
+        v-else-if="field.type === 'select' && isOptionCards(field)"
+        :model-value="modelValue[field.name]"
+        :items="optionCardItems(field as any)"
+        :default-value="(field as any).default as string | undefined"
+        :disabled="isReadOnly(field)"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <USelect
@@ -925,11 +1307,12 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :model-value="modelValue[field.name] as string"
         :output-mode="((field as any)['x-ui']?.outputMode as any) || 'hex'"
         :token-options="((field as any)['x-ui']?.tokenOptions as string[]) || undefined"
-        :contrast-against="getA11yConfig(field)?.againstField ? (modelValue[getA11yConfig(field)?.againstField as string] as string) : undefined"
+        :contrast-against="contrastAgainstFor(field)"
         :enforce-aa-for-text="getA11yConfig(field)?.kind === 'text-aa'"
         :allow-auto="Boolean((field as any)['x-ui']?.allowAuto)"
         :allow-custom="(field as any)['x-ui']?.allowCustom !== false"
         :auto-label="((field as any)['x-ui']?.autoLabel as string) || undefined"
+        :auto-color="autoColors?.[field.name]"
         :preview-mode="((field as any)['x-ui']?.previewMode as any) || 'swatch'"
         :preview-text="((field as any)['x-ui']?.previewText as string) || undefined"
         policy="disableTokens"
@@ -944,6 +1327,14 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         :story-media-items="storyMediaItems || []"
         :library-media-items="libraryMediaItems || []"
         :source-mode="mediaSourceMode || 'playground'"
+        @update:model-value="(val) => updateField(field.name, val, field.type)"
+      />
+      <PodsPlayerLinkPicker
+        v-else-if="field.type === 'link'"
+        :model-value="modelValue[field.name] as any"
+        :targets="(linkTargets || []) as any"
+        :read-only="readOnly"
+        :placeholder="(field as any).placeholder"
         @update:model-value="(val) => updateField(field.name, val, field.type)"
       />
       <PodsPlayerGeoPointPicker
@@ -967,8 +1358,9 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
           <div
             v-for="(item, idx) in listFor(field.name).value"
             :key="(item as any)._key || idx"
-            class="repeater-card rounded-md border border-gray-200 dark:border-gray-700 p-3 transition-opacity"
+            class="repeater-card rounded-md border border-default p-3 transition-opacity"
             :class="{ 'opacity-30': (item as any)._removing }"
+            :data-au-field-row="`${fieldAddress(field.name)}.${idx}`"
           >
             <UCollapsible
               :open="isItemOpen(field.name, itemKey(item as any, idx))"
@@ -977,7 +1369,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
             >
               <template #default="{ open }">
                 <div class="flex items-start justify-between gap-2">
-                  <span class="repeater-handle cursor-grab text-gray-400 pt-0.5" @click.stop>
+                  <span class="repeater-handle cursor-grab text-dimmed pt-0.5" @click.stop>
                     <UIcon name="i-lucide-grip-vertical" class="w-4 h-4" />
                   </span>
                   <button
@@ -986,10 +1378,10 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                   >
                     <div class="flex items-center gap-2 min-w-0">
                       <div class="min-w-0">
-                        <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                        <div class="text-xs font-semibold text-toned text-default">
                           {{ field.label }} #{{ idx + 1 }}
                         </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        <div class="text-xs text-muted text-dimmed truncate">
                           {{ summarizeRepeaterItem(item as any, idx) }}
                         </div>
                       </div>
@@ -1035,13 +1427,16 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
                   <PodsPlayerBlockForm
                     :fields="(field.fields || []) as any"
                     :model-value="(item as any)"
+                    :field-prefix="`${fieldAddress(field.name)}.${idx}`"
                     :root-model-value="rootModelValue || modelValue"
                     :viewport="viewport"
                     :composite-field-updates="true"
+                    :reveal-field="revealField"
                     :media-items="mediaItems || []"
                     :story-media-items="storyMediaItems || []"
                     :library-media-items="libraryMediaItems || []"
                     :media-source-mode="mediaSourceMode || 'playground'"
+          :link-targets="linkTargets || []"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
@@ -1061,10 +1456,15 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
         >
           Add {{ field.label }}
         </UButton>
-        <p v-if="!canAddRepeaterItem(field)" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        <p v-if="!canAddRepeaterItem(field)" class="mt-2 text-xs text-muted text-dimmed">
           Maximum {{ repeaterMax(field) }} {{ field.label || 'items' }} reached.
         </p>
       </div>
+      <p
+        v-if="noticeFor(field)"
+        class="mt-1 text-xs text-amber-600"
+        data-au-field-limit-notice
+      >{{ noticeFor(field) }}</p>
       <p
         v-if="noteFor(field)"
         class="mt-1 flex items-start gap-1 text-xs"

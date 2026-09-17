@@ -16,9 +16,9 @@ defineProps<{
 <template>
   <NuxtLink
     :to="to"
-    class="group block border border-gray-200 dark:border-neutral-800 rounded-lg overflow-hidden bg-white dark:bg-gray-800 transition hover:shadow-sm"
+    class="group block border border-default dark:border-neutral-800 rounded-lg overflow-hidden bg-white bg-elevated transition hover:shadow-sm"
   >
-    <div class="aspect-[3/2] bg-gray-100 dark:bg-neutral-900 overflow-hidden">
+    <div class="aspect-[3/2] bg-muted dark:bg-neutral-900 overflow-hidden">
       <img
         v-if="pod.previewImageUrl"
         :src="pod.previewImageUrl"
@@ -28,7 +28,7 @@ defineProps<{
         decoding="async"
         data-pod-thumb
       />
-      <div v-else class="h-full w-full flex items-center justify-center text-xs text-gray-500">
+      <div v-else class="h-full w-full flex items-center justify-center text-xs text-muted">
         No preview
       </div>
     </div>
@@ -45,11 +45,11 @@ defineProps<{
           <UBadge v-if="pod.category" color="info" variant="soft" size="sm" class="capitalize">
             {{ pod.category }}
           </UBadge>
-          <span v-if="pod.version" class="text-[10px] text-gray-500 font-mono">v{{ pod.version }}</span>
+          <span v-if="pod.version" class="text-[10px] text-muted font-mono">v{{ pod.version }}</span>
         </div>
       </div>
 
-      <div v-if="pod.description" class="text-xs text-gray-500 line-clamp-2">
+      <div v-if="pod.description" class="text-xs text-muted line-clamp-2">
         {{ pod.description }}
       </div>
     </div>
