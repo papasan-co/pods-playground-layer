@@ -85,6 +85,17 @@ function toEmittedValue(entryOrUrl: string | PickerEntry, alt?: string) {
   const value = typeof entryOrUrl === 'string' ? entryOrUrl : (entryOrUrl.s3Key || entryOrUrl.url)
   const label = typeof entryOrUrl === 'string' ? alt : (entryOrUrl.alt || entryOrUrl.title)
   if (props.emitObject) {
+    if (typeof entryOrUrl !== 'string' && entryOrUrl.source === 'runtime') {
+      return {
+        mediaId: entryOrUrl.id,
+        s3Key: entryOrUrl.s3Key,
+        // Preview URLs can be signed and short-lived. Persist the same stable
+        // storage value as existing media fields, plus its owned media identity.
+        src: value,
+        url: value,
+        ...(label ? { alt: label } : {}),
+      }
+    }
     return { src: value, url: value, ...(label ? { alt: label } : {}) }
   }
   return value
@@ -145,7 +156,7 @@ function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
         kind: runtimeKind(item),
         roles: Array.isArray(item.roles) ? item.roles.map((role) => String(role).toLowerCase().trim()).filter(Boolean) : [],
         tags: Array.isArray(item.tags) ? item.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
-        url: src,
+        url: url || src,
         s3Key: s3Key || undefined,
         mediaType: String(item.mediaType || '').trim() || undefined,
       } satisfies PickerEntry
@@ -247,7 +258,11 @@ const items = computed<PickerEntry[]>(() => {
   const query = String(q.value || '').trim().toLowerCase()
 
   return runtimeSource.filter((entry) => {
-    if (kind.value !== 'any' && entry.kind && entry.kind !== kind.value) return false
+    // An ordinary library image has no logo/illustration classification. It
+    // remains eligible for those image controls; videos and files do not.
+    const unclassifiedImage = entry.source === 'runtime' && entry.mediaType === 'image'
+      && !entry.roles?.length && ['photo', 'logo', 'illustration'].includes(kind.value)
+    if (kind.value !== 'any' && entry.kind && entry.kind !== kind.value && !unclassifiedImage) return false
     if (orientation.value !== 'any' && entry.orientation && entry.orientation !== orientation.value) return false
     if (!runtimeMatchesRoles(entry, requestedRoles)) return false
 
@@ -265,6 +280,8 @@ watch(
   () => [currentUrl.value, items.value.length, kind.value, defaultUrl.value] as const,
   () => {
     if (currentUrl.value) return
+    // Opening a field must not replace an existing malformed value with unrelated media.
+    if (props.modelValue != null && props.modelValue !== '') return
     if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
     if (defaultUrl.value) {
       emit('update:modelValue', toEmittedValue(defaultUrl.value))
@@ -289,12 +306,12 @@ function choose(it: PickerEntry) {
       <button
         type="button"
         data-testid="media-picker-trigger"
-        class="flex-1 max-w-full overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        class="flex-1 max-w-full overflow-hidden rounded-md border border-default px-3 py-2 text-left hover:bg-elevated transition-colors"
         @click="isOpen = true"
       >
         <div class="flex items-center gap-3 max-w-full overflow-hidden">
           <div
-            class="w-10 h-10 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 overflow-hidden shrink-0"
+            class="w-10 h-10 rounded border border-default bg-elevated overflow-hidden shrink-0"
           >
             <video
               v-if="selected && isVideoEntry(selected)"
@@ -327,7 +344,7 @@ function choose(it: PickerEntry) {
             />
             <div
               v-else-if="kind === 'video'"
-              class="flex h-full w-full items-center justify-center text-gray-400 dark:text-gray-500"
+              class="flex h-full w-full items-center justify-center text-dimmed text-muted"
               aria-hidden="true"
             >
               <UIcon name="i-lucide-video" class="h-5 w-5" />
@@ -335,10 +352,10 @@ function choose(it: PickerEntry) {
           </div>
 
           <div class="min-w-0 max-w-full overflow-hidden">
-            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">
+            <div class="text-sm font-medium text-toned text-default">
               {{ selected ? selected.title : 'Choose media…' }}
             </div>
-            <div class="text-xs text-gray-600 dark:text-gray-400 font-mono truncate max-w-full">
+            <div class="text-xs text-muted text-dimmed font-mono truncate max-w-full">
               {{ displaySecondary }}
             </div>
           </div>
@@ -365,18 +382,18 @@ function choose(it: PickerEntry) {
       />
 
       <div class="absolute inset-0 flex items-center justify-center p-4">
-        <div class="w-full max-w-4xl rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden">
-          <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">
+        <div class="w-full max-w-4xl rounded-lg bg-white bg-default border border-default shadow-xl overflow-hidden">
+          <div class="p-4 border-b border-default flex items-center justify-between gap-3">
             <div class="min-w-0">
-              <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">Select media</div>
-              <div class="text-xs text-gray-600 dark:text-gray-400 truncate">
+              <div class="text-sm font-semibold text-default">Select media</div>
+              <div class="text-xs text-muted text-dimmed truncate">
                 Filter: kind={{ kind }} orientation={{ orientation }} roles={{ roles.join(', ') || 'any' }}
               </div>
             </div>
             <UButton type="button" color="neutral" variant="ghost" size="sm" icon="i-lucide-x" @click="isOpen = false" />
           </div>
 
-          <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+          <div class="p-4 border-b border-default">
             <div v-if="mode === 'cms'" class="mb-3 flex items-center gap-2">
               <UButton
                 type="button"
@@ -403,7 +420,7 @@ function choose(it: PickerEntry) {
           </div>
 
           <div class="p-4 max-h-[70vh] overflow-auto">
-            <div v-if="items.length === 0" class="text-sm text-gray-500">
+            <div v-if="items.length === 0" class="text-sm text-muted">
               {{ mode === 'cms' ? 'No matching media in this source.' : 'No matching media in catalog.' }}
             </div>
 
@@ -412,10 +429,10 @@ function choose(it: PickerEntry) {
                 v-for="it in items"
                 :key="it.url"
                 type="button"
-                class="text-left rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                class="text-left rounded-md border border-default overflow-hidden hover:border-accented transition-colors"
                 @click="choose(it)"
               >
-                <div class="aspect-[4/3] bg-gray-50 dark:bg-gray-800 overflow-hidden">
+                <div class="aspect-[4/3] bg-elevated overflow-hidden">
                   <video
                     v-if="isVideoEntry(it)"
                     :src="it.url"
@@ -447,10 +464,10 @@ function choose(it: PickerEntry) {
                   />
                 </div>
                 <div class="p-2">
-                  <div class="text-xs font-semibold text-gray-800 dark:text-gray-200 line-clamp-2">
+                  <div class="text-xs font-semibold text-default line-clamp-2">
                     {{ it.title }}
                   </div>
-                  <div class="text-[10px] text-gray-500 font-mono truncate">{{ it.filename }}</div>
+                  <div class="text-[10px] text-muted font-mono truncate">{{ it.filename }}</div>
                 </div>
               </button>
             </div>
@@ -460,4 +477,3 @@ function choose(it: PickerEntry) {
     </div>
   </div>
 </template>
-
