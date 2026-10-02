@@ -20,7 +20,7 @@ export type LinkSection = {
 
 /** Something on the site a link may point at. */
 export type LinkTarget = {
-  kind: 'page' | 'entry' | 'form' | 'modal'
+  kind: 'page' | 'entry' | 'form' | 'modal' | 'booking'
   id: string
   title: string
   /** Absent for a form, which opens in place and has no address. */
@@ -58,3 +58,5 @@ export type LinkValue =
   | { kind: 'form', form?: string, zone?: string, presentation?: 'inline' | 'modal' }
   | { kind: 'modal', modalUuid: string, fallback: { kind: 'url', url: string } }
   | { kind: 'url', url: string, newTab?: boolean, presentation?: 'booking-modal' }
+  /** An Autumn Scheduling booking link, by uuid; it opens in the booking popup. */
+  | { kind: 'booking', link: string }
