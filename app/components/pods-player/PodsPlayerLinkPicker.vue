@@ -36,7 +36,8 @@ const open = ref(false)
 // puts the existing destination back.
 const replacing = ref(false)
 const cursor = ref(-1)
-const wantsSection = ref(Boolean(props.modelValue && 'section' in props.modelValue && props.modelValue.section))
+// Imported content can carry a bare href string; only a link object has a section.
+const wantsSection = ref(Boolean(typeof props.modelValue === 'object' && props.modelValue && 'section' in props.modelValue && props.modelValue.section))
 
 const targets = computed(() => props.targets ?? [])
 
