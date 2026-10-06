@@ -898,10 +898,15 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
 </script>
 
 <template>
+  <!--
+    Fields hidden by a condition stay in the DOM (v-show, display: none), so
+    "the last field" means the last one with no visible field after it;
+    plain last:mb-0 left a double gap under a card whose final field was hidden.
+  -->
   <template v-for="(field, idx) in fields" :key="field.name || `${field.type}-${idx}`">
     <div
       v-if="field.type === 'group' && isVisible(field) && !isHidden(field)"
-      class="mb-4 last:mb-0"
+      class="mb-4 [&:not(:has(~:not([style*=none])))]:mb-0"
       :data-au-field-group="fieldAddress(field.name)"
     >
       <UCollapsible
@@ -996,7 +1001,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
     </div>
 
     <!-- Row: UI/layout primitive (does not store data) -->
-    <div v-else-if="field.type === 'row' && isVisible(field) && !isHidden(field)" class="flex gap-3 mb-4 last:mb-0">
+    <div v-else-if="field.type === 'row' && isVisible(field) && !isHidden(field)" class="flex gap-3 mb-4 [&:not(:has(~:not([style*=none])))]:mb-0">
       <template v-for="(child, ci) in field.fields || []" :key="child.name || `${child.type}-${ci}`">
         <div :class="(child.width as string) || 'flex-1'">
           <PodsPlayerResponsiveField
@@ -1172,7 +1177,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
     <PodsPlayerResponsiveField
       v-else-if="field.responsive && !isHidden(field)"
       v-show="isVisible(field)"
-      class="mb-4 last:mb-0"
+      class="mb-4 [&:not(:has(~:not([style*=none])))]:mb-0"
       :field="field"
       :model-value="modelValue"
       :viewport="viewport || 'laptop'"
@@ -1185,7 +1190,7 @@ function updatePositionGrid(field: FormField, value: { verticalPosition: 'top' |
       v-show="isVisible(field)"
       :label="field.type === 'slider' ? undefined : field.label"
       :data-au-field-control="fieldAddress(field.name)"
-      class="mb-4 last:mb-0"
+      class="mb-4 [&:not(:has(~:not([style*=none])))]:mb-0"
     >
       <template v-if="limitCountLabel(field)" #hint>
         <span
