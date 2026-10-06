@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { calBookingPath } from '@papasan-co/autumn-web-primitives'
 import type { LinkSection, LinkTarget, LinkValue } from '#pods-player/linkTarget'
 
 /**
@@ -49,6 +50,7 @@ const GROUPS: Array<{ kind: LinkTarget['kind'], label: string }> = [
   { kind: 'page', label: 'Pages' },
   { kind: 'entry', label: 'Entries' },
   { kind: 'form', label: 'Forms' },
+  { kind: 'modal', label: 'Content modals' },
 ]
 
 const groups = computed(() => {
@@ -73,7 +75,7 @@ const target = computed<LinkTarget | undefined>(() => {
       ? targets.value.find(t => t.kind === 'form' && t.zone === v.zone)
       : targets.value.find(t => t.kind === 'form' && !t.zone && t.id === v.form)
   }
-  const id = v.kind === 'page' ? v.page : v.entry
+  const id = v.kind === 'page' ? v.page : v.kind === 'modal' ? v.modalUuid : v.entry
   return targets.value.find(t => t.kind === v.kind && t.id === id)
 })
 
@@ -92,10 +94,23 @@ const display = computed(() => {
     title: t.title,
     detail: t.kind === 'form'
       ? (v.kind === 'form' && v.presentation === 'modal' ? 'Opens as a dialog' : 'Opens in place')
-      : (t.path ?? ''),
-    glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : 'F',
+      : (t.detail ?? t.path ?? ''),
+    glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : t.kind === 'modal' ? 'M' : 'F',
   }
 })
+
+function setBookingPopup(on: boolean) {
+  const value = props.modelValue
+  if (value?.kind !== 'url' || props.readOnly) return
+  const { presentation: _previous, ...rest } = value
+  emit('update:modelValue', on ? { ...rest, newTab: false, presentation: 'booking-modal' } : rest)
+}
+
+function setModalFallback(url: string) {
+  const value = props.modelValue
+  if (value?.kind !== 'modal' || props.readOnly) return
+  emit('update:modelValue', { ...value, fallback: { kind: 'url', url } })
+}
 
 function choose(t: LinkTarget) {
   if (props.readOnly) return
@@ -105,6 +120,7 @@ function choose(t: LinkTarget) {
   replacing.value = false
   if (t.kind === 'page') emit('update:modelValue', { kind: 'page', page: t.id })
   else if (t.kind === 'entry') emit('update:modelValue', { kind: 'entry', collection: t.collection ?? '', entry: t.id })
+  else if (t.kind === 'modal') emit('update:modelValue', { kind: 'modal', modalUuid: t.id, fallback: { kind: 'url', url: t.fallbackUrl || '' } })
   else if (t.zone) emit('update:modelValue', { kind: 'form', zone: t.zone })
   else emit('update:modelValue', { kind: 'form', form: t.id })
 }
@@ -324,7 +340,7 @@ function indexOf(item: LinkTarget): number {
       v-if="target?.status === 'draft'"
       class="text-[11px] leading-snug text-amber-700 dark:text-amber-400"
     >
-      This page is a draft. The link will be hidden until it is published.
+      Publish this destination before publishing a page that links to it.
     </p>
     <p
       v-else-if="isBroken"
@@ -334,6 +350,13 @@ function indexOf(item: LinkTarget): number {
     </p>
 
     <!-- a form: in place, or as a dialog over the page -->
+    <label v-if="modelValue?.kind === 'modal' && !replacing" class="flex flex-col gap-1 text-xs">
+      Fallback destination
+      <input type="text" :value="modelValue.fallback.url" :disabled="readOnly"
+        placeholder="https:// or mailto:" class="rounded-md border px-2 py-1.5"
+        @input="setModalFallback(($event.target as HTMLInputElement).value)">
+      <span class="text-muted">Used when the dialog cannot open or the visitor opens the link in a new tab.</span>
+    </label>
     <label
       v-if="modelValue?.kind === 'form' && !isBroken && !replacing"
       class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
@@ -377,7 +400,7 @@ function indexOf(item: LinkTarget): number {
     </template>
 
     <label
-      v-if="modelValue?.kind === 'url' && !replacing"
+      v-if="modelValue?.kind === 'url' && !replacing && !modelValue.presentation"
       class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
     >
       <input
@@ -387,6 +410,10 @@ function indexOf(item: LinkTarget): number {
         @change="setNewTab(($event.target as HTMLInputElement).checked)"
       >
       Open in a new tab
+    </label>
+    <label v-if="modelValue?.kind === 'url' && !replacing && calBookingPath(modelValue.url)" class="flex items-center gap-2 text-[11px] text-muted text-dimmed">
+      <input type="checkbox" :checked="modelValue.presentation === 'booking-modal'" :disabled="readOnly" @change="setBookingPopup(($event.target as HTMLInputElement).checked)">
+      Open booking popup
     </label>
   </div>
 </template>

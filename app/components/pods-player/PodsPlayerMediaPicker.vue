@@ -42,6 +42,7 @@ const props = defineProps<{
   modelValue?: MediaValue
   constraint?: UiConstraint
   emitObject?: boolean
+  allowEmpty?: boolean
   mediaItems?: RuntimeMediaItem[]
   storyMediaItems?: RuntimeMediaItem[]
   libraryMediaItems?: RuntimeMediaItem[]
@@ -275,11 +276,11 @@ const items = computed<PickerEntry[]>(() => {
   })
 })
 
-// Visual media fields should always have a selection; default to first matching item.
+// Required visual media fields default to the first match; optional fields keep an explicit empty selection.
 watch(
   () => [currentUrl.value, items.value.length, kind.value, defaultUrl.value] as const,
   () => {
-    if (currentUrl.value) return
+    if (props.allowEmpty || currentUrl.value) return
     // Opening a field must not replace an existing malformed value with unrelated media.
     if (props.modelValue != null && props.modelValue !== '') return
     if (kind.value !== 'photo' && kind.value !== 'logo' && kind.value !== 'video') return
