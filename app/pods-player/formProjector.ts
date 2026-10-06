@@ -319,6 +319,42 @@ function startsWithParts(path: string[], prefix: string[]): boolean {
   );
 }
 
+/**
+ * Find the audited field a model path names at this level. Editor-only groups
+ * (`__` names) and rows add no path segment, so a field inside them is
+ * addressed exactly as if it sat at the top; website pods and collection entry
+ * editors group nearly every field this way.
+ */
+function auditedFieldAt(
+  fields: FormField[],
+  path: string,
+): FormField | undefined {
+  for (const field of fields) {
+    if (
+      field.type === "group" &&
+      field.children &&
+      (!field.name || isUiOnlyGroupName(field.name))
+    ) {
+      const found = auditedFieldAt(field.children, path);
+      if (found) return found;
+      continue;
+    }
+    if (field.type === "row" && field.fields) {
+      const found = auditedFieldAt(field.fields, path);
+      if (found) return found;
+      continue;
+    }
+    if (
+      field.name === path &&
+      AUDITED_FIELD_PRIMITIVE_TYPES.includes(
+        field.type as (typeof AUDITED_FIELD_PRIMITIVE_TYPES)[number],
+      )
+    )
+      return field;
+  }
+  return undefined;
+}
+
 const UNSET_SENTINEL = Symbol("form-projector-unset");
 
 /**
@@ -336,13 +372,7 @@ export function applyFormModelOperation(
 
   if (operation.type === "set") {
     setAtPath(afterModel, operation.path, operation.value);
-    const auditedField = state.fields.find(
-      (field) =>
-        field.name === operation.path &&
-        AUDITED_FIELD_PRIMITIVE_TYPES.includes(
-          field.type as (typeof AUDITED_FIELD_PRIMITIVE_TYPES)[number],
-        ),
-    );
+    const auditedField = auditedFieldAt(state.fields, operation.path);
     if (auditedField) {
       const path = auditedField.path || auditedField.name || operation.path;
       translated = [
