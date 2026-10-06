@@ -5,62 +5,62 @@
  * v2 four-column pod playground: workspace rail, pod list, canvas, field panel.
  */
 
-import { usePodPlayer } from '../../composables/pods-player/usePodPlayer'
-import { usePlaygroundLayout } from '../../composables/pods-player/usePlaygroundLayout'
-import type { PodsPlayerCanvasTarget, PodListItem } from '#pods-player/types'
-import PodsPlayerWorkspaceRail from './PodsPlayerWorkspaceRail.vue'
-import PodsPlayerPodList from './PodsPlayerPodList.vue'
-import PodsPlayerCanvasToolbar from './PodsPlayerCanvasToolbar.vue'
-import PodsPlayerCanvasCard from './PodsPlayerCanvasCard.vue'
-import PodsPlayerFieldPanel from './PodsPlayerFieldPanel.vue'
-import PodsPlayerPreview from './PodsPlayerPreview.vue'
-import PodsPlayerStoryPreview from './PodsPlayerStoryPreview.vue'
+import { usePodPlayer } from "../../composables/pods-player/usePodPlayer";
+import { usePlaygroundLayout } from "../../composables/pods-player/usePlaygroundLayout";
+import type { PodsPlayerCanvasTarget, PodListItem } from "#pods-player/types";
+import PodsPlayerWorkspaceRail from "./PodsPlayerWorkspaceRail.vue";
+import PodsPlayerPodList from "./PodsPlayerPodList.vue";
+import PodsPlayerCanvasToolbar from "./PodsPlayerCanvasToolbar.vue";
+import PodsPlayerCanvasCard from "./PodsPlayerCanvasCard.vue";
+import PodsPlayerFieldPanel from "./PodsPlayerFieldPanel.vue";
+import PodsPlayerPreview from "./PodsPlayerPreview.vue";
+import PodsPlayerStoryPreview from "./PodsPlayerStoryPreview.vue";
 
-type FieldPanelTab = 'chat' | 'fields' | 'timeline' | 'design'
+type FieldPanelTab = "chat" | "fields" | "timeline" | "design";
 
 const props = defineProps<{
-  packs: { id: string; label: string }[]
-  pods: PodListItem[]
-  activePackId: string
-  packLabel: string
-  packMeta?: string
-  slug: string
+  packs: { id: string; label: string }[];
+  pods: PodListItem[];
+  activePackId: string;
+  packLabel: string;
+  packMeta?: string;
+  slug: string;
   /** When false, show quiet artifact hint in canvas card */
-  artifactReady?: boolean
+  artifactReady?: boolean;
   /** Cmd+K from playground chrome (e.g. host command palette) */
-  onCmdK?: () => void
+  onCmdK?: () => void;
   /** Let host shells provide the shared workspace rail. */
-  hideWorkspaceRail?: boolean
+  hideWorkspaceRail?: boolean;
   /** Prevent field edits when the active pack is a read-only template. */
-  readOnly?: boolean
+  readOnly?: boolean;
   /** Optional host-provided props, such as CMS scene data, for preview-only context. */
-  previewPropsOverride?: Record<string, unknown> | null
+  previewPropsOverride?: Record<string, unknown> | null;
   // The draft's saved field values (edit_state) — flatForm-shaped, applied
   // verbatim so a reloaded page shows what the user saved.
-  savedFieldValues?: Record<string, unknown> | null
+  savedFieldValues?: Record<string, unknown> | null;
   /** Show the "New pod" affordance in the pod list (editable draft packs). */
-  canCreatePod?: boolean
-  selectedCanvasTargetKey?: string | null
-  fieldPanelActiveTab?: FieldPanelTab | null
+  canCreatePod?: boolean;
+  selectedCanvasTargetKey?: string | null;
+  fieldPanelActiveTab?: FieldPanelTab | null;
   /** Field-anchored notes (e.g. accessibility auto-adjustments) shown under matching controls. */
-  fieldNotes?: Array<{ fieldPath: string; message: string }>
-}>()
+  fieldNotes?: Array<{ fieldPath: string; message: string }>;
+}>();
 
 const emit = defineEmits<{
-  selectPack: [id: string]
-  selectPod: [slug: string]
-  backToPacks: []
-  selectCanvasTarget: [target: PodsPlayerCanvasTarget]
-  previewReady: [payload: { sourcePreviewId: string | null }]
-  'update:fieldPanelActiveTab': [value: FieldPanelTab]
+  selectPack: [id: string];
+  selectPod: [slug: string];
+  backToPacks: [];
+  selectCanvasTarget: [target: PodsPlayerCanvasTarget];
+  previewReady: [payload: { sourcePreviewId: string | null }];
+  "update:fieldPanelActiveTab": [value: FieldPanelTab];
   // Fired after a user edit in the field panel with the panel's full current
   // values — the host app persists them (playground autosave).
-  formValuesChanged: [values: Record<string, unknown>]
+  formValuesChanged: [values: Record<string, unknown>];
   // "New pod" clicked in the pod list (Track 5 scaffolding entry point).
-  newPod: []
-}>()
+  newPod: [];
+}>();
 
-const slugRef = toRef(props, 'slug')
+const slugRef = toRef(props, "slug");
 
 const {
   runtime,
@@ -80,20 +80,20 @@ const {
   applyFormUpdate,
 } = usePodPlayer(slugRef, {
   savedValuesOverlay: () => props.savedFieldValues ?? null,
-})
+});
 
 function stepPod(delta: number) {
-  const idx = props.pods.findIndex((p) => p.slug === props.slug)
-  if (idx < 0) return
-  const next = props.pods[idx + delta]
-  if (next) emit('selectPod', next.slug)
+  const idx = props.pods.findIndex((p) => p.slug === props.slug);
+  if (idx < 0) return;
+  const next = props.pods[idx + delta];
+  if (next) emit("selectPod", next.slug);
 }
 
 const layout = usePlaygroundLayout({
   onCmdK: () => props.onCmdK?.(),
   onArrowLeft: () => stepPod(-1),
   onArrowRight: () => stepPod(1),
-})
+});
 
 const {
   podListCollapsed,
@@ -106,14 +106,14 @@ const {
   togglePodList,
   toggleFieldPanel,
   toggleScrollMode,
-} = layout
+} = layout;
 
 const podLabel = computed(
   () => pod.value?.label || pod.value?.slug || props.slug,
-)
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function mergePreviewProps(
@@ -121,32 +121,32 @@ function mergePreviewProps(
   override: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
   if (!override) {
-    return base
+    return base;
   }
 
-  const merged = { ...base, ...override }
+  const merged = { ...base, ...override };
 
   for (const key of [
-    'content',
-    'contentLayout',
-    'logoLayout',
-    'image',
-    'logo',
-    'video',
-    'bg',
+    "content",
+    "contentLayout",
+    "logoLayout",
+    "image",
+    "logo",
+    "video",
+    "bg",
   ]) {
     if (isRecord(base[key]) && isRecord(override[key])) {
       merged[key] = mergePreviewProps(
         base[key] as Record<string, unknown>,
         override[key] as Record<string, unknown>,
-      )
+      );
     }
   }
 
   for (const [key, value] of Object.entries(override)) {
     if (value === undefined) {
-      merged[key] = base[key]
-      continue
+      merged[key] = base[key];
+      continue;
     }
 
     if (
@@ -155,16 +155,65 @@ function mergePreviewProps(
       base[key].length > 0 &&
       value.length === 0
     ) {
-      merged[key] = base[key]
+      merged[key] = base[key];
     }
   }
 
-  return merged
+  return merged;
 }
 
 const effectivePreviewProps = computed(() =>
   mergePreviewProps(previewProps.value, props.previewPropsOverride),
-)
+);
+const fieldPanelRevision = ref(0);
+
+function structuralFieldChanged(
+  fieldName: string,
+  previous: unknown,
+  next: unknown,
+): boolean {
+  const field = formSchema.value.find(
+    (candidate) => candidate.name === fieldName,
+  );
+  if (!field) return false;
+
+  if (field.type === "variant" && typeof field.discriminator === "string") {
+    const discriminator = field.discriminator;
+    return isRecord(previous) && isRecord(next)
+      ? previous[discriminator] !== next[discriminator]
+      : previous !== next;
+  }
+
+  if (field.type === "pods" && Array.isArray(previous) && Array.isArray(next)) {
+    if (previous.length !== next.length) return true;
+    return previous.some((item, index) => {
+      const nextItem = next[index];
+      return (
+        !isRecord(item) ||
+        !isRecord(nextItem) ||
+        item._uid !== nextItem._uid ||
+        item.pod_slug !== nextItem.pod_slug
+      );
+    });
+  }
+
+  return field.type === "pods" && previous !== next;
+}
+
+function applyPanelFormUpdate(payload: {
+  field: string;
+  value: unknown;
+  structural?: boolean;
+}) {
+  if (props.readOnly) return;
+  const previous = flatForm[payload.field];
+  const refreshStructure =
+    payload.structural === true ||
+    structuralFieldChanged(payload.field, previous, payload.value);
+  applyFormUpdate(payload);
+  if (refreshStructure) fieldPanelRevision.value += 1;
+  emit("formValuesChanged", { ...flatForm });
+}
 
 // Saved edit_state is applied INSIDE usePodPlayer's form resets (the
 // savedValuesOverlay option) so no watcher ordering can shadow it. This
@@ -176,82 +225,82 @@ const effectivePreviewProps = computed(() =>
 watch(
   () => props.savedFieldValues,
   (saved) => {
-    if (loading.value) return
-    if (!saved || typeof saved !== 'object') return
+    if (loading.value) return;
+    if (!saved || typeof saved !== "object") return;
 
     for (const [key, value] of Object.entries(saved)) {
-      if (value !== undefined) flatForm[key] = value
+      if (value !== undefined) flatForm[key] = value;
     }
   },
-)
+);
 const selectableCanvasTargets = computed<PodsPlayerCanvasTarget[]>(() =>
   canvasTargetsFromFields(formSchema.value, effectivePreviewProps.value),
-)
+);
 
-function setViewport(v: import('#pods-player/types').PodsPlayerViewport) {
-  viewport.value = v
+function setViewport(v: import("#pods-player/types").PodsPlayerViewport) {
+  viewport.value = v;
 }
 
-function setMode(m: import('#pods-player/types').PodsPlayerMode) {
-  mode.value = m
+function setMode(m: import("#pods-player/types").PodsPlayerMode) {
+  mode.value = m;
 }
 
 function setShowFixtures(v: boolean) {
-  showFixtures.value = v
+  showFixtures.value = v;
 }
 function setShowPropsTab(v: boolean) {
-  showPropsTab.value = v
+  showPropsTab.value = v;
 }
 function setShowYamlTab(v: boolean) {
-  showYamlTab.value = v
+  showYamlTab.value = v;
 }
 
 function toggleAdvanced() {
-  advancedFieldsOpen.value = !advancedFieldsOpen.value
+  advancedFieldsOpen.value = !advancedFieldsOpen.value;
 }
 
 function canvasTargetsFromFields(
   fields: unknown[],
   values: Record<string, unknown>,
 ): PodsPlayerCanvasTarget[] {
-  const targets: PodsPlayerCanvasTarget[] = []
+  const targets: PodsPlayerCanvasTarget[] = [];
 
-  const visit = (items: unknown[], prefix = '') => {
+  const visit = (items: unknown[], prefix = "") => {
     for (const item of items) {
-      if (!isRecord(item)) continue
+      if (!isRecord(item)) continue;
 
-      const type = typeof item.type === 'string' ? item.type : ''
+      const type = typeof item.type === "string" ? item.type : "";
 
-      if (type === 'group' && Array.isArray(item.children)) {
-        const name = typeof item.name === 'string' ? item.name : ''
-        const explicitPath = typeof item.path === 'string' ? item.path : ''
+      if (type === "group" && Array.isArray(item.children)) {
+        const name = typeof item.name === "string" ? item.name : "";
+        const explicitPath = typeof item.path === "string" ? item.path : "";
         const nextPrefix =
           explicitPath ||
-          (name && !name.startsWith('__') ? joinPath(prefix, name) : prefix)
-        visit(item.children, nextPrefix)
-        continue
+          (name && !name.startsWith("__") ? joinPath(prefix, name) : prefix);
+        visit(item.children, nextPrefix);
+        continue;
       }
 
-      if (type === 'row' && Array.isArray(item.fields)) {
-        visit(item.fields, prefix)
-        continue
+      if (type === "row" && Array.isArray(item.fields)) {
+        visit(item.fields, prefix);
+        continue;
       }
 
-      if (type === 'repeater') {
-        continue
+      if (type === "repeater") {
+        continue;
       }
 
-      const fieldName = typeof item.name === 'string' ? item.name : ''
-      const explicitPath = typeof item.path === 'string' ? item.path : ''
+      const fieldName = typeof item.name === "string" ? item.name : "";
+      const explicitPath = typeof item.path === "string" ? item.path : "";
       const path =
-        explicitPath || (fieldName ? joinPath(prefix, fieldName) : '')
+        explicitPath || (fieldName ? joinPath(prefix, fieldName) : "");
 
-      if (!path) continue
+      if (!path) continue;
 
-      const value = pathValue(values, path)
-      const displayValue = targetDisplayValue(value)
+      const value = pathValue(values, path);
+      const displayValue = targetDisplayValue(value);
 
-      if (!displayValue) continue
+      if (!displayValue) continue;
 
       targets.push({
         key: path,
@@ -259,46 +308,48 @@ function canvasTargetsFromFields(
         label: fieldLabel(item, fieldName || path),
         value,
         displayValue,
-      })
+      });
     }
-  }
+  };
 
-  visit(fields)
+  visit(fields);
 
-  return targets
+  return targets;
 }
 
 function joinPath(prefix: string, next: string): string {
-  return prefix ? `${prefix}.${next}` : next
+  return prefix ? `${prefix}.${next}` : next;
 }
 
 function pathValue(source: Record<string, unknown>, path: string): unknown {
-  let current: unknown = source
+  let current: unknown = source;
 
-  for (const part of path.split('.')) {
-    if (!isRecord(current)) return undefined
-    current = current[part]
+  for (const part of path.split(".")) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
   }
 
-  return current
+  return current;
 }
 
 function fieldLabel(field: Record<string, unknown>, fallback: string): string {
-  const label = field.label
+  const label = field.label;
 
-  return typeof label === 'string' && label.trim().length > 0 ? label : fallback
+  return typeof label === "string" && label.trim().length > 0
+    ? label
+    : fallback;
 }
 
 function targetDisplayValue(value: unknown): string {
-  if (typeof value === 'string') {
-    return value.trim().length >= 2 ? value.trim() : ''
+  if (typeof value === "string") {
+    return value.trim().length >= 2 ? value.trim() : "";
   }
 
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
   }
 
-  return ''
+  return "";
 }
 </script>
 
@@ -341,7 +392,9 @@ function targetDisplayValue(value: unknown): string {
       @new-pod="emit('newPod')"
     />
 
-    <div class="relative flex min-w-0 flex-1 flex-col overflow-hidden pr-3.5 pt-3.5">
+    <div
+      class="relative flex min-w-0 flex-1 flex-col overflow-hidden pr-3.5 pt-3.5"
+    >
       <PodsPlayerCanvasToolbar
         :pack-label="packLabel"
         :pod-label="podLabel"
@@ -419,6 +472,7 @@ function targetDisplayValue(value: unknown): string {
     </div>
 
     <PodsPlayerFieldPanel
+      :key="fieldPanelRevision"
       :pod="pod"
       :schema="schema"
       :fixture="fixture"
@@ -431,13 +485,7 @@ function targetDisplayValue(value: unknown): string {
       :read-only="readOnly"
       :active-tab="fieldPanelActiveTab"
       :field-notes="fieldNotes"
-      @update:model-value="
-        (payload) => {
-          if (readOnly) return
-          applyFormUpdate(payload)
-          emit('formValuesChanged', { ...flatForm })
-        }
-      "
+      @update:model-value="applyPanelFormUpdate"
       @update:viewport="setViewport"
       @update:active-tab="emit('update:fieldPanelActiveTab', $event)"
       @toggle-advanced="toggleAdvanced"
