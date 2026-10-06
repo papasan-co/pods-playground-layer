@@ -43,6 +43,8 @@ type PickerEntry = MediaCatalogEntry & {
   mediaType?: string
   crop?: unknown
   adjustments?: unknown
+  /** "1600 × 2400", when the library knows the image's size. */
+  size?: string
 }
 
 type SourceMode = 'cms' | 'playground'
@@ -185,6 +187,7 @@ function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
         mediaType: String(item.mediaType || '').trim() || undefined,
         crop: item.crop,
         adjustments: item.adjustments,
+        size: width && height ? `${width} × ${height}` : undefined,
       }
     })
     .filter((entry): entry is PickerEntry => !!entry)
@@ -255,7 +258,17 @@ function shortNameFromUrl(raw: string | undefined): string {
   }
 }
 
-const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(currentUrl.value)))
+const isLibraryValue = computed(() => typeof props.modelValue === 'object' && typeof props.modelValue?.mediaId === 'string')
+const isAdjusted = computed(() => typeof props.modelValue === 'object'
+  && Boolean(props.modelValue?.adjustments || props.modelValue?.crop))
+
+// The title is already the file name for library media, so the second line says
+// what the title does not: the image's size, and whether this placement is adjusted.
+const displaySecondary = computed(() => {
+  if (!selected.value) return shortNameFromUrl(currentUrl.value)
+  if (selected.value.source !== 'runtime') return selected.value.filename
+  return [selected.value.size, isAdjusted.value ? 'Adjusted' : ''].filter(Boolean).join(' · ')
+})
 
 function runtimeMatchesRoles(entry: PickerEntry, requested: string[]): boolean {
   if (!requested.length) return true
@@ -433,22 +446,24 @@ const selectedAdjustments = computed(() => props.modelValue && typeof props.mode
           </div>
         </div>
       </button>
-      <UButton
-        v-if="canAdjust"
-        type="button"
-        data-testid="media-picker-adjust"
-        variant="link"
-        color="neutral"
-        size="xs"
-        @click="adjust"
-      >
-        Adjust
-      </UButton>
+      <UTooltip v-if="canAdjust" text="Adjust image">
+        <UButton
+          type="button"
+          data-testid="media-picker-adjust"
+          icon="i-lucide-sliders-horizontal"
+          aria-label="Adjust image"
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          @click="adjust"
+        />
+      </UTooltip>
     </div>
 
-    <!-- Hide URL editing for image/logo fields (picker-only); keep for non-image media kinds. -->
+    <!-- Pasting an address is for media held elsewhere (an external video, say).
+      Image fields and anything chosen from the library are picker-only. -->
     <UInput
-      v-if="kind !== 'photo' && kind !== 'logo'"
+      v-if="kind !== 'photo' && kind !== 'logo' && !isLibraryValue"
       size="sm"
       class="w-full"
       placeholder="Paste media URL"
