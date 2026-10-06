@@ -19,7 +19,13 @@ import type { LinkSection, LinkTarget, LinkValue } from '#pods-player/linkTarget
  */
 
 const props = defineProps<{
-  modelValue?: LinkValue | null
+  /**
+   * A typed reference, or a plain string written before links were typed
+   * ("#programs", "/about", a full address). Packs and seeded sites still
+   * carry those, and the backend's link resolver renders them unchanged, so
+   * the control shows one as it is and leaves it alone until it is replaced.
+   */
+  modelValue?: LinkValue | string | null
   targets?: LinkTarget[]
   readOnly?: boolean
   placeholder?: string
@@ -29,6 +35,16 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: LinkValue | null): void
 }>()
 
+/** The typed reference, when the value is one. Every branch reads this. */
+const link = computed<LinkValue | null>(() =>
+  props.modelValue && typeof props.modelValue === 'object' ? props.modelValue : null)
+
+/** A string written before links were typed, kept verbatim. */
+const typedAddress = computed(() =>
+  typeof props.modelValue === 'string' && props.modelValue.trim() ? props.modelValue.trim() : null)
+
+const hasValue = computed(() => Boolean(link.value || typedAddress.value))
+
 const query = ref('')
 const open = ref(false)
 // Choosing a new destination should not destroy the current one until a
@@ -36,7 +52,7 @@ const open = ref(false)
 // puts the existing destination back.
 const replacing = ref(false)
 const cursor = ref(-1)
-const wantsSection = ref(Boolean(props.modelValue && 'section' in props.modelValue && props.modelValue.section))
+const wantsSection = ref(Boolean(link.value && 'section' in link.value && link.value.section))
 
 const targets = computed(() => props.targets ?? [])
 
@@ -68,7 +84,7 @@ const flat = computed(() => groups.value.flatMap(g => g.items))
 
 /** The record a reference points at, or undefined once it has been deleted. */
 const target = computed<LinkTarget | undefined>(() => {
-  const v = props.modelValue
+  const v = link.value
   if (!v || v.kind === 'url') return undefined
   if (v.kind === 'form') {
     // A form by the zone that draws it, or by its own id.
@@ -81,13 +97,13 @@ const target = computed<LinkTarget | undefined>(() => {
 })
 
 const isBroken = computed(() =>
-  Boolean(props.modelValue && props.modelValue.kind !== 'url' && !target.value))
+  Boolean(link.value && link.value.kind !== 'url' && !target.value))
 
 const sections = computed<LinkSection[]>(() => target.value?.sections ?? [])
 
 const display = computed(() => {
-  const v = props.modelValue
-  if (!v) return null
+  const v = link.value
+  if (!v) return typedAddress.value ? { title: 'Typed address', detail: typedAddress.value, glyph: '#' } : null
   if (v.kind === 'url') return { title: 'External address', detail: v.url, glyph: '↗' }
   if (isBroken.value) return { title: 'Missing target', detail: 'This was deleted', glyph: '!' }
   const t = target.value!
@@ -101,14 +117,14 @@ const display = computed(() => {
 })
 
 function setBookingPopup(on: boolean) {
-  const value = props.modelValue
+  const value = link.value
   if (value?.kind !== 'url' || props.readOnly) return
   const { presentation: _previous, ...rest } = value
   emit('update:modelValue', on ? { ...rest, newTab: false, presentation: 'booking-modal' } : rest)
 }
 
 function setModalFallback(url: string) {
-  const value = props.modelValue
+  const value = link.value
   if (value?.kind !== 'modal' || props.readOnly) return
   emit('update:modelValue', { ...value, fallback: { kind: 'url', url } })
 }
@@ -128,7 +144,7 @@ function choose(t: LinkTarget) {
 }
 /** A form opens in place, or as a dialog over the page. */
 function setModal(on: boolean) {
-  const v = props.modelValue
+  const v = link.value
   if (!v || v.kind !== 'form' || props.readOnly) return
   const { presentation: _previous, ...rest } = v
   emit('update:modelValue', on ? { ...rest, presentation: 'modal' } : rest)
@@ -167,7 +183,7 @@ function clear() {
 }
 
 function setSection(id: string) {
-  const v = props.modelValue
+  const v = link.value
   if (!v || v.kind !== 'page' || props.readOnly) return
   emit('update:modelValue', id ? { ...v, section: id } : { kind: 'page', page: v.page })
 }
@@ -179,7 +195,7 @@ function toggleSection(on: boolean) {
 }
 
 function setNewTab(on: boolean) {
-  const v = props.modelValue
+  const v = link.value
   if (!v || v.kind !== 'url' || props.readOnly) return
   emit('update:modelValue', { ...v, newTab: on })
 }
@@ -220,7 +236,7 @@ function indexOf(item: LinkTarget): number {
   <div class="relative flex flex-col gap-1.5">
     <!-- picked -->
     <div
-      v-if="modelValue && !replacing"
+      v-if="hasValue && !replacing"
       class="flex items-center gap-2 rounded-md border px-2 py-1.5"
       :class="isBroken
         ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
@@ -264,7 +280,7 @@ function indexOf(item: LinkTarget): number {
 
     <!-- searching -->
     <input
-      v-if="!modelValue || replacing"
+      v-if="!hasValue || replacing"
       type="text"
       autocomplete="off"
       :disabled="readOnly"
@@ -278,7 +294,7 @@ function indexOf(item: LinkTarget): number {
 
     <!-- keeping what is already there is one click away -->
     <button
-      v-if="replacing && modelValue"
+      v-if="replacing && hasValue"
       type="button"
       class="self-start text-[11px] text-muted underline hover:text-default text-dimmed"
       @click="cancelReplace"
@@ -352,21 +368,21 @@ function indexOf(item: LinkTarget): number {
     </p>
 
     <!-- a form: in place, or as a dialog over the page -->
-    <label v-if="modelValue?.kind === 'modal' && !replacing" class="flex flex-col gap-1 text-xs">
+    <label v-if="link?.kind === 'modal' && !replacing" class="flex flex-col gap-1 text-xs">
       Fallback destination
-      <input type="text" :value="modelValue.fallback.url" :disabled="readOnly"
+      <input type="text" :value="link.fallback.url" :disabled="readOnly"
         placeholder="https:// or mailto:" class="rounded-md border px-2 py-1.5"
         @input="setModalFallback(($event.target as HTMLInputElement).value)">
       <span class="text-muted">Used when the dialog cannot open or the visitor opens the link in a new tab.</span>
     </label>
     <label
-      v-if="modelValue?.kind === 'form' && !isBroken && !replacing"
+      v-if="link?.kind === 'form' && !isBroken && !replacing"
       class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
       data-testid="link-form-modal"
     >
       <input
         type="checkbox"
-        :checked="modelValue.presentation === 'modal'"
+        :checked="link.presentation === 'modal'"
         :disabled="readOnly"
         @change="setModal(($event.target as HTMLInputElement).checked)"
       >
@@ -374,7 +390,7 @@ function indexOf(item: LinkTarget): number {
     </label>
 
     <!-- jumping to a section on the chosen page -->
-    <template v-if="modelValue?.kind === 'page' && !isBroken && !replacing">
+    <template v-if="link?.kind === 'page' && !isBroken && !replacing">
       <label
         class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
         :class="sections.length ? '' : 'opacity-60'"
@@ -389,7 +405,7 @@ function indexOf(item: LinkTarget): number {
       </label>
       <select
         v-if="wantsSection && sections.length"
-        :value="modelValue.section || ''"
+        :value="link.section || ''"
         :disabled="readOnly"
         class="w-full rounded-md border border-accented px-2.5 py-1.5 text-xs text-default bg-default"
         @change="setSection(($event.target as HTMLSelectElement).value)"
@@ -402,19 +418,19 @@ function indexOf(item: LinkTarget): number {
     </template>
 
     <label
-      v-if="modelValue?.kind === 'url' && !replacing && !modelValue.presentation"
+      v-if="link?.kind === 'url' && !replacing && !link.presentation"
       class="flex items-center gap-2 text-[11px] text-muted text-dimmed"
     >
       <input
         type="checkbox"
-        :checked="modelValue.newTab !== false"
+        :checked="link.newTab !== false"
         :disabled="readOnly"
         @change="setNewTab(($event.target as HTMLInputElement).checked)"
       >
       Open in a new tab
     </label>
-    <label v-if="modelValue?.kind === 'url' && !replacing && calBookingPath(modelValue.url)" class="flex items-center gap-2 text-[11px] text-muted text-dimmed">
-      <input type="checkbox" :checked="modelValue.presentation === 'booking-modal'" :disabled="readOnly" @change="setBookingPopup(($event.target as HTMLInputElement).checked)">
+    <label v-if="link?.kind === 'url' && !replacing && calBookingPath(link.url)" class="flex items-center gap-2 text-[11px] text-muted text-dimmed">
+      <input type="checkbox" :checked="link.presentation === 'booking-modal'" :disabled="readOnly" @change="setBookingPopup(($event.target as HTMLInputElement).checked)">
       Open booking popup
     </label>
   </div>
