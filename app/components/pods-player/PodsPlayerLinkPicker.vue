@@ -36,7 +36,8 @@ const open = ref(false)
 // puts the existing destination back.
 const replacing = ref(false)
 const cursor = ref(-1)
-const wantsSection = ref(Boolean(props.modelValue && 'section' in props.modelValue && props.modelValue.section))
+// Imported content can carry a bare href string; only a link object has a section.
+const wantsSection = ref(Boolean(typeof props.modelValue === 'object' && props.modelValue && 'section' in props.modelValue && props.modelValue.section))
 
 const targets = computed(() => props.targets ?? [])
 
@@ -51,6 +52,7 @@ const GROUPS: Array<{ kind: LinkTarget['kind'], label: string }> = [
   { kind: 'entry', label: 'Entries' },
   { kind: 'form', label: 'Forms' },
   { kind: 'modal', label: 'Content modals' },
+  { kind: 'booking', label: 'Booking links' },
 ]
 
 const groups = computed(() => {
@@ -75,7 +77,7 @@ const target = computed<LinkTarget | undefined>(() => {
       ? targets.value.find(t => t.kind === 'form' && t.zone === v.zone)
       : targets.value.find(t => t.kind === 'form' && !t.zone && t.id === v.form)
   }
-  const id = v.kind === 'page' ? v.page : v.kind === 'modal' ? v.modalUuid : v.entry
+  const id = v.kind === 'page' ? v.page : v.kind === 'modal' ? v.modalUuid : v.kind === 'booking' ? v.link : v.entry
   return targets.value.find(t => t.kind === v.kind && t.id === id)
 })
 
@@ -95,7 +97,7 @@ const display = computed(() => {
     detail: t.kind === 'form'
       ? (v.kind === 'form' && v.presentation === 'modal' ? 'Opens as a dialog' : 'Opens in place')
       : (t.detail ?? t.path ?? ''),
-    glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : t.kind === 'modal' ? 'M' : 'F',
+    glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : t.kind === 'modal' ? 'M' : t.kind === 'booking' ? 'B' : 'F',
   }
 })
 
@@ -121,6 +123,7 @@ function choose(t: LinkTarget) {
   if (t.kind === 'page') emit('update:modelValue', { kind: 'page', page: t.id })
   else if (t.kind === 'entry') emit('update:modelValue', { kind: 'entry', collection: t.collection ?? '', entry: t.id })
   else if (t.kind === 'modal') emit('update:modelValue', { kind: 'modal', modalUuid: t.id, fallback: { kind: 'url', url: t.fallbackUrl || '' } })
+  else if (t.kind === 'booking') emit('update:modelValue', { kind: 'booking', link: t.id })
   else if (t.zone) emit('update:modelValue', { kind: 'form', zone: t.zone })
   else emit('update:modelValue', { kind: 'form', form: t.id })
 }
@@ -314,7 +317,7 @@ function indexOf(item: LinkTarget): number {
             @click="choose(item)"
           >
             <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-[10px] font-bold text-muted text-dimmed">
-              {{ item.kind === 'page' ? 'P' : item.kind === 'entry' ? 'E' : 'F' }}
+              {{ item.kind === 'page' ? 'P' : item.kind === 'entry' ? 'E' : item.kind === 'modal' ? 'M' : item.kind === 'booking' ? 'B' : 'F' }}
             </span>
             <span class="flex min-w-0 flex-1 flex-col">
               <span class="truncate text-xs font-medium text-default">{{ item.title }}</span>
