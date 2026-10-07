@@ -524,7 +524,7 @@ export function normalizePersistedMediaValue(value: unknown): unknown {
   }
   if (typeof value.decorative === 'boolean') normalized.decorative = value.decorative
   if (typeof value.quality === 'number') normalized.quality = value.quality
-  for (const key of ['focalPoint', 'crop', 'modifiers', 'metadata'] as const) {
+  for (const key of ['focalPoint', 'crop', 'adjustments', 'modifiers', 'metadata'] as const) {
     if (isRecord(value[key])) normalized[key] = clone(value[key])
   }
   return Object.keys(normalized).length ? normalized : value

@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { filterCatalog, findByUrl, type MediaCatalogEntry, type MediaKind, type MediaOrientation } from '#pods-player/mediaCatalog'
+import {
+  acceptedUploadTypes,
+  fileSuitsMediaKind,
+  MEDIA_RECIPE_KEYS,
+  PODS_PLAYER_MEDIA_HOST,
+  type PodsPlayerUploadedMedia,
+} from '#pods-player/mediaHost'
 
 type UiConstraint = {
   mediaKind?: MediaKind
@@ -25,6 +32,8 @@ type RuntimeMediaItem = {
   height?: number
   roles?: string[]
   tags?: string[]
+  crop?: unknown
+  adjustments?: unknown
 }
 
 type PickerEntry = MediaCatalogEntry & {
@@ -32,6 +41,10 @@ type PickerEntry = MediaCatalogEntry & {
   id?: string
   s3Key?: string
   mediaType?: string
+  crop?: unknown
+  adjustments?: unknown
+  /** "1600 × 2400", when the library knows the image's size. */
+  size?: string
 }
 
 type SourceMode = 'cms' | 'playground'
@@ -50,10 +63,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string | { src: string; url: string; alt?: string }): void
+  (e: 'update:modelValue', value: string | Record<string, unknown>): void
 }>()
 
+const mediaHost = inject(PODS_PLAYER_MEDIA_HOST, {})
 const isOpen = ref(false)
+const uploadInput = ref<HTMLInputElement | null>(null)
+const uploadProgress = ref<number | null>(null)
+const uploadError = ref('')
 const q = ref('')
 const sourceScope = ref<SourceScope>('story')
 
@@ -82,6 +99,13 @@ function isVideoEntry(entry: MediaCatalogEntry | PickerEntry | null | undefined)
   return entry?.kind === 'video' || mediaType.startsWith('video')
 }
 
+/** The entry's delivery recipe (crops and adjustments), so a new placement starts from the image's default. */
+function recipeOf(entry: PickerEntry): Record<string, unknown> {
+  return Object.fromEntries(MEDIA_RECIPE_KEYS
+    .filter(key => entry[key] && typeof entry[key] === 'object')
+    .map(key => [key, entry[key]]))
+}
+
 function toEmittedValue(entryOrUrl: string | PickerEntry, alt?: string) {
   const value = typeof entryOrUrl === 'string' ? entryOrUrl : (entryOrUrl.s3Key || entryOrUrl.url)
   const label = typeof entryOrUrl === 'string' ? alt : (entryOrUrl.alt || entryOrUrl.title)
@@ -95,6 +119,7 @@ function toEmittedValue(entryOrUrl: string | PickerEntry, alt?: string) {
         src: value,
         url: value,
         ...(label ? { alt: label } : {}),
+        ...recipeOf(entryOrUrl),
       }
     }
     return { src: value, url: value, ...(label ? { alt: label } : {}) }
@@ -138,7 +163,7 @@ function runtimeFilename(item: RuntimeMediaItem): string {
 
 function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
   return input
-    .map((item) => {
+    .map((item): PickerEntry | null => {
       const s3Key = String(item?.s3Key || '').trim()
       const url = String(item?.url || '').trim()
       const src = s3Key || url
@@ -160,7 +185,10 @@ function runtimeEntries(input: RuntimeMediaItem[]): PickerEntry[] {
         url: url || src,
         s3Key: s3Key || undefined,
         mediaType: String(item.mediaType || '').trim() || undefined,
-      } satisfies PickerEntry
+        crop: item.crop,
+        adjustments: item.adjustments,
+        size: width && height ? `${width} × ${height}` : undefined,
+      }
     })
     .filter((entry): entry is PickerEntry => !!entry)
 }
@@ -230,7 +258,17 @@ function shortNameFromUrl(raw: string | undefined): string {
   }
 }
 
-const displaySecondary = computed(() => (selected.value ? selected.value.filename : shortNameFromUrl(currentUrl.value)))
+const isLibraryValue = computed(() => typeof props.modelValue === 'object' && typeof props.modelValue?.mediaId === 'string')
+const isAdjusted = computed(() => typeof props.modelValue === 'object'
+  && Boolean(props.modelValue?.adjustments || props.modelValue?.crop))
+
+// The title is already the file name for library media, so the second line says
+// what the title does not: the image's size, and whether this placement is adjusted.
+const displaySecondary = computed(() => {
+  if (!selected.value) return shortNameFromUrl(currentUrl.value)
+  if (selected.value.source !== 'runtime') return selected.value.filename
+  return [selected.value.size, isAdjusted.value ? 'Adjusted' : ''].filter(Boolean).join(' · ')
+})
 
 function runtimeMatchesRoles(entry: PickerEntry, requested: string[]): boolean {
   if (!requested.length) return true
@@ -299,6 +337,51 @@ function choose(it: PickerEntry) {
   emit('update:modelValue', toEmittedValue(it))
   isOpen.value = false
 }
+
+const uploadAccept = computed(() => acceptedUploadTypes(kind.value))
+const isUploading = computed(() => uploadProgress.value !== null)
+
+async function uploadFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !mediaHost.upload) return
+
+  uploadError.value = ''
+  if (!fileSuitsMediaKind(file, kind.value)) {
+    uploadError.value = `${file.name} is not ${kind.value === 'video' ? 'a video' : 'an image'}.`
+    return
+  }
+
+  uploadProgress.value = 0
+  try {
+    const uploaded: PodsPlayerUploadedMedia = await mediaHost.upload(file, {
+      onProgress: percent => { uploadProgress.value = percent },
+    })
+    const [entry] = runtimeEntries([uploaded])
+    if (entry) choose(entry)
+  } catch (error) {
+    uploadError.value = error instanceof Error ? error.message : 'The upload failed. Try again.'
+  } finally {
+    uploadProgress.value = null
+  }
+}
+
+const canAdjust = computed(() => Boolean(mediaHost.adjust)
+  && props.emitObject
+  && selected.value?.mediaType === 'image'
+  && typeof props.modelValue === 'object'
+  && typeof props.modelValue?.mediaId === 'string')
+
+async function adjust() {
+  if (!mediaHost.adjust || !props.modelValue || typeof props.modelValue !== 'object') return
+  const adjusted = await mediaHost.adjust({ ...props.modelValue })
+  if (adjusted) emit('update:modelValue', adjusted)
+}
+
+const selectedAdjustments = computed(() => props.modelValue && typeof props.modelValue === 'object'
+  ? props.modelValue.adjustments
+  : undefined)
 </script>
 
 <template>
@@ -333,6 +416,7 @@ function choose(it: PickerEntry) {
               sizes="40px"
               densities="x1 x2"
               :alt="selected.alt || selected.title"
+              :modifiers="selectedAdjustments ? { adjustments: selectedAdjustments } : undefined"
               class="w-full h-full object-cover"
               :placeholder="[40, 40]"
             />
@@ -362,11 +446,24 @@ function choose(it: PickerEntry) {
           </div>
         </div>
       </button>
+      <UTooltip v-if="canAdjust" text="Adjust image">
+        <UButton
+          type="button"
+          data-testid="media-picker-adjust"
+          icon="i-lucide-sliders-horizontal"
+          aria-label="Adjust image"
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          @click="adjust"
+        />
+      </UTooltip>
     </div>
 
-    <!-- Hide URL editing for image/logo fields (picker-only); keep for non-image media kinds. -->
+    <!-- Pasting an address is for media held elsewhere (an external video, say).
+      Image fields and anything chosen from the library are picker-only. -->
     <UInput
-      v-if="kind !== 'photo' && kind !== 'logo'"
+      v-if="kind !== 'photo' && kind !== 'logo' && !isLibraryValue"
       size="sm"
       class="w-full"
       placeholder="Paste media URL"
@@ -391,8 +488,35 @@ function choose(it: PickerEntry) {
                 Filter: kind={{ kind }} orientation={{ orientation }} roles={{ roles.join(', ') || 'any' }}
               </div>
             </div>
-            <UButton type="button" color="neutral" variant="ghost" size="sm" icon="i-lucide-x" @click="isOpen = false" />
+            <div class="flex items-center gap-2">
+              <template v-if="mediaHost.upload">
+                <input
+                  ref="uploadInput"
+                  type="file"
+                  class="hidden"
+                  data-testid="media-picker-upload-input"
+                  :accept="uploadAccept"
+                  @change="uploadFile"
+                >
+                <UButton
+                  type="button"
+                  data-testid="media-picker-upload"
+                  size="sm"
+                  color="neutral"
+                  variant="soft"
+                  icon="i-lucide-upload"
+                  :loading="isUploading"
+                  @click="uploadInput?.click()"
+                >
+                  {{ isUploading ? `Uploading ${uploadProgress}%` : 'Upload' }}
+                </UButton>
+              </template>
+              <UButton type="button" color="neutral" variant="ghost" size="sm" icon="i-lucide-x" @click="isOpen = false" />
+            </div>
           </div>
+          <p v-if="uploadError" data-testid="media-picker-upload-error" class="px-4 pt-3 text-sm text-error">
+            {{ uploadError }}
+          </p>
 
           <div class="p-4 border-b border-default">
             <div v-if="mode === 'cms'" class="mb-3 flex items-center gap-2">
