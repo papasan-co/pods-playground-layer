@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Mark, mergeAttributes } from '@tiptap/core'
+
 const props = defineProps<{
   modelValue?: string
   disabled?: boolean
@@ -14,6 +16,22 @@ const value = computed({
   set: (next: string | null) => emit('update:modelValue', next || ''),
 })
 
+// Citation numbers are superscripts. The starter kit has no superscript or
+// subscript, so without these marks an edit silently drops every <sup>.
+const Superscript = Mark.create({
+  name: 'superscript',
+  excludes: 'subscript',
+  parseHTML: () => [{ tag: 'sup' }],
+  renderHTML: ({ HTMLAttributes }) => ['sup', mergeAttributes(HTMLAttributes), 0],
+})
+const Subscript = Mark.create({
+  name: 'subscript',
+  excludes: 'superscript',
+  parseHTML: () => [{ tag: 'sub' }],
+  renderHTML: ({ HTMLAttributes }) => ['sub', mergeAttributes(HTMLAttributes), 0],
+})
+const extensions = [Superscript, Subscript]
+
 const toolbarItems = [
   [
     { kind: 'paragraph', label: 'Body' },
@@ -22,6 +40,12 @@ const toolbarItems = [
   [
     { kind: 'mark', mark: 'bold', icon: 'i-lucide-bold', tooltip: { text: 'Bold' } },
     { kind: 'mark', mark: 'italic', icon: 'i-lucide-italic', tooltip: { text: 'Italic' } },
+    {
+      kind: 'mark',
+      mark: 'superscript',
+      icon: 'i-lucide-superscript',
+      tooltip: { text: 'Superscript (citation)' },
+    },
   ],
   [
     { kind: 'bulletList', icon: 'i-lucide-list', tooltip: { text: 'Bulleted list' } },
@@ -45,6 +69,7 @@ const toolbarItems = [
       v-slot="{ editor }"
       v-model="value"
       content-type="html"
+      :extensions="extensions"
       :editable="!disabled"
       :placeholder="{
         placeholder: placeholder || 'Write formatted body copy…',
@@ -55,7 +80,7 @@ const toolbarItems = [
         blockquote: false,
         codeBlock: false,
         horizontalRule: false,
-        link: false,
+        link: { openOnClick: false, HTMLAttributes: { target: null, rel: null } },
       }"
       :ui="{
         root: 'flex flex-col',
