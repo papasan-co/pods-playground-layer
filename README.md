@@ -53,6 +53,7 @@ export default defineNuxtConfig({
 Notes:
 - The alias override must exist **both** at Nuxt-level and **Vite-level** (Vite import-analysis happens before Nuxt aliasing in some cases).
 - If the repo is public, `PLAYGROUND_GITHUB_TOKEN` is optional.
+- The host app installs the packages the layer imports but does not declare: `sortablejs`, `lodash-es`, and `@tiptap/core` (the rich-text editor's citation superscript and subscript marks). Pin `@tiptap/core` to the TipTap version `@nuxt/ui` brings, so there is one copy.
 
 ## tailwind (nuxt ui v4 / tailwind v4)
 

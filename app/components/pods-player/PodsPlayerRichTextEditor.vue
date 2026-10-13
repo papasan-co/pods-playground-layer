@@ -80,7 +80,14 @@ const toolbarItems = [
         blockquote: false,
         codeBlock: false,
         horizontalRule: false,
-        link: { openOnClick: false, HTMLAttributes: { target: null, rel: null } },
+        // Keep the links the copy already has; typing or pasting an address
+        // does not make a new one, since the toolbar cannot remove it.
+        link: {
+          openOnClick: false,
+          autolink: false,
+          linkOnPaste: false,
+          HTMLAttributes: { target: null, rel: null },
+        },
       }"
       :ui="{
         root: 'flex flex-col',
