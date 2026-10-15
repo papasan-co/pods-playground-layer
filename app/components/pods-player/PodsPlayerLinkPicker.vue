@@ -270,20 +270,19 @@ function indexOf(item: LinkTarget): number {
         : 'border-default bg-elevated'"
       data-testid="link-destination"
     >
-      <UTooltip :text="display?.kindLabel">
-        <span
-          class="grid h-6 w-6 flex-none place-items-center rounded border"
-          :class="isBroken ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400' : 'border-accented text-muted'"
-          :aria-label="display?.kindLabel"
-        >
-          <UIcon :name="display?.icon ?? KINDS.url.icon" class="h-3.5 w-3.5" />
-        </span>
-      </UTooltip>
-
       <UPopover mode="hover" :open-delay="300" :close-delay="100" :content="{ side: 'left', align: 'start', sideOffset: 8 }">
-        <span class="flex min-w-0 flex-1 cursor-default flex-col">
-          <span class="line-clamp-2 break-words text-xs font-medium text-default">{{ display?.title }}</span>
-          <span class="truncate font-mono text-[10px] text-muted">{{ display?.detail }}</span>
+        <span class="flex min-w-0 flex-1 cursor-default items-center gap-2" data-testid="link-destination-summary">
+          <span
+            class="grid h-6 w-6 flex-none place-items-center rounded border"
+            :class="isBroken ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400' : 'border-accented text-muted'"
+            :aria-label="display?.kindLabel"
+          >
+            <UIcon :name="display?.icon ?? KINDS.url.icon" class="h-3.5 w-3.5" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="line-clamp-2 break-words text-xs font-medium text-default">{{ display?.title }}</span>
+            <span class="truncate font-mono text-[10px] text-muted">{{ display?.detail }}</span>
+          </span>
         </span>
         <template #content>
           <!-- the destination as a search result shows it: kind and state on top, then address, title and description -->
@@ -292,13 +291,13 @@ function indexOf(item: LinkTarget): number {
               <UIcon :name="display?.icon ?? KINDS.url.icon" class="h-3.5 w-3.5" />
               <span>{{ display?.kindLabel }}</span>
               <span class="flex-1" />
-              <span
+              <UBadge
                 v-if="target?.status"
-                class="rounded-full px-2 py-0.5 text-[11px]"
-                :class="target.status === 'draft'
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
-                  : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'"
-              >{{ target.status === 'draft' ? 'Draft' : 'Published' }}</span>
+                :label="target.status === 'draft' ? 'Draft' : 'Live'"
+                :color="target.status === 'draft' ? 'warning' : 'success'"
+                variant="soft"
+                size="xs"
+              />
             </div>
             <div class="flex gap-3 px-3 py-2.5">
               <div class="flex min-w-0 flex-1 flex-col gap-1">
@@ -312,14 +311,8 @@ function indexOf(item: LinkTarget): number {
         </template>
       </UPopover>
 
-      <span
-        v-if="target?.status === 'draft'"
-        class="flex-none rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-      >Draft</span>
-      <span
-        v-else-if="isBroken"
-        class="flex-none rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700 dark:bg-red-950 dark:text-red-400"
-      >Broken</span>
+      <UBadge v-if="target?.status === 'draft'" label="Draft" color="warning" variant="soft" size="xs" class="flex-none" />
+      <UBadge v-else-if="isBroken" label="Broken" color="error" variant="soft" size="xs" class="flex-none" />
 
       <UDropdownMenu v-if="!readOnly" :items="menuItems" :content="{ align: 'end' }">
         <UButton
