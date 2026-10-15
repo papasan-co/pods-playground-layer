@@ -122,6 +122,20 @@ const display = computed(() => {
   }
 })
 
+/** The address the way a search result shows it: host › each part of the path. */
+const breadcrumb = computed(() => {
+  const address = display.value?.url ?? (props.modelValue?.kind !== 'url' ? target.value?.path : undefined)
+  if (!address) return ''
+  try {
+    const parsed = new URL(address, 'https://site.invalid')
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    return [parsed.host === 'site.invalid' ? '' : parsed.host, ...parts].filter(Boolean).join(' › ')
+  }
+  catch {
+    return address
+  }
+})
+
 /** Change, open and remove, behind one menu so the destination keeps the width. */
 const menuItems = computed(() => [[
   { label: 'Change', icon: 'i-lucide-arrow-left-right', onSelect: beginReplace },
@@ -272,14 +286,28 @@ function indexOf(item: LinkTarget): number {
           <span class="truncate font-mono text-[10px] text-muted">{{ display?.detail }}</span>
         </span>
         <template #content>
-          <div class="flex w-72 flex-col gap-1.5 p-3 text-xs" data-testid="link-destination-card">
-            <img v-if="target?.imageUrl" :src="target.imageUrl" alt="" class="mb-1 aspect-[1.91/1] w-full rounded object-cover">
-            <span class="font-medium text-default">{{ display?.title }}</span>
-            <span class="text-muted">
-              {{ display?.kindLabel }}<template v-if="target?.status"> · {{ target.status === 'draft' ? 'Draft' : 'Published' }}</template>
-            </span>
-            <span v-if="target?.description" class="line-clamp-2 text-default">{{ target.description }}</span>
-            <span v-if="display?.url" class="break-all font-mono text-[10px] text-muted">{{ display.url }}</span>
+          <!-- the destination as a search result shows it: kind and state on top, then address, title and description -->
+          <div class="w-80 text-xs" data-testid="link-destination-card">
+            <div class="flex items-center gap-1.5 border-b border-default bg-elevated px-3 py-2 text-muted">
+              <UIcon :name="display?.icon ?? KINDS.url.icon" class="h-3.5 w-3.5" />
+              <span>{{ display?.kindLabel }}</span>
+              <span class="flex-1" />
+              <span
+                v-if="target?.status"
+                class="rounded-full px-2 py-0.5 text-[11px]"
+                :class="target.status === 'draft'
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400'
+                  : 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400'"
+              >{{ target.status === 'draft' ? 'Draft' : 'Published' }}</span>
+            </div>
+            <div class="flex gap-3 px-3 py-2.5">
+              <div class="flex min-w-0 flex-1 flex-col gap-1">
+                <span v-if="breadcrumb" class="truncate text-[11px] text-muted">{{ breadcrumb }}</span>
+                <span class="text-sm text-primary">{{ display?.title }}</span>
+                <span v-if="target?.description" class="line-clamp-3 leading-snug text-muted">{{ target.description }}</span>
+              </div>
+              <img v-if="target?.imageUrl" :src="target.imageUrl" alt="" class="h-14 w-14 flex-none rounded object-cover">
+            </div>
           </div>
         </template>
       </UPopover>
