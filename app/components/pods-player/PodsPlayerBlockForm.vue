@@ -13,6 +13,8 @@ import PodsPlayerGeoPointPicker from './PodsPlayerGeoPointPicker.vue'
 import PodsPlayerIconSourceField from './PodsPlayerIconSourceField.vue'
 import PodsPlayerPositionPicker from './PodsPlayerPositionPicker.vue'
 import PodsPlayerRichTextEditor from './PodsPlayerRichTextEditor.vue'
+import PodsPlayerBoundField from './PodsPlayerBoundField.vue'
+import { fieldReference, referenceTo, type FieldReference, type FieldSource } from '#pods-player/fieldSource'
 import { identifyRepeaterBlueprint } from '#pods-player/designItemIdentity'
 import {
   activeVariantFields,
@@ -72,6 +74,13 @@ const props = defineProps<{
    * uses the rendered background when no background was chosen.
    */
   autoColors?: Record<string, string>
+  /**
+   * Where fields on this page may be filled from (a collection's Entry page
+   * fills them from the entry it draws). A field holding a reference is shown
+   * filled, whether or not this is given; with it, a text field can be
+   * filled from one of its values, and a filled one names what fills it.
+   */
+  fieldSource?: FieldSource | null
 }>()
 
 /**
@@ -242,6 +251,46 @@ function updateField(name: string, value: unknown, type: string, structural = fa
   const v = type === 'number' ? Number(value) : (held ?? value)
   emit('update:modelValue', { field: name, value: v, structural })
 
+}
+
+/** Text a person types: the fields that can be filled from the page's source instead. */
+const FILLABLE_TYPES = new Set(['input', 'text', 'textarea', 'rich-text', 'wysiwyg'])
+
+/** The reference a field holds in place of a value, or null for an ordinary value. */
+function referenceIn(field: FormField): FieldReference | null {
+  return field.name ? fieldReference(props.modelValue[field.name]) : null
+}
+
+/** Whether a text field may be filled from the page's source, and isn't already. */
+function canFillFromSource(field: FormField): boolean {
+  return Boolean(props.fieldSource?.fields.length)
+    && FILLABLE_TYPES.has(String(field.type ?? ''))
+    && !referenceIn(field)
+    && !isReadOnly(field)
+}
+
+/** The choices for filling a field from the page's source, in the order the host gives them. */
+function fillFromItems(field: FormField) {
+  return [(props.fieldSource?.fields ?? []).map(source => ({
+    label: source.label,
+    onSelect: () => fillFrom(field, source.name),
+  }))]
+}
+
+/** Fill a field from one of the source's values, replacing whatever it holds. */
+function fillFrom(field: FormField, name: string) {
+  if (!field.name || !props.fieldSource || isReadOnly(field)) return
+  emit('update:modelValue', { field: field.name, value: referenceTo(props.fieldSource, name) })
+}
+
+/**
+ * Stop filling a field from the source, on purpose: it becomes empty and
+ * ordinary, ready for its own text. Never the sample's text, which belongs
+ * to one record and would then show on every page drawn with this design.
+ */
+function writeOwn(field: FormField) {
+  if (!field.name || isReadOnly(field)) return
+  emit('update:modelValue', { field: field.name, value: FILLABLE_TYPES.has(String(field.type ?? '')) ? '' : null })
 }
 
 function updateDatetimeField(field: FormField, value: string) {
@@ -465,7 +514,7 @@ const CEILING_VISIBLE_FROM = 0.8
 /** How much room is left, or how far past the design's advisory this is. */
 function limitCountLabel(field: FormField): string {
   const limits = limitsOf(field)
-  if (!limits) return ''
+  if (!limits || referenceIn(field)) return ''
 
   const length = charCount(props.modelValue[String(field.name ?? '')])
 
@@ -1249,6 +1298,7 @@ function updatePositionGrid(
                 :reveal-field="revealField"
                 :field-notes="fieldNotes"
                 :link-targets="linkTargets || []"
+                :field-source="fieldSource"
                 :media-items="mediaItems || []"
                 :story-media-items="storyMediaItems || []"
                 :library-media-items="libraryMediaItems || []"
@@ -1289,6 +1339,7 @@ function updatePositionGrid(
           :library-media-items="libraryMediaItems || []"
           :media-source-mode="mediaSourceMode || 'playground'"
           :link-targets="linkTargets || []"
+          :field-source="fieldSource"
           @update:model-value="
             ({ field: child, value }) =>
               handleGroupUpdate(field.name as string | undefined, child, value)
@@ -1319,12 +1370,18 @@ function updatePositionGrid(
             :data-au-field-control="fieldAddress(child.name)"
             class="mb-2"
           >
-            <template v-if="limitCountLabel(child)" #hint>
-              <span
-                class="text-[11px] tabular-nums"
-                :class="isPastAdvisory(child) ? 'font-semibold text-amber-600' : 'text-muted'"
-                data-au-field-count
-              >{{ limitCountLabel(child) }}</span>
+            <template v-if="limitCountLabel(child) || canFillFromSource(child)" #hint>
+              <span class="flex items-center gap-2">
+                <span
+                  v-if="limitCountLabel(child)"
+                  class="text-[11px] tabular-nums"
+                  :class="isPastAdvisory(child) ? 'font-semibold text-amber-600' : 'text-muted'"
+                  data-au-field-count
+                >{{ limitCountLabel(child) }}</span>
+                <UDropdownMenu v-if="canFillFromSource(child)" :items="fillFromItems(child)" :content="{ align: 'end' }">
+                  <UButton size="xs" variant="link" color="neutral" icon="i-lucide-database" :label="fieldSource?.label" class="p-0 text-[11px]" data-testid="fill-from-source" />
+                </UDropdownMenu>
+              </span>
             </template>
             <template v-if="child.type === 'slider'" #label>
               <div class="flex items-center justify-between gap-2">
@@ -1332,8 +1389,16 @@ function updatePositionGrid(
                 <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(child as any) }}</span>
               </div>
             </template>
+            <PodsPlayerBoundField
+              v-if="referenceIn(child)"
+              :reference="referenceIn(child)!"
+              :source="fieldSource"
+              :read-only="isReadOnly(child)"
+              @fill-from="(name) => fillFrom(child, name)"
+              @write-own="writeOwn(child)"
+            />
             <UInput
-              v-if="child.type === 'input' || child.type === 'text'"
+              v-else-if="child.type === 'input' || child.type === 'text'"
               class="w-full"
               size="sm"
               :model-value="modelValue[child.name as string]"
@@ -1527,12 +1592,18 @@ function updatePositionGrid(
       :data-au-field-control="fieldAddress(field.name)"
       class="mb-4 [&:not(:has(~:not([style*=none])))]:mb-0"
     >
-      <template v-if="limitCountLabel(field)" #hint>
-        <span
-          class="text-[11px] tabular-nums"
-          :class="isPastAdvisory(field) ? 'font-semibold text-amber-600' : 'text-muted'"
-          data-au-field-count
-        >{{ limitCountLabel(field) }}</span>
+      <template v-if="limitCountLabel(field) || canFillFromSource(field)" #hint>
+        <span class="flex items-center gap-2">
+          <span
+            v-if="limitCountLabel(field)"
+            class="text-[11px] tabular-nums"
+            :class="isPastAdvisory(field) ? 'font-semibold text-amber-600' : 'text-muted'"
+            data-au-field-count
+          >{{ limitCountLabel(field) }}</span>
+          <UDropdownMenu v-if="canFillFromSource(field)" :items="fillFromItems(field)" :content="{ align: 'end' }">
+            <UButton size="xs" variant="link" color="neutral" icon="i-lucide-database" :label="fieldSource?.label" class="p-0 text-[11px]" data-testid="fill-from-source" />
+          </UDropdownMenu>
+        </span>
       </template>
       <template v-if="field.type === 'slider'" #label>
         <div class="flex items-center justify-between gap-2">
@@ -1540,8 +1611,16 @@ function updatePositionGrid(
           <span class="text-xs text-muted tabular-nums">{{ formatSliderValue(field as any) }}</span>
         </div>
       </template>
+      <PodsPlayerBoundField
+        v-if="referenceIn(field)"
+        :reference="referenceIn(field)!"
+        :source="fieldSource"
+        :read-only="isReadOnly(field)"
+        @fill-from="(name) => fillFrom(field, name)"
+        @write-own="writeOwn(field)"
+      />
       <PodsPlayerPositionPicker
-        v-if="field.type === 'position-grid'"
+        v-else-if="field.type === 'position-grid'"
         :vertical="
           modelValue[
             getPositionGridConfig(field)?.verticalField as string
@@ -1658,6 +1737,7 @@ function updatePositionGrid(
           :fields="activeVariantFields(field, variantValue(field))"
           :model-value="variantValue(field)"
           :link-targets="linkTargets || []"
+          :field-source="fieldSource"
           :root-model-value="rootModelValue || modelValue"
           :viewport="viewport"
           :read-only="readOnly"
@@ -1721,6 +1801,7 @@ function updatePositionGrid(
             :fields="podContractFields(field, pod.pod_slug)"
             :model-value="pod.props"
           :link-targets="linkTargets || []"
+          :field-source="fieldSource"
             :root-model-value="rootModelValue || modelValue"
             :viewport="viewport"
             :read-only="readOnly"
@@ -1974,6 +2055,7 @@ function updatePositionGrid(
                     :library-media-items="libraryMediaItems || []"
                     :media-source-mode="mediaSourceMode || 'playground'"
           :link-targets="linkTargets || []"
+          :field-source="fieldSource"
                     @update:model-value="({ field: child, value }) => updateRepeaterItem(field.name, idx, child, value)"
                     @update:viewport="(val) => emit('update:viewport', val)"
                   />
