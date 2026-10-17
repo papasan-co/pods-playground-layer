@@ -39,6 +39,14 @@ export type LinkTarget = {
   /** A line under the title in the list and the chosen card (a form's field count, say). */
   fallbackUrl?: string
   detail?: string
+  /** What kind of thing this is, in people's words ("Page", "Notices collection"); the icon's tooltip and the hover card's first fact. */
+  kindLabel?: string
+  /** One line about the destination (its search description, or an entry's summary), shown on the hover card. */
+  description?: string
+  /** The destination's own share image, when one was chosen for it; never a site-wide fallback, which would make every destination look alike. */
+  imageUrl?: string
+  /** The full public address, shown on the hover card and opened by "Open page". */
+  url?: string
 }
 
 /**

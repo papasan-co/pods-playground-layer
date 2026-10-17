@@ -86,20 +86,62 @@ const isBroken = computed(() =>
 
 const sections = computed<LinkSection[]>(() => target.value?.sections ?? [])
 
+/** What each kind of destination looks like and is called, when the host gives no name of its own. */
+const KINDS: Record<LinkTarget['kind'] | 'url', { icon: string, label: string }> = {
+  page: { icon: 'i-lucide-file-text', label: 'Page' },
+  entry: { icon: 'i-lucide-list', label: 'Collection entry' },
+  form: { icon: 'i-lucide-clipboard-list', label: 'Form' },
+  modal: { icon: 'i-lucide-panel-top', label: 'Content modal' },
+  booking: { icon: 'i-lucide-calendar', label: 'Booking link' },
+  url: { icon: 'i-lucide-external-link', label: 'External address' },
+}
+
+function kindOf(t: Pick<LinkTarget, 'kind' | 'kindLabel'>): { icon: string, label: string } {
+  return { icon: KINDS[t.kind].icon, label: t.kindLabel ?? KINDS[t.kind].label }
+}
+
+/**
+ * The chosen destination as the field shows it: the title in full, where it
+ * goes underneath, and an icon saying what kind of thing it is. A form says
+ * how it opens instead of an address, since it has none.
+ */
 const display = computed(() => {
   const v = props.modelValue
   if (!v) return null
-  if (v.kind === 'url') return { title: 'External address', detail: v.url, glyph: '↗' }
-  if (isBroken.value) return { title: 'Missing target', detail: 'This was deleted', glyph: '!' }
+  if (v.kind === 'url') return { title: v.url, detail: 'External address', icon: KINDS.url.icon, kindLabel: KINDS.url.label, url: v.url }
+  if (isBroken.value) return { title: 'Missing destination', detail: 'This was deleted', icon: 'i-lucide-triangle-alert', kindLabel: 'Missing', url: undefined }
   const t = target.value!
   return {
     title: t.title,
     detail: t.kind === 'form'
       ? (v.kind === 'form' && v.presentation === 'modal' ? 'Opens as a dialog' : 'Opens in place')
-      : (t.detail ?? t.path ?? ''),
-    glyph: t.kind === 'page' ? 'P' : t.kind === 'entry' ? 'E' : t.kind === 'modal' ? 'M' : t.kind === 'booking' ? 'B' : 'F',
+      : (t.path ?? t.detail ?? ''),
+    icon: kindOf(t).icon,
+    kindLabel: kindOf(t).label,
+    url: t.url,
   }
 })
+
+/** The address the way a search result shows it: host › each part of the path. */
+const breadcrumb = computed(() => {
+  const address = display.value?.url ?? (props.modelValue?.kind !== 'url' ? target.value?.path : undefined)
+  if (!address) return ''
+  try {
+    const parsed = new URL(address, 'https://site.invalid')
+    const parts = parsed.pathname.split('/').filter(Boolean)
+    return [parsed.host === 'site.invalid' ? '' : parsed.host, ...parts].filter(Boolean).join(' › ')
+  }
+  catch {
+    return address
+  }
+})
+
+/** Change, open and remove, behind one menu so the destination keeps the width. */
+const menuItems = computed(() => [[
+  { label: 'Change', icon: 'i-lucide-arrow-left-right', onSelect: beginReplace },
+  ...(display.value?.url ? [{ label: 'Open page', icon: 'i-lucide-external-link', onSelect: () => { window.open(display.value!.url, '_blank', 'noopener') } }] : []),
+  { label: 'Remove', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: clear },
+]])
 
 function setBookingPopup(on: boolean) {
   const value = props.modelValue
@@ -219,48 +261,69 @@ function indexOf(item: LinkTarget): number {
 
 <template>
   <div class="relative flex flex-col gap-1.5">
-    <!-- picked -->
+    <!-- picked: hover for the facts, the menu for what to do with it -->
     <div
       v-if="modelValue && !replacing"
-      class="flex items-center gap-2 rounded-md border px-2 py-1.5"
+      class="flex items-center gap-2 rounded-md border py-1.5 pl-2 pr-1"
       :class="isBroken
         ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
         : 'border-default bg-elevated'"
+      data-testid="link-destination"
     >
-      <span
-        class="grid h-5 w-5 flex-none place-items-center rounded border text-[10px] font-bold"
-        :class="isBroken
-          ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400'
-          : 'border-accented text-muted'"
-      >{{ display?.glyph }}</span>
+      <UPopover mode="hover" :open-delay="300" :close-delay="100" :content="{ side: 'left', align: 'start', sideOffset: 8 }">
+        <span class="flex min-w-0 flex-1 cursor-default items-center gap-2" data-testid="link-destination-summary">
+          <span
+            class="grid h-6 w-6 flex-none place-items-center rounded border"
+            :class="isBroken ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400' : 'border-accented text-muted'"
+            :aria-label="display?.kindLabel"
+          >
+            <UIcon :name="display?.icon ?? KINDS.url.icon" class="h-3.5 w-3.5" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="line-clamp-2 break-words text-xs font-medium text-default">{{ display?.title }}</span>
+            <span class="truncate font-mono text-[10px] text-muted">{{ display?.detail }}</span>
+          </span>
+        </span>
+        <template #content>
+          <!-- the destination as a search result shows it: kind and state on top, then address, title and description -->
+          <div class="w-80 text-xs" data-testid="link-destination-card">
+            <div class="flex items-center gap-1.5 border-b border-default bg-elevated px-3 py-2 text-muted">
+              <UIcon :name="display?.icon ?? KINDS.url.icon" class="h-3.5 w-3.5" />
+              <span>{{ display?.kindLabel }}</span>
+              <span class="flex-1" />
+              <UBadge
+                v-if="target?.status"
+                :label="target.status === 'draft' ? 'Draft' : 'Live'"
+                :color="target.status === 'draft' ? 'warning' : 'success'"
+                variant="soft"
+                size="xs"
+              />
+            </div>
+            <div class="flex gap-3 px-3 py-2.5">
+              <div class="flex min-w-0 flex-1 flex-col gap-1">
+                <span v-if="breadcrumb" class="truncate text-[11px] text-muted">{{ breadcrumb }}</span>
+                <span class="text-sm text-primary">{{ display?.title }}</span>
+                <span v-if="target?.description" class="line-clamp-3 leading-snug text-muted">{{ target.description }}</span>
+              </div>
+              <img v-if="target?.imageUrl" :src="target.imageUrl" alt="" class="h-14 w-14 flex-none rounded object-cover">
+            </div>
+          </div>
+        </template>
+      </UPopover>
 
-      <span class="flex min-w-0 flex-1 flex-col">
-        <span class="truncate text-xs font-medium text-default">{{ display?.title }}</span>
-        <span class="truncate font-mono text-[10px] text-muted text-dimmed">{{ display?.detail }}</span>
-      </span>
+      <UBadge v-if="target?.status === 'draft'" label="Draft" color="warning" variant="soft" size="xs" class="flex-none" />
+      <UBadge v-else-if="isBroken" label="Broken" color="error" variant="soft" size="xs" class="flex-none" />
 
-      <span
-        v-if="target?.status === 'draft'"
-        class="flex-none rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-      >Draft</span>
-      <span
-        v-else-if="isBroken"
-        class="flex-none rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-red-700 dark:bg-red-950 dark:text-red-400"
-      >Broken</span>
-
-      <button
-        v-if="!readOnly"
-        type="button"
-        class="flex-none rounded border border-accented px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-default text-dimmed"
-        @click="beginReplace"
-      >Change</button>
-      <button
-        v-if="!readOnly"
-        type="button"
-        aria-label="Remove destination"
-        class="flex-none rounded border border-accented px-2 py-0.5 text-[10px] font-semibold text-muted hover:text-default text-dimmed"
-        @click="clear"
-      >Remove</button>
+      <UDropdownMenu v-if="!readOnly" :items="menuItems" :content="{ align: 'end' }">
+        <UButton
+          icon="i-lucide-ellipsis"
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          aria-label="Destination actions"
+          data-testid="link-destination-menu"
+        />
+      </UDropdownMenu>
     </div>
 
     <!-- searching -->
@@ -296,7 +359,7 @@ function indexOf(item: LinkTarget): number {
         class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted hover:bg-elevated"
         @click="chooseUrl"
       >
-        <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-[10px] font-bold text-muted text-dimmed">↗</span>
+        <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-muted"><UIcon :name="KINDS.url.icon" class="h-3 w-3" /></span>
         <span class="flex min-w-0 flex-col">
           <span class="truncate text-xs font-medium text-default">Link to this address</span>
           <span class="truncate font-mono text-[10px] text-muted text-dimmed">{{ query.trim() }}</span>
@@ -316,13 +379,13 @@ function indexOf(item: LinkTarget): number {
             :class="indexOf(item) === cursor ? 'bg-accented' : 'hover:bg-accented'"
             @click="choose(item)"
           >
-            <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-[10px] font-bold text-muted text-dimmed">
-              {{ item.kind === 'page' ? 'P' : item.kind === 'entry' ? 'E' : item.kind === 'modal' ? 'M' : item.kind === 'booking' ? 'B' : 'F' }}
+            <span class="grid h-5 w-5 flex-none place-items-center rounded border border-accented text-muted" :title="kindOf(item).label">
+              <UIcon :name="kindOf(item).icon" class="h-3 w-3" />
             </span>
             <span class="flex min-w-0 flex-1 flex-col">
               <span class="truncate text-xs font-medium text-default">{{ item.title }}</span>
               <span class="truncate font-mono text-[10px] text-muted text-dimmed">
-                {{ item.detail ?? (item.kind === 'form' ? 'Opens in place' : item.path) }}
+                {{ item.kind === 'form' ? (item.detail ?? 'Opens in place') : (item.path ?? item.detail) }}
               </span>
             </span>
             <span
