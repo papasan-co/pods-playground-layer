@@ -458,6 +458,16 @@ const selectedAdjustments = computed(() => props.modelValue && typeof props.mode
           @click="adjust"
         />
       </UTooltip>
+      <UButton
+        v-if="props.allowEmpty && currentUrl"
+        type="button"
+        icon="i-lucide-x"
+        aria-label="Remove media"
+        variant="ghost"
+        color="neutral"
+        size="sm"
+        @click="emit('update:modelValue', toEmittedValue(''))"
+      />
     </div>
 
     <!-- Pasting an address is for media held elsewhere (an external video, say).
