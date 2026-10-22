@@ -39,6 +39,9 @@ const props = defineProps<{
   readOnly?: boolean;
   /** Optional host-provided props, such as CMS scene data, for preview-only context. */
   previewPropsOverride?: Record<string, unknown> | null;
+  /** Host-owned styles and document scope for a saved website preview. */
+  previewStylesheets?: string[];
+  previewRootClasses?: string[];
   // The draft's saved field values (edit_state) — flatForm-shaped, applied
   // verbatim so a reloaded page shows what the user saved.
   savedFieldValues?: Record<string, unknown> | null;
@@ -474,6 +477,8 @@ function targetDisplayValue(value: unknown): string {
           :viewport="viewport"
           :preview-props="effectivePreviewProps"
           :selectable-targets="selectableCanvasTargets"
+          :preview-stylesheets="previewStylesheets"
+          :preview-root-classes="previewRootClasses"
           :selected-target-key="selectedCanvasTargetKey"
           :content-ready="!loading"
           :content-source-preview-id="loadedSourcePreviewId"

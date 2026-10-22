@@ -68,6 +68,8 @@ const props = defineProps<{
   selectedTargetKey?: string | null
   contentReady?: boolean
   contentSourcePreviewId?: string | null
+  previewStylesheets?: string[]
+  previewRootClasses?: string[]
   documentFlowPresentation?: PodsPlayerDocumentFlowPresentation | null
 }>()
 
@@ -1026,7 +1028,7 @@ async function loadVueRuntimePreview(
   if (!request.isCurrent()) return false
   if (!renderIdentityCommits.activate(nextRenderIdentity)) return false
   const nextScripts = ensured.vueBundleUrls ?? []
-  const nextStylesheets = ensured.stylesheetUrls ?? []
+  const nextStylesheets = [...(props.previewStylesheets ?? []), ...(ensured.stylesheetUrls ?? [])]
   const nextArtifactKey =
     ensured.runtimeArtifactKey ||
     runtimeAssetLoadKey({
@@ -1404,13 +1406,13 @@ watch(
 // Stable identities for device props: inline template literals mint a new
 // array every render, which reads as a prop change to the device's boot
 // effect and schedules needless iframe reboots.
-const RUNTIME_ROOT_CLASSES = ['autumn-runtime']
+const runtimeRootClasses = computed(() => ['autumn-runtime', ...(props.previewRootClasses ?? [])])
 const EMPTY_ASSET_LIST: string[] = []
 const deviceModuleScripts = computed(() =>
   effectiveMode.value === 'vue' ? vueScripts.value : EMPTY_ASSET_LIST,
 )
 const deviceExtraStylesheets = computed(() =>
-  effectiveMode.value === 'vue' ? vueStylesheets.value : EMPTY_ASSET_LIST,
+  effectiveMode.value === 'vue' ? vueStylesheets.value : (props.previewStylesheets ?? EMPTY_ASSET_LIST),
 )
 
 function handleScriptsLoaded(payload: RuntimeAssetLoadIdentity) {
@@ -1562,7 +1564,7 @@ watch(
         : vueRuntimeArtifactKey || renderedCanvasArtifactId"
       :ready="effectiveMode === 'sfc' ? true : vueReady"
       :css-vars="previewCssVars"
-      :root-classes="RUNTIME_ROOT_CLASSES"
+      :root-classes="runtimeRootClasses"
       :canvas-artifact-id="renderedCanvasArtifactId"
       :sfc-stylesheet-source="effectiveMode === 'sfc' ? renderedSfcStylesheetSource : null"
       :debug-fill="debugFill"
