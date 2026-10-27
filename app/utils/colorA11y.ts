@@ -14,10 +14,9 @@
  * keeping a copy. Accessibility is the last thing that should have three
  * answers.
  *
- * Both entry points are defensive by design: an unsupported colour is
- * read as black rather than propagated as NaN, because a wrong colour is
- * visible and a NaN comparison silently returns false — which reads as "this
- * passes" everywhere a threshold is checked.
+ * Hex and browser-computed RGB/RGBA are measured consistently. Translucent
+ * colors use the lowest possible contrast over an unknown opaque backdrop;
+ * unsupported CSS retains the existing black fallback.
  */
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
@@ -32,6 +31,7 @@ function normalizeHex(input: string): string | null {
   return value.toUpperCase()
 }
 
+/** Parse computed RGB/RGBA and CMS alpha hex; unsupported CSS keeps the invalid-color policy. */
 function computedRgb(input: string): { channels: number[]; alpha: number } | null {
   const hex = input.trim()
   if (/^#(?:[0-9a-f]{4}|[0-9a-f]{8})$/i.test(hex)) {
@@ -49,6 +49,7 @@ function computedRgb(input: string): { channels: number[]; alpha: number } | nul
     && Number.isFinite(alpha) && alpha >= 0 && alpha <= 1 ? { channels, alpha } : null
 }
 
+/** The possible luminance interval over an unknown opaque backdrop. */
 function luminanceRange(color: string): [number, number] {
   const rgb = computedRgb(color)
   if (!rgb || rgb.alpha === 1) {

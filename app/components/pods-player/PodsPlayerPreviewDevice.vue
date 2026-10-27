@@ -72,6 +72,8 @@ const props = defineProps<{
    * Parent readiness waits for this marker so it does not race the iframe mini-app render.
    */
   canvasArtifactId?: string | null
+  /** Exact loaded SFC filename whose Vite-owned style may cross into this iframe. */
+  sfcStylesheetSource?: string | null
   /**
    * Debug-only fill diagnostic that makes unused space obvious without changing the normal preview chrome.
    */
@@ -154,8 +156,21 @@ const slots = useSlots()
 let miniApp: ReturnType<typeof createApp> | null = null
 let booting = false
 let bootAgain = false
+let artifactStyleObserver: MutationObserver | null = null
+let artifactStyleSyncQueuedGeneration: number | null = null
+let artifactStyleObserverGeneration = 0
+let artifactStylesDisposed = false
+let artifactStyleTargetDocument: Document | null = null
 
 onBeforeUnmount(() => {
+  artifactStylesDisposed = true
+  artifactStyleObserverGeneration += 1
+  artifactStyleObserver?.disconnect()
+  artifactStyleObserver = null
+  artifactStyleTargetDocument
+    ?.querySelectorAll(SYNCED_ARTIFACT_STYLE_SELECTOR)
+    .forEach(node => node.remove())
+  artifactStyleTargetDocument = null
   miniApp?.unmount()
 })
 
@@ -174,6 +189,82 @@ const SHELL_STYLE_SELECTOR = [
   'style[data-vite-dev-id*="/story-scroll-layer/"]',
 ].join(',')
 const SYNCED_HEAD_SELECTOR = '[data-pods-shell-style="1"]'
+const SYNCED_ARTIFACT_STYLE_SELECTOR = '[data-pods-artifact-style="1"]'
+
+function normalizedViteStyleSource(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+
+  const withoutQuery = value.trim().split(/[?#]/, 1)[0]?.replace(/^\/@fs\//, '/')
+
+  return withoutQuery || null
+}
+
+function viteStyleSource(node: Element): string | null {
+  return normalizedViteStyleSource(node.getAttribute('data-vite-dev-id'))
+}
+
+function syncArtifactStyles(from: Document, to: Document): void {
+  to.head.querySelectorAll(SYNCED_ARTIFACT_STYLE_SELECTOR).forEach(node => node.remove())
+  if (artifactStylesDisposed) return
+
+  const source = normalizedViteStyleSource(props.sfcStylesheetSource)
+  const artifactId = props.canvasArtifactId?.trim()
+  if (!source || !artifactId) return
+
+  from.head.querySelectorAll('style[data-vite-dev-id]').forEach((node) => {
+    if (viteStyleSource(node) !== source) return
+
+    const cloned = node.cloneNode(true) as HTMLElement
+    cloned.dataset.podsArtifactStyle = '1'
+    cloned.dataset.podsCanvasArtifactId = artifactId
+    tagRuntimeAsset(cloned, 'artifact-style')
+    to.head.appendChild(cloned)
+  })
+}
+
+function mutationTouchesCurrentArtifactStyle(mutation: MutationRecord): boolean {
+  const source = normalizedViteStyleSource(props.sfcStylesheetSource)
+  if (!source) return false
+
+  const matches = (node: Node): boolean => {
+    const element = node.nodeType === Node.ELEMENT_NODE
+      ? node as Element
+      : node.parentElement
+
+    return Boolean(element?.matches('style[data-vite-dev-id]') && viteStyleSource(element) === source)
+  }
+
+  return matches(mutation.target)
+    || [...mutation.addedNodes, ...mutation.removedNodes].some(matches)
+}
+
+function observeArtifactStyles(to: Document): void {
+  const generation = ++artifactStyleObserverGeneration
+  artifactStyleTargetDocument = to
+  artifactStyleObserver?.disconnect()
+  artifactStyleObserver = null
+  if (artifactStylesDisposed
+    || !normalizedViteStyleSource(props.sfcStylesheetSource)
+    || !props.canvasArtifactId) return
+
+  artifactStyleObserver = new MutationObserver((mutations) => {
+    if (!mutations.some(mutationTouchesCurrentArtifactStyle)
+      || artifactStyleSyncQueuedGeneration === generation) return
+    artifactStyleSyncQueuedGeneration = generation
+    queueMicrotask(() => {
+      if (artifactStyleSyncQueuedGeneration === generation) {
+        artifactStyleSyncQueuedGeneration = null
+      }
+      if (artifactStylesDisposed || generation !== artifactStyleObserverGeneration) return
+      syncArtifactStyles(document, to)
+    })
+  })
+  artifactStyleObserver.observe(document.head, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  })
+}
 
 function tagRuntimeAsset(node: HTMLElement, kind: string): void {
   node.dataset.podsRuntimeOwner = props.runtimeOwner || 'unowned'
@@ -534,6 +625,7 @@ function syncOptionalStylesheets(doc: Document, urls: string[]) {
 }
 
 async function bootIframe() {
+  if (artifactStylesDisposed) return
   if (booting) {
     bootAgain = true
     return
@@ -592,14 +684,18 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
     `)
     doc.close()
     await nextTick()
+    if (artifactStylesDisposed) return
 
     installPreviewShellStyles(doc)
     syncShellStyles(document, doc)
     tagInstalledShellStyles(doc)
+    syncArtifactStyles(document, doc)
+    observeArtifactStyles(doc)
     syncCSSVars(doc)
     syncBodyDataset(doc)
     syncOptionalStylesheets(doc, stylesheetPlan.optional)
     await syncExtraStylesheets(doc, stylesheetPlan.required)
+    if (artifactStylesDisposed) return
     if (win) syncRuntime(window, win)
 
     applyScrollMode(doc, !!props.scrollable)
@@ -613,6 +709,8 @@ async function bootIframeNow(assetLoad: RuntimeAssetLoadIdentity) {
   // non-scroll previews (many pods rely on `h-full`).
   installPreviewShellStyles(doc)
   tagInstalledShellStyles(doc)
+  syncArtifactStyles(document, doc)
+  observeArtifactStyles(doc)
   syncCSSVars(doc)
   syncBodyDataset(doc)
   syncOptionalStylesheets(doc, stylesheetPlan.optional)
@@ -676,27 +774,49 @@ function collectRuntimeAssetLoadTiming(
       }
 }
 
+// Boot decisions compare CONTENT, not identity. Hosts re-render for reasons
+// unrelated to the preview (progress polls, status writes), and each render
+// hands down fresh array/object identities. Rebooting on identity alone let a
+// host re-render schedule a boot whose own completion (scriptsLoaded → state
+// write) re-rendered the host again — a self-sustaining boot/emit/mount
+// microtask storm that starved timers and wedged the tab on pod switches.
+let lastBootSignature: string | null = null
+
+function currentBootSignature(): string {
+  // JSON.stringify doubles as dependency registration: it reads every nested
+  // key, so deep cssVars/bodyDataset changes still re-trigger the effect.
+  return JSON.stringify({
+    device: props.device,
+    scripts: props.scripts ?? [],
+    moduleScripts: props.moduleScripts ?? [],
+    ready: props.ready,
+    scrollable: props.scrollable,
+    cssVars: props.cssVars ?? null,
+    shellStylesheets: props.shellStylesheets ?? [],
+    extraStylesheets: props.extraStylesheets ?? [],
+    optionalStylesheets: props.optionalStylesheets ?? [],
+    runtimeOwner: props.runtimeOwner ?? null,
+    rootClasses: props.rootClasses ?? [],
+    bodyDataset: props.bodyDataset ?? null,
+    canvasArtifactId: props.canvasArtifactId ?? null,
+    sfcStylesheetSource: props.sfcStylesheetSource ?? null,
+    debugFill: props.debugFill,
+    settleLayerSequences: props.settleLayerSequences,
+    settleLayerSequencesRevision: props.settleLayerSequencesRevision,
+    slotRevision: props.slotRevision,
+  })
+}
+
+function scheduleBootIfChanged(signature: string): void {
+  if (signature === lastBootSignature) return
+  lastBootSignature = signature
+  void nextTick().then(() => bootIframe())
+}
+
 watchEffect(() => {
-  void props.device
-  // Ensure script injection runs when the script list changes (WC mode).
-  void props.scripts
-  void props.moduleScripts
-  void props.ready
-  void props.scrollable
-  void props.cssVars
-  void props.shellStylesheets
-  void props.extraStylesheets
-  void props.optionalStylesheets
-  void props.runtimeOwner
-  void props.rootClasses
-  void props.bodyDataset
-  void props.canvasArtifactId
-  void props.debugFill
-  void props.settleLayerSequences
-  void props.settleLayerSequencesRevision
-  void props.slotRevision
+  const signature = currentBootSignature()
   if (props.ready === false && slotVNode.value) {
-    void nextTick().then(() => bootIframe())
+    scheduleBootIfChanged(signature)
     return
   }
 
@@ -732,7 +852,7 @@ watchEffect(() => {
           },
           slots.default?.(),
         )
-  void nextTick().then(() => bootIframe())
+  scheduleBootIfChanged(signature)
 })
 
 defineExpose({
