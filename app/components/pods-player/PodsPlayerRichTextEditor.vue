@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { podRichTextExtensions, podRichTextStarterKit } from '#pods-player/runtime/richTextPreservation'
+
 const props = defineProps<{
   modelValue?: string
   disabled?: boolean
@@ -22,6 +24,8 @@ const toolbarItems = [
   [
     { kind: 'mark', mark: 'bold', icon: 'i-lucide-bold', tooltip: { text: 'Bold' } },
     { kind: 'mark', mark: 'italic', icon: 'i-lucide-italic', tooltip: { text: 'Italic' } },
+    { kind: 'mark', mark: 'superscript', icon: 'i-lucide-superscript', tooltip: { text: 'Superscript (citation)' } },
+    { kind: 'mark', mark: 'subscript', icon: 'i-lucide-subscript', tooltip: { text: 'Subscript' } },
   ],
   [
     { kind: 'bulletList', icon: 'i-lucide-list', tooltip: { text: 'Bulleted list' } },
@@ -45,18 +49,13 @@ const toolbarItems = [
       v-slot="{ editor }"
       v-model="value"
       content-type="html"
+      :extensions="podRichTextExtensions"
       :editable="!disabled"
       :placeholder="{
         placeholder: placeholder || 'Write formatted body copy…',
         mode: 'firstLine',
       }"
-      :starter-kit="{
-        heading: { levels: [2] },
-        blockquote: false,
-        codeBlock: false,
-        horizontalRule: false,
-        link: false,
-      }"
+      :starter-kit="podRichTextStarterKit"
       :ui="{
         root: 'flex flex-col',
         content: 'min-h-36',
