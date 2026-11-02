@@ -1417,6 +1417,7 @@ function updatePositionGrid(
             />
             <PodsPlayerRichTextEditor
               v-else-if="child.type === 'rich-text' || child.type === 'wysiwyg'"
+              :inline="child.inline === true"
               :model-value="modelValue[child.name as string] as string"
               :disabled="isReadOnly(child)"
               :placeholder="child.placeholder as string"
@@ -1832,6 +1833,7 @@ function updatePositionGrid(
       />
       <PodsPlayerRichTextEditor
         v-else-if="field.type === 'rich-text' || field.type === 'wysiwyg'"
+        :inline="field.inline === true"
         :model-value="modelValue[field.name] as string"
         :disabled="isReadOnly(field)"
         :placeholder="field.placeholder as string"

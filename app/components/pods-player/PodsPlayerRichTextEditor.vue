@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { podRichTextExtensions, podRichTextStarterKit } from '#pods-player/runtime/richTextPreservation'
+import {
+  fromInlineEditorHtml,
+  podInlineRichTextStarterKit,
+  podRichTextExtensions,
+  podRichTextStarterKit,
+  toInlineEditorHtml,
+} from '#pods-player/runtime/richTextPreservation'
 
 const props = defineProps<{
   modelValue?: string
   disabled?: boolean
   placeholder?: string
+  /** A heading's words: marks only, one line, saved without paragraphs. */
+  inline?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -12,27 +20,31 @@ const emit = defineEmits<{
 }>()
 
 const value = computed({
-  get: () => props.modelValue || '',
-  set: (next: string | null) => emit('update:modelValue', next || ''),
+  get: () => (props.inline ? toInlineEditorHtml(props.modelValue || '') : props.modelValue || ''),
+  set: (next: string | null) => emit('update:modelValue', props.inline ? fromInlineEditorHtml(next || '') : next || ''),
 })
 
-const toolbarItems = [
-  [
-    { kind: 'paragraph', label: 'Body' },
-    { kind: 'heading', level: 2, label: 'Display' },
-  ],
-  [
-    { kind: 'mark', mark: 'bold', icon: 'i-lucide-bold', tooltip: { text: 'Bold' } },
-    { kind: 'mark', mark: 'italic', icon: 'i-lucide-italic', tooltip: { text: 'Italic' } },
-    { kind: 'mark', mark: 'superscript', icon: 'i-lucide-superscript', tooltip: { text: 'Superscript (citation)' } },
-    { kind: 'mark', mark: 'subscript', icon: 'i-lucide-subscript', tooltip: { text: 'Subscript' } },
-  ],
-  [
-    { kind: 'bulletList', icon: 'i-lucide-list', tooltip: { text: 'Bulleted list' } },
-    { kind: 'undo', icon: 'i-lucide-undo-2', tooltip: { text: 'Undo' } },
-    { kind: 'redo', icon: 'i-lucide-redo-2', tooltip: { text: 'Redo' } },
-  ],
+const markItems = [
+  { kind: 'mark', mark: 'bold', icon: 'i-lucide-bold', tooltip: { text: 'Bold' } },
+  { kind: 'mark', mark: 'italic', icon: 'i-lucide-italic', tooltip: { text: 'Italic' } },
+  { kind: 'mark', mark: 'superscript', icon: 'i-lucide-superscript', tooltip: { text: 'Superscript (citation)' } },
+  { kind: 'mark', mark: 'subscript', icon: 'i-lucide-subscript', tooltip: { text: 'Subscript' } },
 ]
+const historyItems = [
+  { kind: 'undo', icon: 'i-lucide-undo-2', tooltip: { text: 'Undo' } },
+  { kind: 'redo', icon: 'i-lucide-redo-2', tooltip: { text: 'Redo' } },
+]
+
+const toolbarItems = computed(() => props.inline
+  ? [markItems, historyItems]
+  : [
+      [
+        { kind: 'paragraph', label: 'Body' },
+        { kind: 'heading', level: 2, label: 'Display' },
+      ],
+      markItems,
+      [{ kind: 'bulletList', icon: 'i-lucide-list', tooltip: { text: 'Bulleted list' } }, ...historyItems],
+    ])
 </script>
 
 <template>
@@ -52,14 +64,14 @@ const toolbarItems = [
       :extensions="podRichTextExtensions"
       :editable="!disabled"
       :placeholder="{
-        placeholder: placeholder || 'Write formatted body copy…',
+        placeholder: placeholder || (inline ? 'Write the heading…' : 'Write formatted body copy…'),
         mode: 'firstLine',
       }"
-      :starter-kit="podRichTextStarterKit"
+      :starter-kit="inline ? podInlineRichTextStarterKit : podRichTextStarterKit"
       :ui="{
         root: 'flex flex-col',
-        content: 'min-h-36',
-        base: 'pg-rte-base min-h-36 px-3 py-2.5 text-sm/6 text-highlighted focus:outline-none',
+        content: inline ? 'min-h-9' : 'min-h-36',
+        base: `pg-rte-base ${inline ? 'min-h-9' : 'min-h-36'} px-3 py-2.5 text-sm/6 text-highlighted focus:outline-none`,
       }"
     >
       <UEditorToolbar
