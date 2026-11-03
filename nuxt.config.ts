@@ -77,6 +77,14 @@ export default defineNuxtConfig({
         ),
       },
     },
+    // The dev server pre-bundles a dependency an app file imports, but serves
+    // Nuxt UI's editor and its tiptap extensions as plain files. Pre-bundling
+    // `@tiptap/core` for richTextPreservation gave the page two ProseMirror
+    // states, and the editor stopped with "Adding different instances of a
+    // keyed plugin". Served plainly, every import shares one copy.
+    optimizeDeps: {
+      exclude: ['@tiptap/core'],
+    },
   },
 
   /**
