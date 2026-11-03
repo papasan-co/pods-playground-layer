@@ -77,8 +77,11 @@ describe('inline rich text for headings', () => {
       extensions: [StarterKit.configure(podInlineRichTextStarterKit), ...podRichTextExtensions],
     })
     expect(fromInlineEditorHtml(editor.getHTML())).toBe(heading)
-    editor.commands.setContent(toInlineEditorHtml('One<br>Two'))
-    expect(editor.view.dom.querySelectorAll('ul, ol, h2')).toHaveLength(0)
+    // Pasted block structure is flattened to marks: the inline kit has no headings or lists.
+    editor.commands.setContent(toInlineEditorHtml('<h2>A</h2><ul><li>B</li></ul>'))
+    expect(editor.view.dom.querySelectorAll('ul, ol, li, h2')).toHaveLength(0)
+    expect(editor.view.dom.textContent).toContain('A')
+    expect(editor.view.dom.textContent).toContain('B')
     editor.destroy()
     expect(fromInlineEditorHtml('<p>First line</p><p>second <em>line</em></p>')).toBe('First line<br>second <em>line</em>')
   })
