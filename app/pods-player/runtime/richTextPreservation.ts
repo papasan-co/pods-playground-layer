@@ -80,3 +80,30 @@ export const podRichTextStarterKit = {
     HTMLAttributes: { target: null, rel: null },
   },
 } as const
+
+/**
+ * An inline rich-text field (`inline: true`, a heading's words) edits as one
+ * paragraph of marks: no headings or lists, and its value holds no `<p>`, so
+ * it can render inside the heading it belongs to.
+ */
+export const podInlineRichTextStarterKit = {
+  ...podRichTextStarterKit,
+  heading: false,
+  bulletList: false,
+  orderedList: false,
+  listItem: false,
+} as const
+
+/** Give the editor an inline field's value as the one paragraph it edits. */
+export function toInlineEditorHtml(value: string): string {
+  return `<p>${value}</p>`
+}
+
+/** Keep an inline field's words and marks without paragraphs; a new line becomes a line break. */
+export function fromInlineEditorHtml(html: string): string {
+  return html
+    .trim()
+    .replace(/^<p[^>]*>/, '')
+    .replace(/<\/p>$/, '')
+    .replace(/<\/p>\s*<p[^>]*>/g, '<br>')
+}
